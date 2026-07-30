@@ -19,7 +19,6 @@ jobs:
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       MCP_PATH_TOKEN: ${{ secrets.MCP_PATH_TOKEN }}
       D1_DATABASE_NAME: ss-reading-nest-db
-      R2_BUCKET_NAME: ss-reading-nest-sources
 
     steps:
       - name: Check required secrets
@@ -84,14 +83,6 @@ jobs:
           test -n "$D1_DATABASE_ID"
           echo "database_id=$D1_DATABASE_ID" >> "$GITHUB_OUTPUT"
           echo "D1_DATABASE_ID=$D1_DATABASE_ID" >> "$GITHUB_ENV"
-
-      - name: Create R2 bucket when missing
-        shell: bash
-        run: |
-          set -euo pipefail
-          if ! pnpm --filter @ss/server exec wrangler r2 bucket info "$R2_BUCKET_NAME" --json >/dev/null 2>&1; then
-            pnpm --filter @ss/server exec wrangler r2 bucket create "$R2_BUCKET_NAME"
-          fi
 
       - name: Bind D1 database
         shell: bash
