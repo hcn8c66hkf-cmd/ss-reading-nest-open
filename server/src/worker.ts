@@ -4,7 +4,7 @@ import { createMcpServerFromRepository } from "./mcp/server-factory.js";
 import { D1ReadingRepository } from "./repositories/d1-reading-repository.js";
 import { CloudSourceService } from "./services/cloud-source-service.js";
 import { handleSourceRoute } from "./source-routes.js";
-import { R2SourceObjectStorage } from "./storage/r2-source-object-storage.js";
+import { D1SourceObjectStorage } from "./storage/d1-source-object-storage.js";
 import { getWorkerRoute } from "./worker-router.js";
 
 export default {
@@ -25,8 +25,8 @@ export default {
 
     try {
       const repository = new D1ReadingRepository(env.DB);
-      const sourceStorage = new R2SourceObjectStorage(env.SOURCES_BUCKET);
-      const sourceService = new CloudSourceService(repository, sourceStorage);
+      const sourceStorage = new D1SourceObjectStorage(env.DB);
+      const sourceService = new CloudSourceService(repository, sourceStorage, undefined, "d1");
       if (route === "source") {
         return handleSourceRoute(request, sourceService);
       }
