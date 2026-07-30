@@ -110,6 +110,13 @@ jobs:
       - name: Apply D1 migrations
         run: pnpm --filter @ss/server exec wrangler d1 migrations apply "$D1_DATABASE_NAME" --remote
 
+      - name: Store private MCP path token
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' "$MCP_PATH_TOKEN" |
+            pnpm --filter @ss/server exec wrangler secret put MCP_PATH_TOKEN
+
       - name: Deploy Worker
         id: deploy
         shell: bash
@@ -126,13 +133,6 @@ jobs:
           )"
           test -n "$WORKER_URL"
           echo "worker_url=$WORKER_URL" >> "$GITHUB_OUTPUT"
-
-      - name: Store private MCP path token
-        shell: bash
-        run: |
-          set -euo pipefail
-          printf '%s' "$MCP_PATH_TOKEN" |
-            pnpm --filter @ss/server exec wrangler secret put MCP_PATH_TOKEN
 
       - name: Verify deployment
         shell: bash
