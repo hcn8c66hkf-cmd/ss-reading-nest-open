@@ -33,7 +33,8 @@ export class CloudSourceService {
   constructor(
     private readonly repository: ReadingRepository,
     private readonly storage: SourceObjectStorage,
-    private readonly deps: Dependencies = defaultDependencies
+    private readonly deps: Dependencies = defaultDependencies,
+    private readonly storageProvider: "r2" | "d1" = "r2"
   ) {}
 
   async uploadNovelSource(input: {
@@ -56,7 +57,7 @@ export class CloudSourceService {
       paragraphCount: splitNovelText(normalizedText).length,
       cloudSync: {
         enabled: true,
-        provider: "r2",
+        provider: this.storageProvider,
         objectKey,
         manifestObjectKey,
         uploadedAt: this.deps.now().toISOString(),
@@ -168,7 +169,7 @@ export class CloudSourceService {
       pageCount: pageMetadata.length,
       cloudSync: {
         enabled: true,
-        provider: "r2",
+        provider: this.storageProvider,
         manifestObjectKey,
         uploadedAt,
         pages: pageMetadata
