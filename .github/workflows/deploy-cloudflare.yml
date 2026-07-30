@@ -1,0 +1,159 @@
+name: Deploy reading nest to Cloudflare
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-reading-nest-cloudflare
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      MCP_PATH_TOKEN: ${{ secrets.MCP_PATH_TOKEN }}
+      D1_DATABASE_NAME: ss-reading-nest-db
+      R2_BUCKET_NAME: ss-reading-nest-sources
+
+    steps:
+      - name: Check required secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID MCP_PATH_TOKEN; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::Missing GitHub Actions secret: ${name}"
+              exit 1
+            fi
+          done
+
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Create or find D1 database
+        id: d1
+        shell: bash
+        run: |
+          set -euo pipefail
+          list_databases() {
+            pnpm --filter @ss/server exec wrangler d1 list --json
+          }
+
+          D1_JSON="$(list_databases)"
+          D1_DATABASE_ID="$(
+            node -e '
+              const databases = JSON.parse(process.argv[1]);
+              const database = databases.find((item) => item.name === process.env.D1_DATABASE_NAME);
+              if (database) process.stdout.write(database.uuid ?? database.id ?? "");
+            ' "$D1_JSON"
+          )"
+
+          if [ -z "$D1_DATABASE_ID" ]; then
+            pnpm --filter @ss/server exec wrangler d1 create "$D1_DATABASE_NAME"
+            D1_JSON="$(list_databases)"
+            D1_DATABASE_ID="$(
+              node -e '
+                const databases = JSON.parse(process.argv[1]);
+                const database = databases.find((item) => item.name === process.env.D1_DATABASE_NAME);
+                if (!database) process.exit(1);
+                process.stdout.write(database.uuid ?? database.id ?? "");
+              ' "$D1_JSON"
+            )"
+          fi
+
+          test -n "$D1_DATABASE_ID"
+          echo "database_id=$D1_DATABASE_ID" >> "$GITHUB_OUTPUT"
+          echo "D1_DATABASE_ID=$D1_DATABASE_ID" >> "$GITHUB_ENV"
+
+      - name: Create R2 bucket when missing
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! pnpm --filter @ss/server exec wrangler r2 bucket info "$R2_BUCKET_NAME" --json >/dev/null 2>&1; then
+            pnpm --filter @ss/server exec wrangler r2 bucket create "$R2_BUCKET_NAME"
+          fi
+
+      - name: Bind D1 database
+        shell: bash
+        run: |
+          set -euo pipefail
+          node -e '
+            const fs = require("node:fs");
+            const path = "server/wrangler.jsonc";
+            const config = fs.readFileSync(path, "utf8");
+            if (!config.includes("REPLACE_WITH_YOUR_D1_DATABASE_ID")) {
+              throw new Error("Expected D1 placeholder is missing from server/wrangler.jsonc");
+            }
+            fs.writeFileSync(
+              path,
+              config.replace("REPLACE_WITH_YOUR_D1_DATABASE_ID", process.env.D1_DATABASE_ID)
+            );
+          '
+
+      - name: Run checks
+        run: |
+          pnpm test
+          pnpm typecheck
+          pnpm build
+
+      - name: Apply D1 migrations
+        run: pnpm --filter @ss/server exec wrangler d1 migrations apply "$D1_DATABASE_NAME" --remote
+
+      - name: Deploy Worker
+        id: deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm --filter @ss/server exec wrangler deploy 2>&1 | tee /tmp/deploy-output.txt
+          WORKER_URL="$(
+            node -e '
+              const fs = require("node:fs");
+              const output = fs.readFileSync("/tmp/deploy-output.txt", "utf8");
+              const match = output.match(/https:\/\/[^\s]+\.workers\.dev/);
+              if (match) process.stdout.write(match[0]);
+            '
+          )"
+          test -n "$WORKER_URL"
+          echo "worker_url=$WORKER_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Store private MCP path token
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' "$MCP_PATH_TOKEN" |
+            pnpm --filter @ss/server exec wrangler secret put MCP_PATH_TOKEN
+
+      - name: Verify deployment
+        shell: bash
+        env:
+          WORKER_URL: ${{ steps.deploy.outputs.worker_url }}
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error "$WORKER_URL/health"
+          {
+            echo "## Reading nest deployed"
+            echo
+            echo "- Worker URL: \`$WORKER_URL\`"
+            echo "- Health check: \`$WORKER_URL/health\`"
+            echo "- MCP endpoint: \`$WORKER_URL/mcp/<your MCP_PATH_TOKEN secret>\`"
+          } >> "$GITHUB_STEP_SUMMARY"
