@@ -1,0 +1,12 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "ss-reading-nest-gateway",
+  "pages_build_output_dir": "./public",
+  "compatibility_date": "2026-07-31",
+  "services": [
+    {
+      "binding": "READING_NEST_WORKER",
+      "service": "ss-reading-nest"
+    }
+  ]
+}
