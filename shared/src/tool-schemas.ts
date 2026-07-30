@@ -66,7 +66,7 @@ export const cloudSourcePageSchema = z
 export const cloudSyncMetadataSchema = z
   .object({
     enabled: z.boolean(),
-    provider: z.literal("r2"),
+    provider: z.enum(["r2", "d1"]),
     objectKey: z.string().min(1).max(500).optional(),
     manifestObjectKey: z.string().min(1).max(500).optional(),
     uploadedAt: z.string().datetime().optional(),
