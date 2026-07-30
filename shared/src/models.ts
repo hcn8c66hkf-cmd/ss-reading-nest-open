@@ -69,7 +69,7 @@ export interface SourceManifest {
 
 export interface CloudSyncMetadata {
   enabled: boolean;
-  provider: "r2";
+  provider: "r2" | "d1";
   objectKey?: string;
   manifestObjectKey?: string;
   uploadedAt?: string;
