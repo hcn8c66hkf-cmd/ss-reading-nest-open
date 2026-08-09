@@ -2,13 +2,16 @@ import { describe, expect, it } from "vitest";
 import {
   confirmAssistantSyncedPositionInputSchema,
   clearCompanionCommentsInputSchema,
+  createAnnotationInputSchema,
   deleteReadingSessionInputSchema,
   deleteCloudSourceInputSchema,
   getCloudSourceStatusInputSchema,
   uploadCloudSourceInputSchema,
   listCompanionCommentsInputSchema,
+  listAnnotationsInputSchema,
   publishCompanionCommentInputSchema,
   renameReadingSessionInputSchema,
+  replyToAnnotationInputSchema,
   sendCurrentContextInputSchema,
   setReadingSessionStatusInputSchema,
   setSourceManifestInputSchema,
@@ -85,6 +88,59 @@ describe("sendCurrentContextInputSchema", () => {
     });
 
     expect(result).not.toHaveProperty("sourceContext");
+  });
+});
+
+describe("threaded annotation schema contracts", () => {
+  it("accepts an exact anchored user comment and a Daddy reply", () => {
+    const created = createAnnotationInputSchema.parse({
+      sessionId: "session-1",
+      position: { kind: "paragraph", index: 12, label: "第 12 段" },
+      anchor: {
+        selectedText: "她把信折好",
+        startOffset: 3,
+        endOffset: 9,
+        prefix: "雨停后，",
+        suffix: "放回抽屉。"
+      },
+      author: "user",
+      comment: "这里像是在告别。",
+      operationId: "annotation-op-1"
+    });
+    const replied = replyToAnnotationInputSchema.parse({
+      sessionId: "session-1",
+      annotationId: "annotation-1",
+      author: "assistant",
+      text: "而且是很克制的告别。",
+      operationId: "reply-op-1"
+    });
+
+    expect(created.anchor.selectedText).toBe("她把信折好");
+    expect(replied.author).toBe("assistant");
+    expect(
+      listAnnotationsInputSchema.parse({
+        sessionId: "session-1",
+        positionIndex: 12
+      }).positionIndex
+    ).toBe(12);
+  });
+
+  it("rejects inverted offsets and unexpected fields", () => {
+    expect(() =>
+      createAnnotationInputSchema.parse({
+        sessionId: "session-1",
+        position: { kind: "paragraph", index: 1, label: "第 1 段" },
+        anchor: { selectedText: "原文", startOffset: 5, endOffset: 3 },
+        author: "user",
+        operationId: "annotation-op-1"
+      })
+    ).toThrow();
+    expect(() =>
+      listAnnotationsInputSchema.parse({
+        sessionId: "session-1",
+        sourceText: "整本书"
+      })
+    ).toThrow();
   });
 });
 

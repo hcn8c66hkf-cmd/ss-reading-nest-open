@@ -5,13 +5,15 @@ import type {
   MangaLocalCache,
   NovelLocalCache,
   ReadingCommentMode,
+  ReadingAnnotation,
   ReadingPosition,
   ReadingSession,
   ReadingType,
   SessionBundle,
   SessionPreferences,
   SourceAvailability,
-  SourceManifest
+  SourceManifest,
+  TextAnchor
 } from "@ss/shared";
 import { DEFAULT_SESSION_PREFERENCES } from "@ss/shared";
 import {
@@ -73,6 +75,7 @@ import { IndexedDbReadingCache } from "./storage/indexeddb-cache.js";
 
 type Screen = "home" | "setup" | "novel" | "manga";
 type Overlay = "cache" | "more" | "diary" | "management" | null;
+type ThemeMode = "light" | "dark";
 type ImportProgress = {
   stage:
     | "idle"
@@ -118,6 +121,7 @@ export function App() {
     [sourceEndpointBase]
   );
   const [restoredWidgetState] = useState(() => initialWidgetState());
+  const [themeMode, setThemeMode] = useState<ThemeMode>(() => readInitialTheme());
   const [screen, setScreen] = useState<Screen>(() =>
     restoredWidgetState?.screen === "novel" || restoredWidgetState?.screen === "manga"
       ? restoredWidgetState.screen
@@ -150,6 +154,10 @@ export function App() {
   const [companionComments, setCompanionComments] = useState<CompanionComment[]>([]);
   const [companionLoading, setCompanionLoading] = useState(false);
   const [companionError, setCompanionError] = useState("");
+  const [annotations, setAnnotations] = useState<ReadingAnnotation[]>([]);
+  const [annotationsLoading, setAnnotationsLoading] = useState(false);
+  const [annotationsError, setAnnotationsError] = useState("");
+  const [annotationSaving, setAnnotationSaving] = useState(false);
   const [pendingCommentDraft, setPendingCommentDraft] =
     useState<PendingCompanionCommentDraft | null>(null);
   const [pendingCommentSaving, setPendingCommentSaving] = useState(false);
@@ -207,6 +215,31 @@ export function App() {
           .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
           .slice(0, 20)
       );
+      const liveJob = syncJobRef.current;
+      if (liveJob?.mode === "live_reading") {
+        const liveComment = comments.find(
+          (comment) =>
+            comment.sessionId === sessionId &&
+            comment.source === "live_reading" &&
+            comment.operationId === liveJob.batches[0]?.id
+        );
+        if (liveComment) {
+          setSessionBundle((current) =>
+            current?.session.id === sessionId
+              ? {
+                  ...current,
+                  session: {
+                    ...current.session,
+                    assistantSyncedPosition: liveComment.position,
+                    updatedAt: new Date().toISOString()
+                  }
+                }
+              : current
+          );
+          clearSyncJobState();
+          void cache.removeSyncJob(sessionId).catch(() => undefined);
+        }
+      }
       setCompanionError("");
     } catch {
       if (!background) {
@@ -217,6 +250,46 @@ export function App() {
       if (!background) setCompanionLoading(false);
     }
   }, []);
+
+  const loadAnnotations = useCallback(
+    async (sessionId: string, positionIndex: number, background = false) => {
+      if (!background) setAnnotationsLoading(true);
+      try {
+        const result = await callTool("list_annotations", {
+          sessionId,
+          positionIndex
+        });
+        const next = Array.isArray(result.structuredContent?.annotations)
+          ? (result.structuredContent.annotations as ReadingAnnotation[])
+          : [];
+        setAnnotations(
+          next.filter(
+            (annotation) =>
+              annotation.sessionId === sessionId &&
+              annotation.position.index === positionIndex
+          )
+        );
+        setAnnotationsError("");
+      } catch {
+        if (!background) {
+          setAnnotations([]);
+          setAnnotationsError("书边批注暂时没有读取成功。");
+        }
+      } finally {
+        if (!background) setAnnotationsLoading(false);
+      }
+    },
+    []
+  );
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = themeMode;
+    try {
+      window.localStorage.setItem("ss-reading-theme", themeMode);
+    } catch {
+      // Theme persistence is a convenience; reading still works without storage.
+    }
+  }, [themeMode]);
 
   useEffect(() => {
     const sessionId = sessionBundle?.session.id;
@@ -236,6 +309,21 @@ export function App() {
     }, 4_000);
     return () => window.clearInterval(timer);
   }, [loadCompanionComments, screen, sessionBundle?.session.id]);
+
+  useEffect(() => {
+    const sessionId = sessionBundle?.session.id;
+    const positionIndex = sessionBundle?.session.userCurrentPosition.index;
+    if (screen !== "novel" || !sessionId || !positionIndex) {
+      setAnnotations([]);
+      setAnnotationsError("");
+      return;
+    }
+    void loadAnnotations(sessionId, positionIndex);
+    const timer = window.setInterval(() => {
+      void loadAnnotations(sessionId, positionIndex, true);
+    }, 4_000);
+    return () => window.clearInterval(timer);
+  }, [loadAnnotations, screen, sessionBundle?.session.id, sessionBundle?.session.userCurrentPosition.index]);
 
   useEffect(() => {
     if (!readerImmersive) return;
@@ -279,78 +367,10 @@ export function App() {
           session.sourceManifest ?? null,
           local?.metadata.sourceManifest ?? null
         );
-        if (sourceAvailability === "available_cloud") {
-          setRecent((items) =>
-            items.map((candidate) =>
-              candidate.session.id === session.id
-                ? { ...candidate, sourceAvailability: "restoring_from_cloud" }
-                : candidate
-            )
-          );
-          try {
-            if (session.type === "novel") {
-              const restored = await cloudSourceClient.restoreNovelSource({ sessionId: session.id });
-              const restoredChunks = splitNovelTextForVersion(
-                restored.sourceText,
-                restored.sourceManifest.segmentationVersion
-              );
-              const localManifest = {
-                ...restored.sourceManifest,
-                paragraphCount: restoredChunks.length
-              };
-              const restoredAvailability = getSourceAvailability(
-                restored.sourceManifest,
-                localManifest
-              );
-              if (restoredAvailability !== "available_local") {
-                throw new Error("Restored source did not match its manifest");
-              }
-              session = {
-                ...session,
-                sourceManifest: restored.sourceManifest
-              };
-              await rememberNovel(session, restored.sourceText, restoredChunks, restored.sourceManifest);
-            } else {
-              if (!session.sourceManifest) throw new Error("Missing manga source manifest");
-              const pages = await restoreMangaPages(session, cloudSourceClient);
-              await rememberManga(
-                { ...session, sourceManifest: session.sourceManifest },
-                pages.map((page) => page.file),
-                session.sourceManifest
-              );
-            }
-            sourceAvailability = "available_local";
-          } catch {
-            sourceAvailability = "cloud_restore_failed";
-          }
-        }
-        let latestComment: string | undefined;
-        try {
-          const result = await callTool("list_companion_comments", {
-            sessionId: session.id,
-            scope: "recent",
-            limit: 1
-          });
-          const comments = result.structuredContent?.comments;
-          const comment = Array.isArray(comments)
-            ? (comments as CompanionComment[]).find(
-                (candidate) =>
-                  candidate.sessionId === session.id &&
-                  candidate.inRecent
-              )
-            : undefined;
-          latestComment =
-            comment?.mode === "deep_analysis"
-              ? "已生成长评，可回聊天区查看。"
-              : comment?.text;
-        } catch {
-          latestComment = undefined;
-        }
         return {
           ...item,
           session,
-          sourceAvailability,
-          ...(latestComment ? { latestComment } : {})
+          sourceAvailability
         };
       })
     ).then((items) => {
@@ -365,7 +385,7 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [cloudSourceClient, recent.length, screen]);
+  }, [recent.length, screen]);
 
   useEffect(() => {
     if (!toast) return;
@@ -444,6 +464,76 @@ export function App() {
       setRemembered(true);
       setScreen("manga");
       return;
+    }
+    if (availability === "available_cloud") {
+      setSourceAvailability("restoring_from_cloud");
+      setToast("正在从云端取回这本书，只恢复你点开的这一部。" );
+      try {
+        if (nextItem.session.type === "novel") {
+          const restored = await cloudSourceClient.restoreNovelSource({
+            sessionId: nextItem.session.id
+          });
+          const restoredChunks = splitNovelTextForVersion(
+            restored.sourceText,
+            restored.sourceManifest.segmentationVersion
+          );
+          const localManifest = {
+            ...restored.sourceManifest,
+            paragraphCount: restoredChunks.length
+          };
+          if (
+            getSourceAvailability(restored.sourceManifest, localManifest) !==
+            "available_local"
+          ) {
+            throw new Error("Restored source did not match its manifest");
+          }
+          const restoredSession = {
+            ...nextItem.session,
+            sourceManifest: restored.sourceManifest
+          };
+          const restoredBundle = { ...nextItem, session: restoredSession };
+          await rememberNovel(
+            restoredSession,
+            restored.sourceText,
+            restoredChunks,
+            restored.sourceManifest
+          );
+          setSessionBundle(restoredBundle);
+          setChunks(restoredChunks);
+          setSourceText(restored.sourceText);
+          setRemembered(true);
+          setSourceAvailability("available_local");
+          setScreen("novel");
+          setToast("云端正文已经恢复，可以继续读啦。" );
+          return;
+        }
+        if (!nextItem.session.sourceManifest) throw new Error("Missing source manifest");
+        const pages = await restoreMangaPages(nextItem.session, cloudSourceClient);
+        await rememberManga(
+          nextItem.session,
+          pages.map((page) => page.file),
+          nextItem.session.sourceManifest
+        );
+        setMangaPages(pages);
+        setRemembered(true);
+        setSourceAvailability("available_local");
+        setScreen("manga");
+        setToast("云端漫画已经恢复，可以继续读啦。" );
+        return;
+      } catch {
+        setSourceAvailability("cloud_restore_failed");
+        setRecent((items) =>
+          items.map((candidate) =>
+            candidate.session.id === nextItem.session.id
+              ? { ...candidate, sourceAvailability: "cloud_restore_failed" }
+              : candidate
+          )
+        );
+        setSessionBundle(null);
+        setScreen("home");
+        setToast("这次云端恢复没有成功，可以重试或重新导入正文。" );
+        return;
+      }
     }
     setExistingSession(nextItem.session);
     setTitle(nextItem.session.title);
@@ -1054,7 +1144,8 @@ export function App() {
   async function lookAtNovel(
     currentText: string,
     selectedText: string,
-    preferenceOverride?: Pick<SessionPreferences, "readingCommentMode" | "commentLength">
+    preferenceOverride?: Pick<SessionPreferences, "readingCommentMode" | "commentLength">,
+    selectedAnchor?: TextAnchor
   ) {
     if (!sessionBundle) return;
     if (syncRequestInFlight) return;
@@ -1074,6 +1165,8 @@ export function App() {
         title: sessionBundle.session.title,
         position: sessionBundle.session.userCurrentPosition.index,
         text: currentText,
+        ...(selectedText ? { selectedText } : {}),
+        ...(selectedAnchor ? { selectedAnchor } : {}),
         hasUnconfirmedGap:
           sessionBundle.session.userCurrentPosition.index >
           (sessionBundle.session.assistantSyncedPosition?.index ?? 0),
@@ -1126,14 +1219,18 @@ export function App() {
     }
   }
 
-  async function requestNovelSync(currentText: string, selectedText: string) {
+  async function requestNovelSync(
+    currentText: string,
+    selectedText: string,
+    selectedAnchor?: TextAnchor
+  ) {
     if (!sessionBundle) return;
     if (syncRequestInFlight || syncJobRef.current) return;
     const userIndex = sessionBundle.session.userCurrentPosition.index;
     const assistantIndex = sessionBundle.session.assistantSyncedPosition?.index ?? 0;
     if (userIndex <= assistantIndex) {
       setToast("Daddy已经看到这里啦，正在换个角度陪你看。");
-      await lookAtNovel(currentText, selectedText);
+      await lookAtNovel(currentText, selectedText, undefined, selectedAnchor);
       return;
     }
     if (!allowAutomaticSync("range_sync")) return;
@@ -1462,7 +1559,7 @@ export function App() {
         return;
       }
       const sourceContext = getSourceContext(session.sourceManifest);
-      const start = Math.max(1, index - 1);
+      const start = index;
       const text = chunks
         .slice(start - 1, index)
         .map((chunk, offset) => `【第 ${start + offset} 段】\n${chunk}`)
@@ -1783,6 +1880,79 @@ export function App() {
     }
   }
 
+  async function createReadingAnnotation(anchor: TextAnchor, comment?: string) {
+    if (!sessionBundle || annotationSaving) return;
+    setAnnotationSaving(true);
+    try {
+      const result = await callTool("create_annotation", {
+        sessionId: sessionBundle.session.id,
+        position: sessionBundle.session.userCurrentPosition,
+        anchor,
+        author: "user",
+        ...(comment ? { comment } : {}),
+        operationId: `user-annotation-${crypto.randomUUID()}`
+      });
+      const annotation = result.structuredContent?.annotation as
+        | ReadingAnnotation
+        | undefined;
+      if (!annotation) throw new Error("Missing annotation");
+      setAnnotations((current) => [
+        ...current.filter((item) => item.id !== annotation.id),
+        annotation
+      ]);
+      setToast(comment ? "你的划线和评论都留在书边啦。" : "这句话已经划好线。" );
+    } catch {
+      setToast("划线批注没有保存成功，请重试。");
+    } finally {
+      setAnnotationSaving(false);
+    }
+  }
+
+  async function replyToReadingAnnotation(annotationId: string, text: string) {
+    if (!sessionBundle || annotationSaving) return;
+    setAnnotationSaving(true);
+    try {
+      const result = await callTool("reply_to_annotation", {
+        sessionId: sessionBundle.session.id,
+        annotationId,
+        author: "user",
+        text,
+        operationId: `user-reply-${crypto.randomUUID()}`
+      });
+      const annotation = result.structuredContent?.annotation as
+        | ReadingAnnotation
+        | undefined;
+      if (!annotation) throw new Error("Missing annotation");
+      setAnnotations((current) =>
+        current.map((item) => (item.id === annotation.id ? annotation : item))
+      );
+      setToast("回复已经接在这条批注下面。" );
+    } catch {
+      setToast("这条回复没有保存成功，请重试。");
+    } finally {
+      setAnnotationSaving(false);
+    }
+  }
+
+  async function askDaddyToReply(annotation: ReadingAnnotation) {
+    if (!sessionBundle) return;
+    const operationId = `assistant-reply-${crypto.randomUUID()}`;
+    const thread = annotation.messages
+      .map((message) => `${message.author === "assistant" ? "Daddy" : "用户"}：${message.text}`)
+      .join("\n");
+    await askChatGpt(
+      [
+        `我们正在共读《${sessionBundle.session.title}》的${annotation.position.label}。`,
+        `划线原文：${annotation.anchor.selectedText}`,
+        thread ? `当前评论线程：\n${thread}` : "当前只有划线，还没有评论。",
+        "请自然地接着这条批注回复，先调用 reply_to_annotation 把你的回复写回书边，再在聊天区说同样的话。",
+        `调用参数：sessionId=${sessionBundle.session.id} annotationId=${annotation.id} author=assistant operationId=${operationId} text=你的最终回复全文。`
+      ].join("\n\n"),
+      { scrollToBottom: false }
+    );
+    setToast("已经请Daddy来回这条批注啦。" );
+  }
+
   function rememberPendingCommentDraft(input: {
     position: ReadingPosition;
     mode: ReadingCommentMode;
@@ -2018,6 +2188,19 @@ export function App() {
 
   return (
     <div className="app">
+      {screen === "home" || screen === "setup" ? (
+        <button
+          type="button"
+          className="appearance-toggle"
+          aria-label={themeMode === "dark" ? "切换为白天模式" : "切换为夜间模式"}
+          title={themeMode === "dark" ? "白天模式" : "夜间模式"}
+          onClick={() =>
+            setThemeMode((current) => (current === "dark" ? "light" : "dark"))
+          }
+        >
+          {themeMode === "dark" ? "☀︎" : "☾"}
+        </button>
+      ) : null}
       {screen === "home" ? (
         <Home
           bookshelf={recent}
@@ -2073,7 +2256,7 @@ export function App() {
             <label className="file-drop">导入漫画图片<input type="file" accept="image/*" multiple onChange={(e) => setSelectedFiles(Array.from(e.target.files ?? []))} /><span>{selectedFiles.length ? `已选择 ${selectedFiles.length} 张` : "点击选择多张图片"}</span></label>
           )}
           <label className="remember-row"><input type="checkbox" checked={remembered} onChange={(e) => setRemembered(e.target.checked)} />在本设备记住{setupType === "novel" ? "这本书" : "这部漫画"}</label>
-          <p className="privacy-note">正文/图片只保存在本设备，用于下次继续阅读；服务器不会保存全文或漫画原图。</p>
+          <p className="privacy-note">勾选后会在本设备保留一份加速缓存；原文也会经私密接口保存到你的私人云端，供网页端与 iPad 恢复，不会生成公开链接。</p>
           {existingSession ? (
             <section className="setup-companion-summary" aria-label="Daddy最近短评">
               <div>
@@ -2115,9 +2298,24 @@ export function App() {
           onPosition={changePosition}
           onLook={requestNovelSync}
           onSaveQuote={saveQuote}
+          annotations={annotations}
+          annotationsLoading={annotationsLoading}
+          annotationsError={annotationsError || undefined}
+          annotationSaving={annotationSaving}
+          onCreateAnnotation={(anchor, comment) =>
+            void createReadingAnnotation(anchor, comment)
+          }
+          onReplyAnnotation={(annotationId, text) =>
+            void replyToReadingAnnotation(annotationId, text)
+          }
+          onAskDaddyReply={(annotation) => void askDaddyToReply(annotation)}
           onFinish={finishToday}
           onFullscreen={() => void openFullscreenReader()}
           fullscreenLabel={readerImmersive ? "退出全屏" : "全屏阅读"}
+          themeMode={themeMode}
+          onToggleTheme={() =>
+            setThemeMode((current) => (current === "dark" ? "light" : "dark"))
+          }
           immersive={readerImmersive}
           companionComments={companionComments}
           companionLoading={companionLoading}
@@ -2150,6 +2348,10 @@ export function App() {
           onFinish={finishToday}
           onFullscreen={() => void openFullscreenReader()}
           fullscreenLabel={readerImmersive ? "退出全屏" : "全屏阅读"}
+          themeMode={themeMode}
+          onToggleTheme={() =>
+            setThemeMode((current) => (current === "dark" ? "light" : "dark"))
+          }
           immersive={readerImmersive}
           companionComments={companionComments}
           companionLoading={companionLoading}
@@ -2231,7 +2433,7 @@ export function App() {
           onCancel={() => setSyncChoiceOpen(false)}
         />
       ) : null}
-      {syncJob ? (
+      {syncJob && syncJob.mode !== "live_reading" ? (
         <SyncProgressSheet
           job={syncJob}
           onConfirm={() => void confirmSyncBatch()}
@@ -2260,6 +2462,19 @@ function createLocalSession(title: string, type: ReadingType): ReadingSession {
     updatedAt: now,
     lastReadAt: now
   };
+}
+
+function readInitialTheme(): ThemeMode {
+  try {
+    const stored = window.localStorage.getItem("ss-reading-theme");
+    if (stored === "light" || stored === "dark") return stored;
+  } catch {
+    // Fall through to the host or system preference.
+  }
+  if (window.openai?.theme === "light" || window.openai?.theme === "dark") {
+    return window.openai.theme;
+  }
+  return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
 function formatCloudUploadDiagnostics(

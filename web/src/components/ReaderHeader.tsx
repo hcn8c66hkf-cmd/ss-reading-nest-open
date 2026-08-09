@@ -2,8 +2,10 @@ export function ReaderHeader(props: {
   title: string;
   progress: string;
   fullscreenLabel?: string;
+  themeMode?: "light" | "dark";
   onBack: () => void;
   onFullscreen: () => void;
+  onToggleTheme?: () => void;
   onSettings: () => void;
   onMore: () => void;
 }) {
@@ -15,6 +17,16 @@ export function ReaderHeader(props: {
         <span>{props.progress}</span>
       </div>
       <div className="header-buttons">
+        {props.onToggleTheme ? (
+          <button
+            className="icon-button reader-theme-button"
+            onClick={props.onToggleTheme}
+            aria-label={props.themeMode === "dark" ? "切换为白天模式" : "切换为夜间模式"}
+            title={props.themeMode === "dark" ? "白天模式" : "夜间模式"}
+          >
+            {props.themeMode === "dark" ? "☀︎" : "☾"}
+          </button>
+        ) : null}
         <button className="reader-display-button" onClick={props.onFullscreen}>
           {props.fullscreenLabel ?? "全屏阅读"}
         </button>

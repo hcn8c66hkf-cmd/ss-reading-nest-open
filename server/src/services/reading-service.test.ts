@@ -113,6 +113,63 @@ describe("ReadingService", () => {
     expect(secondAfter.session.title).toBe("第二本");
   });
 
+  it("stores anchored user comments and threaded Daddy replies idempotently", async () => {
+    let sequence = 0;
+    const annotationService = new ReadingService(repository, {
+      now: () => new Date(`2026-06-22T10:00:0${sequence}.000Z`),
+      id: () => `annotation-id-${++sequence}`
+    });
+    const session = await annotationService.startSession("批注测试", "novel");
+    const created = await annotationService.createAnnotation({
+      sessionId: session.id,
+      position: { kind: "paragraph", index: 3, label: "第 3 段" },
+      anchor: {
+        selectedText: "雨落在旧信封上",
+        startOffset: 4,
+        endOffset: 11,
+        prefix: "她看见",
+        suffix: "，墨迹慢慢洇开。"
+      },
+      author: "user",
+      comment: "这句好像在替她哭。",
+      operationId: "create-annotation-1"
+    });
+    const repeated = await annotationService.createAnnotation({
+      sessionId: session.id,
+      position: { kind: "paragraph", index: 3, label: "第 3 段" },
+      anchor: { selectedText: "雨落在旧信封上" },
+      author: "user",
+      operationId: "create-annotation-1"
+    });
+    const replied = await annotationService.replyToAnnotation({
+      sessionId: session.id,
+      annotationId: created.id,
+      author: "assistant",
+      text: "嗯，连纸都替她留不住这句话。",
+      operationId: "reply-annotation-1"
+    });
+    await annotationService.replyToAnnotation({
+      sessionId: session.id,
+      annotationId: created.id,
+      author: "assistant",
+      text: "不会重复写入",
+      operationId: "reply-annotation-1"
+    });
+
+    const listed = await annotationService.listAnnotations({
+      sessionId: session.id,
+      positionIndex: 3
+    });
+
+    expect(repeated.id).toBe(created.id);
+    expect(replied.messages).toHaveLength(2);
+    expect(listed.annotations).toHaveLength(1);
+    expect(listed.annotations[0]?.messages.map((message) => message.author)).toEqual([
+      "user",
+      "assistant"
+    ]);
+  });
+
   it("deletes only one session and all of its structured records", async () => {
     const first = await service.startSession("第一本", "novel");
     const second = await service.startSession("第二本", "novel");
@@ -157,6 +214,7 @@ describe("ReadingService", () => {
     expect(database.reactions.some((item) => item.sessionId === first.id)).toBe(false);
     expect(database.bookmarks.some((item) => item.sessionId === first.id)).toBe(false);
     expect(database.companionComments.some((item) => item.sessionId === first.id)).toBe(false);
+    expect(database.annotations.some((item) => item.sessionId === first.id)).toBe(false);
     expect(await service.getSessionBundle(second.id)).toMatchObject({
       session: { id: second.id, title: "第二本" }
     });

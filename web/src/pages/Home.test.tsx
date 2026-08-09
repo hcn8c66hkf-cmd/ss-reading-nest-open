@@ -75,17 +75,23 @@ describe("Home bookshelf core", () => {
   });
 
   it("shows cloud restore states without exposing storage details", () => {
+    const onOpen = vi.fn();
+    const onReimport = vi.fn();
     const cloudItems: BookshelfItem[] = [
       makeItem("cloud", "云端书", "novel", "active", "available_cloud", "第 2 段", null),
       makeItem("restoring", "恢复中书", "novel", "active", "restoring_from_cloud", "第 3 段", null),
       makeItem("failed", "失败书", "novel", "active", "cloud_restore_failed", "第 4 段", null)
     ];
-    render(<Home bookshelf={cloudItems} onNew={vi.fn()} onOpen={vi.fn()} onReimport={vi.fn()} onManage={vi.fn()} />);
+    render(<Home bookshelf={cloudItems} onNew={vi.fn()} onOpen={onOpen} onReimport={onReimport} onManage={vi.fn()} />);
 
     expect(screen.getByText("云端可恢复")).toBeInTheDocument();
     expect(screen.getByText("正在从私人云端恢复正文")).toBeInTheDocument();
     expect(screen.getByText("恢复失败，请重新导入")).toBeInTheDocument();
     expect(screen.queryByText(/R2|objectKey|hash/)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "恢复正文《云端书》" }));
+    expect(onOpen).toHaveBeenCalledWith(cloudItems[0]);
+    expect(onReimport).not.toHaveBeenCalled();
   });
 });
 

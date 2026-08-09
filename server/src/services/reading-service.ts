@@ -11,6 +11,9 @@ import type {
   CompanionCommentSource,
   Quote,
   Reaction,
+  ReadingAnnotation,
+  AnnotationAuthor,
+  TextAnchor,
   ReadingCommentMode,
   ReadingDatabase,
   ReadingPosition,
@@ -237,6 +240,17 @@ export class ReadingService {
         createdAt: this.deps.now().toISOString()
       };
       database.companionComments.push(comment);
+      if (input.source === "live_reading") {
+        const current = session.assistantSyncedPosition;
+        if (
+          input.position.kind === session.userCurrentPosition.kind &&
+          input.position.index <= session.userCurrentPosition.index &&
+          (!current || input.position.index >= current.index)
+        ) {
+          session.assistantSyncedPosition = structuredClone(input.position);
+          session.updatedAt = comment.createdAt;
+        }
+      }
       this.pruneCompanionComments(database, input.sessionId, "recent");
       if (comment.inHistory) {
         this.pruneCompanionComments(database, input.sessionId, "history");
@@ -244,6 +258,104 @@ export class ReadingService {
       this.removeUnusedCompanionComments(database);
       return comment;
     });
+  }
+
+  async createAnnotation(input: {
+    sessionId: string;
+    position: ReadingPosition;
+    anchor: TextAnchor;
+    author: AnnotationAuthor;
+    comment?: string;
+    operationId: string;
+  }): Promise<ReadingAnnotation> {
+    return this.repository.mutate((database) => {
+      this.requireSession(database.sessions, input.sessionId);
+      const existing = database.annotations.find(
+        (item) =>
+          item.sessionId === input.sessionId &&
+          item.operationId === input.operationId
+      );
+      if (existing) return existing;
+      const now = this.deps.now().toISOString();
+      const annotation: ReadingAnnotation = {
+        id: this.deps.id(),
+        sessionId: input.sessionId,
+        position: structuredClone(input.position),
+        anchor: structuredClone(input.anchor),
+        createdBy: input.author,
+        messages: input.comment
+          ? [
+              {
+                id: this.deps.id(),
+                author: input.author,
+                text: input.comment,
+                operationId: input.operationId,
+                createdAt: now
+              }
+            ]
+          : [],
+        operationId: input.operationId,
+        createdAt: now,
+        updatedAt: now
+      };
+      database.annotations.push(annotation);
+      return annotation;
+    });
+  }
+
+  async replyToAnnotation(input: {
+    sessionId: string;
+    annotationId: string;
+    author: AnnotationAuthor;
+    text: string;
+    operationId: string;
+  }): Promise<ReadingAnnotation> {
+    return this.repository.mutate((database) => {
+      this.requireSession(database.sessions, input.sessionId);
+      const annotation = database.annotations.find(
+        (item) =>
+          item.id === input.annotationId && item.sessionId === input.sessionId
+      );
+      if (!annotation) {
+        throw new AppError("INVALID_OPERATION", "找不到这条划线批注。");
+      }
+      if (annotation.messages.some((message) => message.operationId === input.operationId)) {
+        return annotation;
+      }
+      const now = this.deps.now().toISOString();
+      annotation.messages.push({
+        id: this.deps.id(),
+        author: input.author,
+        text: input.text,
+        operationId: input.operationId,
+        createdAt: now
+      });
+      annotation.updatedAt = now;
+      return annotation;
+    });
+  }
+
+  async listAnnotations(input: {
+    sessionId: string;
+    positionIndex?: number;
+  }): Promise<{ annotations: ReadingAnnotation[] }> {
+    const database = await this.repository.read();
+    this.requireSession(database.sessions, input.sessionId);
+    return {
+      annotations: database.annotations
+        .filter(
+          (annotation) =>
+            annotation.sessionId === input.sessionId &&
+            (input.positionIndex === undefined ||
+              annotation.position.index === input.positionIndex)
+        )
+        .sort(
+          (left, right) =>
+            left.position.index - right.position.index ||
+            left.createdAt.localeCompare(right.createdAt)
+        )
+        .map((annotation) => structuredClone(annotation))
+    };
   }
 
   async clearCompanionComments(
@@ -496,6 +608,9 @@ export class ReadingService {
       database.reactions = database.reactions.filter((item) => item.sessionId !== sessionId);
       database.bookmarks = database.bookmarks.filter((item) => item.sessionId !== sessionId);
       database.companionComments = database.companionComments.filter(
+        (item) => item.sessionId !== sessionId
+      );
+      database.annotations = database.annotations.filter(
         (item) => item.sessionId !== sessionId
       );
       return {

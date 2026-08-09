@@ -4,11 +4,12 @@ import {
   type ErrorInfo,
   type ReactNode,
   useEffect,
+  useRef,
   useState
 } from "react";
 
-const RESOURCE_VERSION = "app-v19";
-const APP_VERSION = "0.2.2";
+const RESOURCE_VERSION = "app-v20";
+const APP_VERSION = "0.3.0";
 
 type AppModule = {
   App: ComponentType;
@@ -37,12 +38,14 @@ export function Boot({ loadApp = () => import("./App.js") }: BootProps) {
   const [stage, setStage] = useState<BootStage>("booting");
   const [AppComponent, setAppComponent] = useState<ComponentType | null>(null);
   const [error, setError] = useState<BootError | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  const readyRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
     const reportGlobalError = (event: ErrorEvent | PromiseRejectionEvent) => {
       const reason = "reason" in event ? event.reason : event.error;
-      if (!cancelled) {
+      if (!cancelled && !readyRef.current) {
         setError({
           stage: "failed",
           message: sanitizeErrorMessage(reason)
@@ -53,11 +56,14 @@ export function Boot({ loadApp = () => import("./App.js") }: BootProps) {
     window.addEventListener("unhandledrejection", reportGlobalError);
 
     setStage("loading-app");
+    setError(null);
+    readyRef.current = false;
     loadApp()
       .then((module) => {
         if (cancelled) return;
         setAppComponent(() => module.App);
         setStage("ready");
+        readyRef.current = true;
       })
       .catch((reason) => {
         if (cancelled) return;
@@ -73,10 +79,19 @@ export function Boot({ loadApp = () => import("./App.js") }: BootProps) {
       window.removeEventListener("error", reportGlobalError);
       window.removeEventListener("unhandledrejection", reportGlobalError);
     };
-  }, [loadApp]);
+  }, [attempt, loadApp]);
 
   if (error) {
-    return <BootDiagnostics stage={error.stage} errorMessage={error.message} />;
+    return (
+      <BootDiagnostics
+        stage={error.stage}
+        errorMessage={error.message}
+        onRetry={() => {
+          setAppComponent(null);
+          setAttempt((value) => value + 1);
+        }}
+      />
+    );
   }
 
   if (!AppComponent) {
@@ -112,6 +127,7 @@ class BootErrorBoundary extends Component<BoundaryProps, BoundaryState> {
         <BootDiagnostics
           stage={this.state.error.stage}
           errorMessage={this.state.error.message}
+          onRetry={() => window.location.reload()}
         />
       );
     }
@@ -121,10 +137,12 @@ class BootErrorBoundary extends Component<BoundaryProps, BoundaryState> {
 
 export function BootDiagnostics({
   stage,
-  errorMessage
+  errorMessage,
+  onRetry
 }: {
   stage: BootStage;
   errorMessage?: string;
+  onRetry?: () => void;
 }) {
   const toolOutput = window.openai?.toolOutput as
     | { sourceEndpointBase?: string; bookshelfSessions?: unknown[]; recentSessions?: unknown[] }
@@ -136,6 +154,11 @@ export function BootDiagnostics({
     <main className="boot-diagnostics" role="alert" aria-live="polite">
       <strong>SxS 小窝加载诊断</strong>
       <p>组件还没有正常显示。请刷新小窝；如果仍是空白，把这块信息截图给 Codex。</p>
+      {errorMessage && onRetry ? (
+        <button type="button" className="boot-retry" onClick={onRetry}>
+          重新加载小窝
+        </button>
+      ) : null}
       <dl>
         <div>
           <dt>resourceVersion</dt>

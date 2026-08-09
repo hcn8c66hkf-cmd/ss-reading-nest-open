@@ -158,13 +158,44 @@ export interface CompanionComment {
   updatedAt?: string;
 }
 
+export type AnnotationAuthor = "user" | "assistant";
+
+export interface TextAnchor {
+  selectedText: string;
+  startOffset?: number;
+  endOffset?: number;
+  prefix?: string;
+  suffix?: string;
+}
+
+export interface AnnotationMessage {
+  id: string;
+  author: AnnotationAuthor;
+  text: string;
+  operationId?: string;
+  createdAt: string;
+}
+
+export interface ReadingAnnotation {
+  id: string;
+  sessionId: string;
+  position: ReadingPosition;
+  anchor: TextAnchor;
+  createdBy: AnnotationAuthor;
+  messages: AnnotationMessage[];
+  operationId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface ReadingDatabase {
-  schemaVersion: 4;
+  schemaVersion: 5;
   sessions: ReadingSession[];
   quotes: Quote[];
   reactions: Reaction[];
   bookmarks: Bookmark[];
   companionComments: CompanionComment[];
+  annotations: ReadingAnnotation[];
 }
 
 export type ReadingSyncMode =

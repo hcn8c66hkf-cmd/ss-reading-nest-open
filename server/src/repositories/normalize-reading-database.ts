@@ -6,18 +6,34 @@ import {
   type Reaction,
   type ReadingDatabase,
   type ReadingSession,
+  type ReadingAnnotation,
   type SourceManifest
 } from "@ss/shared";
 
 export function normalizeReadingDatabase(input: unknown): ReadingDatabase {
   const database = migrateReadingDatabase(input);
   return {
-    schemaVersion: 4,
+    schemaVersion: 5,
     sessions: database.sessions.map(copySession),
     quotes: database.quotes.map(copyQuote),
     reactions: database.reactions.map(copyReaction),
     bookmarks: database.bookmarks.map(copyBookmark),
-    companionComments: database.companionComments.map(copyCompanionComment)
+    companionComments: database.companionComments.map(copyCompanionComment),
+    annotations: database.annotations.map(copyAnnotation)
+  };
+}
+
+function copyAnnotation(annotation: ReadingAnnotation): ReadingAnnotation {
+  return {
+    id: annotation.id,
+    sessionId: annotation.sessionId,
+    position: structuredClone(annotation.position),
+    anchor: structuredClone(annotation.anchor),
+    createdBy: annotation.createdBy,
+    messages: structuredClone(annotation.messages),
+    ...(annotation.operationId ? { operationId: annotation.operationId } : {}),
+    createdAt: annotation.createdAt,
+    updatedAt: annotation.updatedAt
   };
 }
 
