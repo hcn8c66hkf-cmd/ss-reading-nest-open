@@ -20,9 +20,11 @@ export interface CloudSourceUploadResult {
   diagnostics: CloudUploadDiagnostics;
 }
 
-const RESOURCE_VERSION = "app-v19";
-const APP_VERSION = "0.2.2";
+const RESOURCE_VERSION = "app-v20";
+const APP_VERSION = "0.3.0";
 const MAX_BRIDGE_NOVEL_UPLOAD_BYTES = 2 * 1024 * 1024;
+
+class NonRetryableRequestError extends Error {}
 
 export class CloudSourceClient {
   constructor(
@@ -143,22 +145,35 @@ export class CloudSourceClient {
 
   private async post<T>(path: string, body: Record<string, unknown>): Promise<T> {
     const uploadUrl = `${this.endpointBase}${path}`;
-    let response: Response;
-    try {
-      response = await this.fetchFn(uploadUrl, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        credentials: "omit",
-        body: JSON.stringify(body)
-      });
-    } catch (error) {
-      throw new Error(buildFetchBlockedMessage(uploadUrl, error));
+    let lastError: unknown;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        const response = await this.fetchFn(uploadUrl, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          credentials: "omit",
+          body: JSON.stringify(body)
+        });
+        const payload = (await response.json()) as { error?: string };
+        if (!response.ok) {
+          const message = payload.error ?? `云端正文请求失败（HTTP ${response.status}）`;
+          const error =
+            response.status < 500
+              ? new NonRetryableRequestError(message)
+              : new Error(message);
+          if (response.status < 500 || attempt === 2) throw error;
+          lastError = error;
+        } else {
+          return payload as T;
+        }
+      } catch (error) {
+        if (error instanceof NonRetryableRequestError) throw error;
+        lastError = error;
+        if (attempt === 2) break;
+      }
+      await waitForRetry(attempt);
     }
-    const payload = (await response.json()) as { error?: string };
-    if (!response.ok) {
-      throw new Error(payload.error ?? `云端正文请求失败（HTTP ${response.status}）`);
-    }
-    return payload as T;
+    throw new Error(buildFetchBlockedMessage(uploadUrl, lastError));
   }
 
   private async uploadViaTool(input: Record<string, unknown>): Promise<CloudSourceUploadResult> {
@@ -219,6 +234,12 @@ export class CloudSourceClient {
       };
     }
   }
+}
+
+function waitForRetry(attempt: number) {
+  return new Promise<void>((resolve) => {
+    window.setTimeout(resolve, attempt === 0 ? 250 : 700);
+  });
 }
 
 function hasPrivateSourceEndpoint(endpointBase: string): boolean {

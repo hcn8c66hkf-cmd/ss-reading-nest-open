@@ -30,7 +30,7 @@ export function CacheSettings(props: {
           />
         </label>
         <p className="privacy-note">
-          正文/图片只保存在本设备，用于下次继续阅读；服务器不会保存全文或漫画原图。
+          本设备缓存用于快速继续阅读；私人云端副本用于网页端与 iPad 恢复，不会生成公开链接。
         </p>
         <button className="danger-button" onClick={props.onClear}>
           {props.type === "novel" ? "清除正文缓存" : "清除漫画缓存"}

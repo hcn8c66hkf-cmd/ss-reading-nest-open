@@ -1840,7 +1840,7 @@ describe("App", () => {
     await deviceCache.remove("bridge-no-meta-session");
   });
 
-  it("automatically restores a cloud novel on Home when local cache is missing", async () => {
+  it("restores only the cloud novel the user opens when local cache is missing", async () => {
     const deviceCache = new IndexedDbReadingCache();
     await deviceCache.remove("cloud-restore-session");
     const sourceText = "恢复第一段。\n\n恢复第二段。";
@@ -1873,17 +1873,17 @@ describe("App", () => {
 
     render(<App />);
 
-    expect(await screen.findByText("正在从私人云端恢复正文")).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
+    fireEvent.click(
+      await screen.findByRole("button", { name: "恢复正文《云端恢复书》" })
+    );
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
         "/source/secret/restore",
         expect.objectContaining({ method: "POST" })
       );
     });
-    expect(await screen.findByText("当前设备可读")).toBeInTheDocument();
-    expect(
-      await screen.findByRole("button", { name: "继续阅读《云端恢复书》" })
-    ).toBeEnabled();
+    expect(await screen.findByText("恢复第二段。")).toBeInTheDocument();
     expect(await deviceCache.get("cloud-restore-session")).toMatchObject({
       sourceText,
       metadata: { sourceManifest: expect.objectContaining({ sourceId: "cloud-restore-source" }) }
@@ -1938,7 +1938,10 @@ describe("App", () => {
 
     render(<App />);
 
-    expect(await screen.findByText("当前设备可读")).toBeInTheDocument();
+    fireEvent.click(
+      await screen.findByRole("button", { name: "恢复正文《旧版云端书》" })
+    );
+    expect(await screen.findByText("旧版第二段。")).toBeInTheDocument();
     expect(await deviceCache.get("legacy-cloud-restore-session")).toMatchObject({
       chunks: ["旧版第一段。", "旧版第二段。"],
       metadata: {
@@ -1977,6 +1980,9 @@ describe("App", () => {
 
     render(<App />);
 
+    fireEvent.click(
+      await screen.findByRole("button", { name: "恢复正文《恢复失败书》" })
+    );
     expect(await screen.findByText("恢复失败，请重新导入")).toBeInTheDocument();
     expect(screen.getByText("用户：第 3 段")).toBeInTheDocument();
     expect(screen.getByText("嗑一下")).toBeInTheDocument();
@@ -2014,7 +2020,10 @@ describe("App", () => {
     });
 
     const firstRender = render(<App />);
-    expect(await screen.findByText("当前设备可读")).toBeInTheDocument();
+    fireEvent.click(
+      await screen.findByRole("button", { name: "恢复正文《iPad 云端书》" })
+    );
+    expect(await screen.findByText("刷新第二段。")).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
     firstRender.unmount();
@@ -2025,7 +2034,10 @@ describe("App", () => {
     await deviceCache.remove("ipad-cloud-session");
     secondRender.unmount();
     const thirdRender = render(<App />);
-    expect(await screen.findByText("当前设备可读")).toBeInTheDocument();
+    fireEvent.click(
+      await screen.findByRole("button", { name: "恢复正文《iPad 云端书》" })
+    );
+    expect(await screen.findByText("刷新第二段。")).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(screen.queryByText(/必须重新导入正文/)).not.toBeInTheDocument();
     thirdRender.unmount();
@@ -2273,8 +2285,10 @@ describe("App", () => {
 
     render(<App />);
 
-    expect(await screen.findByText("正在从私人云端恢复正文")).toBeInTheDocument();
-    expect(await screen.findByText("当前设备可读")).toBeInTheDocument();
+    fireEvent.click(
+      await screen.findByRole("button", { name: "恢复正文《云端漫画恢复》" })
+    );
+    expect(await screen.findByText("第 2 页 / 共 2 页")).toBeInTheDocument();
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     const cacheValue = (await deviceCache.get("cloud-manga-restore-session")) as MangaLocalCache | null;
     expect(cacheValue?.pages).toHaveLength(2);
@@ -2321,6 +2335,9 @@ describe("App", () => {
 
     render(<App />);
 
+    fireEvent.click(
+      await screen.findByRole("button", { name: "恢复正文《漫画恢复失败》" })
+    );
     expect(await screen.findByText("恢复失败，请重新导入")).toBeInTheDocument();
     expect(await deviceCache.get("cloud-manga-fail-session")).toBeNull();
   });

@@ -9,12 +9,13 @@ import { ReadingService } from "./reading-service.js";
 
 class MemoryRepository implements ReadingRepository {
   database: ReadingDatabase = {
-    schemaVersion: 3,
+    schemaVersion: 5,
     sessions: [],
     quotes: [],
     reactions: [],
     bookmarks: [],
-    companionComments: []
+    companionComments: [],
+    annotations: []
   };
 
   async read() {
@@ -63,6 +64,20 @@ async function startSessionWithHistory(service: ReadingService, title = "第一�
 }
 
 describe("ReadingService companion comments", () => {
+  it("uses a published live comment as proof that Daddy reached that position", async () => {
+    const { service } = createService();
+    const session = await service.startSession("第一本", "novel");
+    await service.updateUserPosition(session.id, position(6));
+
+    await service.publishCompanionComment({
+      ...commentInput(session.id, "live-comment-6", 6),
+      source: "live_reading"
+    });
+
+    expect((await service.getSessionBundle(session.id)).session.assistantSyncedPosition)
+      .toMatchObject({ index: 6, label: "第 6 段" });
+  });
+
   it("publishes idempotently with default recent and history flags", async () => {
     const { repository, service } = createService();
     const session = await startSessionWithHistory(service);

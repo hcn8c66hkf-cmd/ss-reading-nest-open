@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import {
   completeReadingSessionInputSchema,
+  createAnnotationInputSchema,
   clearCompanionCommentsInputSchema,
   confirmAssistantSyncedPositionInputSchema,
   finishTodayReadingInputSchema,
@@ -9,8 +10,10 @@ import {
   getCloudSourceStatusInputSchema,
   openReadingNestInputSchema,
   listCompanionCommentsInputSchema,
+  listAnnotationsInputSchema,
   publishCompanionCommentInputSchema,
   renameReadingSessionInputSchema,
+  replyToAnnotationInputSchema,
   saveBookmarkInputSchema,
   saveQuoteInputSchema,
   saveReactionInputSchema,
@@ -30,7 +33,7 @@ import { ReadingService } from "../services/reading-service.js";
 import type { CloudSourceService } from "../services/cloud-source-service.js";
 import { toolResult } from "./tool-result.js";
 
-export const READING_NEST_URI = "ui://ss-reading-nest/app-v19.html";
+export const READING_NEST_URI = "ui://ss-reading-nest/app-v20.html";
 
 const readOnly = {
   readOnlyHint: true,
@@ -143,6 +146,27 @@ export const TOOL_CONFIGS = {
       "Use this when the user explicitly clears recent, historical, or all companion comments for one session.",
     inputSchema: clearCompanionCommentsInputSchema,
     annotations: { ...mutation, idempotentHint: true }
+  },
+  create_annotation: {
+    title: "创建共读划线批注",
+    description:
+      "Use this when the user or assistant selects exact book text to underline, optionally with the first comment.",
+    inputSchema: createAnnotationInputSchema,
+    annotations: { ...mutation, idempotentHint: true }
+  },
+  reply_to_annotation: {
+    title: "回复共读批注",
+    description:
+      "Use this when the user or assistant replies inside an existing anchored annotation thread.",
+    inputSchema: replyToAnnotationInputSchema,
+    annotations: { ...mutation, idempotentHint: true }
+  },
+  list_annotations: {
+    title: "读取共读划线批注",
+    description:
+      "Use this when the reading widget needs anchored highlights and their reply threads.",
+    inputSchema: listAnnotationsInputSchema,
+    annotations: readOnly
   },
   rename_reading_session: {
     title: "重命名书籍",
@@ -327,7 +351,7 @@ export function registerReadingTools(
 
   registerAppTool(server, "upload_cloud_source", TOOL_CONFIGS.upload_cloud_source, async (input) => {
     if (!cloudSourceService) {
-      return toolResult({ uploaded: false }, "ç§äººäº‘ç«¯æ­£æ–‡æœåŠ¡å°šæœªå¯ç”¨ã€‚");
+      return toolResult({ uploaded: false }, "私人云端正文服务尚未启用。");
     }
     const result =
       input.sourceKind === "manga_import"
@@ -353,7 +377,7 @@ export function registerReadingTools(
         sessionId: input.sessionId,
         ...summarizeCloudSourceManifest(result.sourceManifest)
       },
-      "ç§äººäº‘ç«¯æ­£æ–‡å·²ä¸Šä¼ ã€‚"
+      "私人云端正文已上传。"
     );
     return {
       ...response,
@@ -419,6 +443,41 @@ export function registerReadingTools(
         { sessionId, scope, ...result },
         "已按用户选择清除这本书的陪读短评。"
       );
+    }
+  );
+
+  server.registerTool(
+    "create_annotation",
+    TOOL_CONFIGS.create_annotation,
+    async (input) => {
+      const annotation = await service.createAnnotation(input);
+      return toolResult(
+        { saved: true, annotation },
+        input.author === "assistant"
+          ? "Daddy的划线批注已写进这本书。"
+          : "你的划线批注已写进这本书。"
+      );
+    }
+  );
+
+  server.registerTool(
+    "reply_to_annotation",
+    TOOL_CONFIGS.reply_to_annotation,
+    async (input) => {
+      const annotation = await service.replyToAnnotation(input);
+      return toolResult(
+        { saved: true, annotation },
+        input.author === "assistant" ? "Daddy已经回复这条批注。" : "你的回复已经保存。"
+      );
+    }
+  );
+
+  server.registerTool(
+    "list_annotations",
+    TOOL_CONFIGS.list_annotations,
+    async (input) => {
+      const result = await service.listAnnotations(input);
+      return toolResult(result, "已读取这本书的共读划线与评论线程。");
     }
   );
 

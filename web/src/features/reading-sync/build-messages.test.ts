@@ -76,6 +76,7 @@ describe("reading-sync messages", () => {
       title: "测试小说",
       position: 8,
       text: "当前原文",
+      selectedText: "被选中的一句",
       hasUnconfirmedGap: true,
       mode: "reaction_only",
       length: "short",
@@ -95,6 +96,8 @@ describe("reading-sync messages", () => {
     });
 
     expect(current).toContain("当前原文");
+    expect(current).toContain("create_annotation");
+    expect(current).toContain('"anchor":{"selectedText":"被选中的一句"}');
     expect(current).toContain("中间存在未同步剧情");
     expect(current).toContain("1-5 句");
     expect(recent).toContain("最近原文");

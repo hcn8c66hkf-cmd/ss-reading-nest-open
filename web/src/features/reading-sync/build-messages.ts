@@ -1,5 +1,5 @@
 import type { ReadingSyncJob, SyncBatch } from "./types.js";
-import type { CommentLength, ReadingCommentMode } from "@ss/shared";
+import type { CommentLength, ReadingCommentMode, TextAnchor } from "@ss/shared";
 import { buildReadingCommentPrompt } from "../reading-comments/prompt-policy.js";
 
 export function buildBatchChatMessage(job: ReadingSyncJob, batch: SyncBatch) {
@@ -56,6 +56,8 @@ export function buildCurrentOnlyPrompt(input: {
   title: string;
   position: number;
   text: string;
+  selectedText?: string;
+  selectedAnchor?: TextAnchor;
   hasUnconfirmedGap: boolean;
   mode: ReadingCommentMode;
   length: CommentLength;
@@ -69,6 +71,23 @@ export function buildCurrentOnlyPrompt(input: {
       ? "中间存在未同步剧情，请不要假装知道未提供的内容。"
       : "请只分析当前段。",
     input.text,
+    input.selectedText
+      ? [
+          `用户明确选中的原文：${input.selectedText}`,
+          "请把对这句原文的最终回应写成书边批注：先调用 create_annotation，再在聊天区回复相同内容。",
+          `create_annotation 固定参数：${JSON.stringify({
+            sessionId: input.sessionId,
+            position: {
+              kind: "paragraph",
+              index: input.position,
+              label: `第 ${input.position} 段`
+            },
+            anchor: input.selectedAnchor ?? { selectedText: input.selectedText },
+            author: "assistant",
+            operationId: `assistant-annotation-${input.operationId}`
+          })}；另加 comment=你的最终回应全文。`
+        ].join("\n")
+      : "",
     "",
     buildReadingCommentPrompt({
       sessionId: input.sessionId,

@@ -29,7 +29,9 @@ export function MangaReader(props: {
   onBack: () => void;
   onFullscreen: () => void;
   fullscreenLabel?: string;
+  themeMode?: "light" | "dark";
   immersive?: boolean;
+  onToggleTheme?: () => void;
   onSettings: () => void;
   onMore: () => void;
   companionComments: CompanionComment[];
@@ -71,8 +73,10 @@ export function MangaReader(props: {
         title={props.session.title}
         progress={`第 ${index + 1} 页 / 共 ${props.pages.length} 页`}
         fullscreenLabel={props.fullscreenLabel}
+        themeMode={props.themeMode}
         onBack={props.onBack}
         onFullscreen={props.onFullscreen}
+        onToggleTheme={props.onToggleTheme}
         onSettings={props.onSettings}
         onMore={props.onMore}
       />

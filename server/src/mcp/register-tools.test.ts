@@ -202,8 +202,19 @@ describe("tool descriptors", () => {
     }
   });
 
-  it("exposes the three book-management tools and reaches twenty-three tools", () => {
-    expect(Object.keys(TOOL_CONFIGS)).toHaveLength(23);
+  it("exposes book management and threaded annotation tools", () => {
+    expect(Object.keys(TOOL_CONFIGS)).toHaveLength(26);
+    expect(TOOL_CONFIGS.create_annotation.annotations).toMatchObject({
+      readOnlyHint: false,
+      idempotentHint: true
+    });
+    expect(TOOL_CONFIGS.reply_to_annotation.annotations).toMatchObject({
+      readOnlyHint: false,
+      idempotentHint: true
+    });
+    expect(TOOL_CONFIGS.list_annotations.annotations).toMatchObject({
+      readOnlyHint: true
+    });
     expect(TOOL_CONFIGS.rename_reading_session.annotations).toMatchObject({
       readOnlyHint: false,
       idempotentHint: true

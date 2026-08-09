@@ -37,6 +37,7 @@ export const companionCommentSourceSchema = z.enum([
   "current_context",
   "manual_save"
 ]);
+export const annotationAuthorSchema = z.enum(["user", "assistant"]);
 export const readingPositionSchema = z.object({
   kind: z.enum(["paragraph", "page"]),
   index: z.number().int().min(1),
@@ -279,6 +280,53 @@ export const clearCompanionCommentsInputSchema = z
   .object({
     sessionId: sessionIdSchema,
     scope: z.enum(["recent", "history", "all"])
+  })
+  .strict();
+export const textAnchorSchema = z
+  .object({
+    selectedText: z.string().trim().min(1).max(10_000),
+    startOffset: z.number().int().min(0).optional(),
+    endOffset: z.number().int().min(1).optional(),
+    prefix: z.string().max(200).optional(),
+    suffix: z.string().max(200).optional()
+  })
+  .strict()
+  .superRefine((input, context) => {
+    if (
+      input.startOffset !== undefined &&
+      input.endOffset !== undefined &&
+      input.endOffset <= input.startOffset
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["endOffset"],
+        message: "endOffset must be greater than startOffset"
+      });
+    }
+  });
+export const createAnnotationInputSchema = z
+  .object({
+    sessionId: sessionIdSchema,
+    position: readingPositionSchema,
+    anchor: textAnchorSchema,
+    author: annotationAuthorSchema,
+    comment: z.string().trim().min(1).max(2_000).optional(),
+    operationId: z.string().min(1).max(200)
+  })
+  .strict();
+export const replyToAnnotationInputSchema = z
+  .object({
+    sessionId: sessionIdSchema,
+    annotationId: z.string().min(1),
+    author: annotationAuthorSchema,
+    text: z.string().trim().min(1).max(2_000),
+    operationId: z.string().min(1).max(200)
+  })
+  .strict();
+export const listAnnotationsInputSchema = z
+  .object({
+    sessionId: sessionIdSchema,
+    positionIndex: z.number().int().min(1).optional()
   })
   .strict();
 export const renameReadingSessionInputSchema = z

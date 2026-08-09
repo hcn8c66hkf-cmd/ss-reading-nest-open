@@ -124,6 +124,8 @@ function BookCard(props: {
 }) {
   const { item } = props;
   const available = item.sourceAvailability === "available_local";
+  const canOpen =
+    available || item.sourceAvailability === "available_cloud";
   const action = sourceAction(item);
   return (
     <article className="book-card">
@@ -158,7 +160,7 @@ function BookCard(props: {
         type="button"
         className={available ? "action-primary book-action" : "book-action"}
         aria-label={`${action.button}《${item.session.title}》`}
-        onClick={() => (available ? props.onOpen(item) : props.onReimport(item))}
+        onClick={() => (canOpen ? props.onOpen(item) : props.onReimport(item))}
       >
         {action.button}
       </button>
