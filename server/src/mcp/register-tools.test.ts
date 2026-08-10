@@ -7,10 +7,14 @@ import {
 } from "./register-tools.js";
 
 describe("tool descriptors", () => {
-  it("binds the UI resource only to the primary render tool", () => {
+  it("binds the current UI resource only to the primary render tool", () => {
+    expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v21.html");
     expect(TOOL_CONFIGS.open_reading_nest._meta?.ui).toEqual({
       resourceUri: READING_NEST_URI
     });
+    expect(TOOL_CONFIGS.open_reading_nest._meta?.["openai/outputTemplate"]).toBe(
+      READING_NEST_URI
+    );
     for (const [name, config] of Object.entries(TOOL_CONFIGS)) {
       if (name !== "open_reading_nest" && name !== "upload_cloud_source") {
         const meta = "_meta" in config ? (config._meta as Record<string, unknown>) : undefined;
