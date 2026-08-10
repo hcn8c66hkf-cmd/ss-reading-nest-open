@@ -33,7 +33,7 @@ import { ReadingService } from "../services/reading-service.js";
 import type { CloudSourceService } from "../services/cloud-source-service.js";
 import { toolResult } from "./tool-result.js";
 
-export const READING_NEST_URI = "ui://ss-reading-nest/app-v22.html";
+export const READING_NEST_URI = "ui://ss-reading-nest/app-v23.html";
 
 const readOnly = {
   readOnlyHint: true,
@@ -47,10 +47,23 @@ const mutation = {
 };
 
 export const TOOL_CONFIGS = {
-  open_reading_nest_v22: {
+  open_reading_nest_v23: {
     title: "打开 S×S 小窝共读",
     description:
-      "Use this primary v22 tool when the user wants to open the reading nest or continue recent reading.",
+      "Use this primary v23 tool when the user wants to open the reading nest or continue recent reading.",
+    inputSchema: openReadingNestInputSchema,
+    annotations: readOnly,
+    _meta: {
+      ui: { resourceUri: READING_NEST_URI },
+      "openai/outputTemplate": READING_NEST_URI,
+      "openai/toolInvocation/invoking": "正在点亮小窝…",
+      "openai/toolInvocation/invoked": "小窝已经准备好"
+    }
+  },
+  open_reading_nest_v22: {
+    title: "打开 S×S 小窝共读（v22 兼容入口）",
+    description:
+      "Legacy compatibility entry. Prefer open_reading_nest_v23 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -63,7 +76,7 @@ export const TOOL_CONFIGS = {
   open_reading_nest: {
     title: "打开 S×S 小窝共读（旧入口）",
     description:
-      "Legacy compatibility entry. Prefer open_reading_nest_v22 whenever it is available.",
+      "Legacy compatibility entry. Prefer open_reading_nest_v23 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -168,6 +181,13 @@ export const TOOL_CONFIGS = {
     inputSchema: createAnnotationInputSchema,
     annotations: { ...mutation, idempotentHint: true }
   },
+  create_annotation_v23: {
+    title: "页面创建共读划线批注",
+    description: "App-only v23 bridge for creating an anchored annotation from the reading page.",
+    inputSchema: createAnnotationInputSchema,
+    annotations: { ...mutation, idempotentHint: true },
+    _meta: { ui: { visibility: ["app"] } }
+  },
   reply_to_annotation: {
     title: "回复共读批注",
     description:
@@ -175,12 +195,26 @@ export const TOOL_CONFIGS = {
     inputSchema: replyToAnnotationInputSchema,
     annotations: { ...mutation, idempotentHint: true }
   },
+  reply_to_annotation_v23: {
+    title: "页面回复共读批注",
+    description: "App-only v23 bridge for replying to an annotation from the reading page.",
+    inputSchema: replyToAnnotationInputSchema,
+    annotations: { ...mutation, idempotentHint: true },
+    _meta: { ui: { visibility: ["app"] } }
+  },
   list_annotations: {
     title: "读取共读划线批注",
     description:
       "Use this when the reading widget needs anchored highlights and their reply threads.",
     inputSchema: listAnnotationsInputSchema,
     annotations: readOnly
+  },
+  list_annotations_v23: {
+    title: "页面读取共读划线批注",
+    description: "App-only v23 bridge for loading annotations into the reading page.",
+    inputSchema: listAnnotationsInputSchema,
+    annotations: readOnly,
+    _meta: { ui: { visibility: ["app"] } }
   },
   rename_reading_session: {
     title: "重命名书籍",
@@ -276,6 +310,12 @@ export function registerReadingTools(
     );
   };
 
+  registerAppTool(
+    server,
+    "open_reading_nest_v23",
+    TOOL_CONFIGS.open_reading_nest_v23,
+    openReadingNest
+  );
   registerAppTool(
     server,
     "open_reading_nest_v22",
@@ -482,6 +522,16 @@ export function registerReadingTools(
     }
   );
 
+  registerAppTool(
+    server,
+    "create_annotation_v23",
+    TOOL_CONFIGS.create_annotation_v23,
+    async (input) => {
+      const annotation = await service.createAnnotation(input);
+      return toolResult({ saved: true, annotation }, "你的划线批注已写进这本书。");
+    }
+  );
+
   server.registerTool(
     "reply_to_annotation",
     TOOL_CONFIGS.reply_to_annotation,
@@ -494,9 +544,29 @@ export function registerReadingTools(
     }
   );
 
+  registerAppTool(
+    server,
+    "reply_to_annotation_v23",
+    TOOL_CONFIGS.reply_to_annotation_v23,
+    async (input) => {
+      const annotation = await service.replyToAnnotation(input);
+      return toolResult({ saved: true, annotation }, "你的回复已经保存。");
+    }
+  );
+
   server.registerTool(
     "list_annotations",
     TOOL_CONFIGS.list_annotations,
+    async (input) => {
+      const result = await service.listAnnotations(input);
+      return toolResult(result, "已读取这本书的共读划线与评论线程。");
+    }
+  );
+
+  registerAppTool(
+    server,
+    "list_annotations_v23",
+    TOOL_CONFIGS.list_annotations_v23,
     async (input) => {
       const result = await service.listAnnotations(input);
       return toolResult(result, "已读取这本书的共读划线与评论线程。");
