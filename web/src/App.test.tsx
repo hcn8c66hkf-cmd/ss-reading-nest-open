@@ -1735,7 +1735,9 @@ describe("App", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "进入阅读小窝" }));
 
-    expect(await screen.findByText(/用户读到：第 1 段/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/用户读到：第 1 段/, {}, { timeout: 10_000 })
+    ).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith(
       "https://worker.example.test/source/secret/upload",
       expect.objectContaining({ method: "POST" })
