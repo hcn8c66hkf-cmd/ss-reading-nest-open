@@ -255,7 +255,7 @@ export function App() {
     async (sessionId: string, positionIndex: number, background = false) => {
       if (!background) setAnnotationsLoading(true);
       try {
-        const result = await callTool("list_annotations", {
+        const result = await callTool("list_annotations_v23", {
           sessionId,
           positionIndex
         });
@@ -1881,10 +1881,10 @@ export function App() {
   }
 
   async function createReadingAnnotation(anchor: TextAnchor, comment?: string) {
-    if (!sessionBundle || annotationSaving) return;
+    if (!sessionBundle || annotationSaving) return false;
     setAnnotationSaving(true);
     try {
-      const result = await callTool("create_annotation", {
+      const result = await callTool("create_annotation_v23", {
         sessionId: sessionBundle.session.id,
         position: sessionBundle.session.userCurrentPosition,
         anchor,
@@ -1901,8 +1901,11 @@ export function App() {
         annotation
       ]);
       setToast(comment ? "你的划线和评论都留在书边啦。" : "这句话已经划好线。" );
-    } catch {
+      return true;
+    } catch (error) {
+      console.warn("Failed to save reading annotation", error);
       setToast("划线批注没有保存成功，请重试。");
+      return false;
     } finally {
       setAnnotationSaving(false);
     }
@@ -1912,7 +1915,7 @@ export function App() {
     if (!sessionBundle || annotationSaving) return;
     setAnnotationSaving(true);
     try {
-      const result = await callTool("reply_to_annotation", {
+      const result = await callTool("reply_to_annotation_v23", {
         sessionId: sessionBundle.session.id,
         annotationId,
         author: "user",
@@ -2302,9 +2305,7 @@ export function App() {
           annotationsLoading={annotationsLoading}
           annotationsError={annotationsError || undefined}
           annotationSaving={annotationSaving}
-          onCreateAnnotation={(anchor, comment) =>
-            void createReadingAnnotation(anchor, comment)
-          }
+          onCreateAnnotation={createReadingAnnotation}
           onReplyAnnotation={(annotationId, text) =>
             void replyToReadingAnnotation(annotationId, text)
           }
