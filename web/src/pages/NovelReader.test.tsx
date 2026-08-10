@@ -115,7 +115,7 @@ describe("NovelReader display layout", () => {
     selection.removeAllRanges();
     selection.addRange(range);
     fireEvent(document, new Event("selectionchange"));
-    fireEvent.click(screen.getByRole("button", { name: "只划线" }));
+    fireEvent.click(screen.getByRole("button", { name: "划线" }));
     expect(onCreateAnnotation).toHaveBeenCalledWith(
       expect.objectContaining({
         selectedText: "停了一下",
