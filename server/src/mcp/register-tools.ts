@@ -33,7 +33,7 @@ import { ReadingService } from "../services/reading-service.js";
 import type { CloudSourceService } from "../services/cloud-source-service.js";
 import { toolResult } from "./tool-result.js";
 
-export const READING_NEST_URI = "ui://ss-reading-nest/app-v21.html";
+export const READING_NEST_URI = "ui://ss-reading-nest/app-v22.html";
 
 const readOnly = {
   readOnlyHint: true,
@@ -47,9 +47,23 @@ const mutation = {
 };
 
 export const TOOL_CONFIGS = {
-  open_reading_nest: {
+  open_reading_nest_v22: {
     title: "打开 S×S 小窝共读",
-    description: "Use this when the user wants to open the reading nest or continue recent reading.",
+    description:
+      "Use this primary v22 tool when the user wants to open the reading nest or continue recent reading.",
+    inputSchema: openReadingNestInputSchema,
+    annotations: readOnly,
+    _meta: {
+      ui: { resourceUri: READING_NEST_URI },
+      "openai/outputTemplate": READING_NEST_URI,
+      "openai/toolInvocation/invoking": "正在点亮小窝…",
+      "openai/toolInvocation/invoked": "小窝已经准备好"
+    }
+  },
+  open_reading_nest: {
+    title: "打开 S×S 小窝共读（旧入口）",
+    description:
+      "Legacy compatibility entry. Prefer open_reading_nest_v22 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -244,7 +258,7 @@ export function registerReadingTools(
   cloudSourceService?: CloudSourceService,
   options: { sourceEndpointBase?: string } = {}
 ) {
-  registerAppTool(server, "open_reading_nest", TOOL_CONFIGS.open_reading_nest, async () => {
+  const openReadingNest = async () => {
     const sessions = await service.listAllSessions();
     const bookshelfSessions = await Promise.all(
       sessions.map(async (session) => ({
@@ -260,7 +274,15 @@ export function registerReadingTools(
       },
       "已打开 S×S 小窝共读。"
     );
-  });
+  };
+
+  registerAppTool(
+    server,
+    "open_reading_nest_v22",
+    TOOL_CONFIGS.open_reading_nest_v22,
+    openReadingNest
+  );
+  registerAppTool(server, "open_reading_nest", TOOL_CONFIGS.open_reading_nest, openReadingNest);
 
   server.registerTool(
     "start_reading_session",

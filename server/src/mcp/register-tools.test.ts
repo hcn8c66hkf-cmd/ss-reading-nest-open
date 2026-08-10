@@ -7,16 +7,23 @@ import {
 } from "./register-tools.js";
 
 describe("tool descriptors", () => {
-  it("binds the current UI resource only to the primary render tool", () => {
-    expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v21.html");
-    expect(TOOL_CONFIGS.open_reading_nest._meta?.ui).toEqual({
+  it("binds the current UI resource to the v22 and compatibility render tools", () => {
+    expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v22.html");
+    expect(TOOL_CONFIGS.open_reading_nest_v22._meta?.ui).toEqual({
       resourceUri: READING_NEST_URI
     });
+    expect(TOOL_CONFIGS.open_reading_nest_v22._meta?.["openai/outputTemplate"]).toBe(
+      READING_NEST_URI
+    );
     expect(TOOL_CONFIGS.open_reading_nest._meta?.["openai/outputTemplate"]).toBe(
       READING_NEST_URI
     );
     for (const [name, config] of Object.entries(TOOL_CONFIGS)) {
-      if (name !== "open_reading_nest" && name !== "upload_cloud_source") {
+      if (
+        name !== "open_reading_nest_v22" &&
+        name !== "open_reading_nest" &&
+        name !== "upload_cloud_source"
+      ) {
         const meta = "_meta" in config ? (config._meta as Record<string, unknown>) : undefined;
         expect(meta?.ui).toBeUndefined();
       }
@@ -28,8 +35,10 @@ describe("tool descriptors", () => {
 
   it("returns the component-only source endpoint for the rendered widget", async () => {
     const handlers = new Map<string, () => Promise<unknown>>();
+    const configs = new Map<string, any>();
     const server = {
-      registerTool: (name: string, _config: unknown, handler: () => Promise<unknown>) => {
+      registerTool: (name: string, config: unknown, handler: () => Promise<unknown>) => {
+        configs.set(name, config);
         handlers.set(name, handler);
       }
     };
@@ -74,7 +83,7 @@ describe("tool descriptors", () => {
     registerReadingTools(server as never, service as never, undefined, {
       sourceEndpointBase: "https://worker.example.test/source/secret"
     });
-    const result = (await handlers.get("open_reading_nest")?.()) as {
+    const result = (await handlers.get("open_reading_nest_v22")?.()) as {
       structuredContent?: Record<string, unknown>;
     };
 
@@ -82,6 +91,12 @@ describe("tool descriptors", () => {
       "https://worker.example.test/source/secret"
     );
     expect(JSON.stringify(result)).not.toMatch(/sourceText|bytesBase64|data:image/);
+    expect(handlers.has("open_reading_nest")).toBe(true);
+    expect(configs.get("open_reading_nest_v22")._meta).toMatchObject({
+      ui: { resourceUri: READING_NEST_URI },
+      "ui/resourceUri": READING_NEST_URI,
+      "openai/outputTemplate": READING_NEST_URI
+    });
   });
 
   it("declares the current page as an Apps SDK file param", () => {
@@ -207,7 +222,7 @@ describe("tool descriptors", () => {
   });
 
   it("exposes book management and threaded annotation tools", () => {
-    expect(Object.keys(TOOL_CONFIGS)).toHaveLength(26);
+    expect(Object.keys(TOOL_CONFIGS)).toHaveLength(27);
     expect(TOOL_CONFIGS.create_annotation.annotations).toMatchObject({
       readOnlyHint: false,
       idempotentHint: true
