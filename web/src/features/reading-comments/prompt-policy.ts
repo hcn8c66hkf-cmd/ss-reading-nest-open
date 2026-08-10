@@ -73,8 +73,7 @@ export function buildLiveReadingPrompt(input: {
   requestedMode?: ReadingCommentMode;
   requestedLength?: CommentLength;
 }): string {
-  const publication = input.autoSaveCompanionComments
-    ? [
+  const publication = [
         "生成短评后，先调用 publish_companion_comment 保存完全相同的短评。",
         publishParameters({
           sessionId: input.sessionId,
@@ -86,10 +85,6 @@ export function buildLiveReadingPrompt(input: {
           text: "最终短评全文"
         }),
         "工具成功后，再在聊天区回复完全相同的短评；失败时必须明确说明“短评未同步到 Dock”，不要声称 Dock 已保存。"
-      ]
-    : [
-        "本次小窝设置为不自动保存短评到 Dock。",
-        "不要调用任何应用写回工具；直接在聊天区回复短评即可。"
       ];
   return [
     `【实时陪读：${input.position.label}】《${input.title}》`,
