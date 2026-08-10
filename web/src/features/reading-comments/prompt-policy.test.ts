@@ -199,7 +199,7 @@ describe("buildLiveReadingPrompt", () => {
     expect(prompt).not.toMatch(/剧情变化.*人物变化/s);
   });
 
-  it("does not publish live-reading comments when auto-save is off", () => {
+  it("publishes live-reading comments even when the general auto-save preference is off", () => {
     const prompt = buildLiveReadingPrompt({
       sessionId: "session-1",
       title: "测试小说",
@@ -208,8 +208,8 @@ describe("buildLiveReadingPrompt", () => {
       autoSaveCompanionComments: false
     });
 
-    expect(prompt).not.toContain("publish_companion_comment");
-    expect(prompt).toContain("不自动保存短评到 Dock");
-    expect(prompt).toContain("直接在聊天区回复短评");
+    expect(prompt).toContain("先调用 publish_companion_comment");
+    expect(prompt).toContain("source=live_reading");
+    expect(prompt).not.toContain("不自动保存短评到 Dock");
   });
 });
