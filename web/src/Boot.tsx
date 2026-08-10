@@ -8,8 +8,9 @@ import {
   useState
 } from "react";
 
-const RESOURCE_VERSION = "app-v20";
-const APP_VERSION = "0.3.0";
+const RESOURCE_VERSION = "app-v21";
+const APP_VERSION = "0.3.1";
+const loadDefaultApp = () => import("./App.js");
 
 type AppModule = {
   App: ComponentType;
@@ -34,12 +35,14 @@ type BoundaryState = {
   error?: BootError;
 };
 
-export function Boot({ loadApp = () => import("./App.js") }: BootProps) {
+export function Boot({ loadApp = loadDefaultApp }: BootProps) {
   const [stage, setStage] = useState<BootStage>("booting");
   const [AppComponent, setAppComponent] = useState<ComponentType | null>(null);
   const [error, setError] = useState<BootError | null>(null);
   const [attempt, setAttempt] = useState(0);
   const readyRef = useRef(false);
+  const loadAppRef = useRef(loadApp);
+  loadAppRef.current = loadApp;
 
   useEffect(() => {
     let cancelled = false;
@@ -58,7 +61,7 @@ export function Boot({ loadApp = () => import("./App.js") }: BootProps) {
     setStage("loading-app");
     setError(null);
     readyRef.current = false;
-    loadApp()
+    loadAppRef.current()
       .then((module) => {
         if (cancelled) return;
         setAppComponent(() => module.App);
@@ -79,7 +82,7 @@ export function Boot({ loadApp = () => import("./App.js") }: BootProps) {
       window.removeEventListener("error", reportGlobalError);
       window.removeEventListener("unhandledrejection", reportGlobalError);
     };
-  }, [attempt, loadApp]);
+  }, [attempt]);
 
   if (error) {
     return (
