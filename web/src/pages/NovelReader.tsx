@@ -30,7 +30,7 @@ export function NovelReader(props: {
   annotationsLoading?: boolean;
   annotationsError?: string;
   annotationSaving?: boolean;
-  onCreateAnnotation?: (anchor: TextAnchor, comment?: string) => void;
+  onCreateAnnotation?: (anchor: TextAnchor, comment?: string) => Promise<boolean> | boolean;
   onReplyAnnotation?: (annotationId: string, text: string) => void;
   onAskDaddyReply?: (annotation: ReadingAnnotation) => void;
   onFinish: () => void;
@@ -62,7 +62,10 @@ export function NovelReader(props: {
     Math.min(props.chunks.length - 1, props.session.userCurrentPosition.index - 1)
   );
   const current = props.chunks[index] ?? "";
-  const [selectedAnchor, setSelectedAnchor] = useState<TextAnchor | null>(null);
+  const [selection, setSelection] = useState<SelectionSnapshot | null>(null);
+  const [commentOpen, setCommentOpen] = useState(false);
+  const [comment, setComment] = useState("");
+  const selectedAnchor = selection?.anchor ?? null;
   const selected = selectedAnchor?.selectedText ?? "";
   const previous = () => props.onPosition(Math.max(1, index));
   const next = () => props.onPosition(Math.min(props.chunks.length, index + 2));
@@ -74,19 +77,37 @@ export function NovelReader(props: {
     if (scrollRef.current) scrollRef.current.scrollTop = props.initialScrollTop;
   }, [index, props.companionLayoutRevision]);
 
-  useEffect(() => setSelectedAnchor(null), [index]);
+  useEffect(() => {
+    setSelection(null);
+    setCommentOpen(false);
+    setComment("");
+  }, [index]);
 
   useEffect(() => {
     const onSelectionChange = () => {
-      const anchor = readSelectionAnchor(current, paperRef.current);
-      if (anchor) setSelectedAnchor(anchor);
+      const nextSelection = readSelection(current, paperRef.current);
+      if (nextSelection) setSelection(nextSelection);
     };
     document.addEventListener("selectionchange", onSelectionChange);
     return () => document.removeEventListener("selectionchange", onSelectionChange);
   }, [current]);
 
   const captureSelection = () => {
-    setSelectedAnchor(readSelectionAnchor(current, paperRef.current));
+    const nextSelection = readSelection(current, paperRef.current);
+    if (nextSelection) setSelection(nextSelection);
+  };
+
+  const clearSelection = () => {
+    setSelection(null);
+    setCommentOpen(false);
+    setComment("");
+    window.getSelection()?.removeAllRanges();
+  };
+
+  const saveSelection = async (selectedComment?: string) => {
+    if (!selectedAnchor || !props.onCreateAnnotation) return;
+    const saved = await props.onCreateAnnotation(selectedAnchor, selectedComment);
+    if (saved) clearSelection();
   };
 
   return (
@@ -132,16 +153,10 @@ export function NovelReader(props: {
             ))}
           </article>
           <AnnotationPanel
-            selectedAnchor={selectedAnchor}
             annotations={props.annotations ?? []}
             loading={props.annotationsLoading ?? false}
             error={props.annotationsError}
             saving={props.annotationSaving ?? false}
-            onCreate={(anchor, comment) => {
-              props.onCreateAnnotation?.(anchor, comment);
-              setSelectedAnchor(null);
-              window.getSelection()?.removeAllRanges();
-            }}
             onReply={(annotationId, text) =>
               props.onReplyAnnotation?.(annotationId, text)
             }
@@ -169,6 +184,66 @@ export function NovelReader(props: {
           onClear={props.onClearCompanionComments}
         />
       </div>
+      {selection && !commentOpen ? (
+        <div
+          className={`selection-annotation-toolbar ${selection.placement}`}
+          style={{ left: selection.left, top: selection.top }}
+          role="toolbar"
+          aria-label="选中文字的操作"
+        >
+          <button
+            type="button"
+            disabled={props.annotationSaving}
+            onClick={() => void saveSelection()}
+          >
+            {props.annotationSaving ? "保存中…" : "划线"}
+          </button>
+          <button
+            type="button"
+            disabled={props.annotationSaving}
+            onClick={() => setCommentOpen(true)}
+          >
+            写评论
+          </button>
+        </div>
+      ) : null}
+      {selection && commentOpen ? (
+        <div className="selection-comment-backdrop" role="presentation">
+          <form
+            className="selection-comment-sheet"
+            aria-label="给选中文字写评论"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const text = comment.trim();
+              if (!text || props.annotationSaving) return;
+              void saveSelection(text);
+            }}
+          >
+            <div className="selection-comment-handle" aria-hidden="true" />
+            <strong>写在这句话旁边</strong>
+            <blockquote>“{selectedAnchor?.selectedText}”</blockquote>
+            <textarea
+              autoFocus
+              aria-label="批注内容"
+              value={comment}
+              onChange={(event) => setComment(event.target.value)}
+              placeholder="我读到这里想到……"
+            />
+            <div className="selection-comment-actions">
+              <button type="button" onClick={() => setCommentOpen(false)}>
+                返回
+              </button>
+              <button
+                type="submit"
+                className="annotation-primary"
+                disabled={!comment.trim() || props.annotationSaving}
+              >
+                {props.annotationSaving ? "保存中…" : "划线并评论"}
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
       <ReaderActions
         primaryLabel="陪我看看这里"
         secondaryLabel="保存这句"
@@ -182,33 +257,57 @@ export function NovelReader(props: {
   );
 }
 
-function readSelectionAnchor(
+type SelectionSnapshot = {
+  anchor: TextAnchor;
+  left: number;
+  top: number;
+  placement: "above" | "below" | "fallback";
+};
+
+function readSelection(
   text: string,
   paper: HTMLElement | null
-): TextAnchor | null {
+): SelectionSnapshot | null {
   const selection = window.getSelection();
   const selectedText = selection?.toString().trim() ?? "";
   if (!selection || !selectedText || !paper) return null;
   if (selection.rangeCount === 0 || typeof selection.getRangeAt !== "function") {
-    return createTextAnchor(text, selectedText);
+    return withSelectionPosition(createTextAnchor(text, selectedText), null);
   }
   const range = selection.getRangeAt(0);
   if (!paper.contains(range.startContainer) || !paper.contains(range.endContainer)) {
     return null;
   }
+  const rect = typeof range.getBoundingClientRect === "function"
+    ? range.getBoundingClientRect()
+    : null;
   const start = selectionPointOffset(range.startContainer, range.startOffset, paper);
   const end = selectionPointOffset(range.endContainer, range.endOffset, paper);
   if (start === null || end === null || end <= start) {
-    return createTextAnchor(text, selectedText);
+    return withSelectionPosition(createTextAnchor(text, selectedText), rect);
   }
   const exactText = text.slice(start, end);
-  return {
+  return withSelectionPosition({
     selectedText: exactText || selectedText,
     startOffset: start,
     endOffset: end,
     prefix: text.slice(Math.max(0, start - 60), start),
     suffix: text.slice(end, end + 60)
-  };
+  }, rect);
+}
+
+function withSelectionPosition(
+  anchor: TextAnchor,
+  rect: Pick<DOMRect, "left" | "top" | "bottom" | "width"> | null
+): SelectionSnapshot {
+  if (!rect || (!rect.width && !rect.top && !rect.bottom)) {
+    return { anchor, left: window.innerWidth / 2, top: window.innerHeight - 112, placement: "fallback" };
+  }
+  const left = Math.min(Math.max(rect.left + rect.width / 2, 86), window.innerWidth - 86);
+  if (rect.bottom <= window.innerHeight - 72) {
+    return { anchor, left, top: rect.bottom + 10, placement: "below" };
+  }
+  return { anchor, left, top: rect.top - 10, placement: "above" };
 }
 
 function selectionPointOffset(
