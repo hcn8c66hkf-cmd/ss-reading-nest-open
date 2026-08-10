@@ -19,6 +19,20 @@ describe("Boot", () => {
     expect(await screen.findByText("小窝首页")).toBeInTheDocument();
   });
 
+  it("does not restart loading when the loader identity changes after a parent rerender", async () => {
+    const firstLoad = vi.fn(async () => ({ App: () => <main>稳定的小窝</main> }));
+    const secondLoad = vi.fn(async () => ({ App: () => <main>不该重新加载</main> }));
+    const { rerender } = render(<Boot loadApp={firstLoad} />);
+
+    expect(await screen.findByText("稳定的小窝")).toBeInTheDocument();
+    rerender(<Boot loadApp={secondLoad} />);
+
+    await waitFor(() => {
+      expect(firstLoad).toHaveBeenCalledTimes(1);
+      expect(secondLoad).not.toHaveBeenCalled();
+    });
+  });
+
   it("shows sanitized diagnostics when the app module fails to load", async () => {
     Object.defineProperty(window, "openai", {
       configurable: true,
@@ -42,7 +56,7 @@ describe("Boot", () => {
     );
 
     expect(await screen.findByText("failed")).toBeInTheDocument();
-    expect(screen.getByText("app-v20")).toBeInTheDocument();
+    expect(screen.getByText("app-v21")).toBeInTheDocument();
     expect(screen.getAllByText("present")).toHaveLength(3);
     expect(screen.getByText("1")).toBeInTheDocument();
     const diagnosticText = screen.getByRole("alert").textContent ?? "";
@@ -72,7 +86,7 @@ describe("Boot", () => {
     const html = readFileSync(resolve(webRoot, "index.html"), "utf8");
 
     expect(html).toContain("data-startup-fallback");
-    expect(html).toContain("app-v20");
+    expect(html).toContain("app-v21");
     expect(html).not.toContain("sourceText");
     expect(html).not.toContain("objectKey");
   });
