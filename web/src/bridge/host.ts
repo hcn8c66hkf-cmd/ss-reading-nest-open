@@ -25,7 +25,7 @@ export interface ReadingHostContext {
 function connectApp() {
   if (typeof window === "undefined" || window.parent === window) return undefined;
   if (!app) {
-    app = new McpApp({ name: "S×S 小窝共读", version: "0.2.1" });
+    app = new McpApp({ name: "S×S 小窝共读", version: "0.3.0" });
     appReady = app.connect().catch(() => {
       appConnectionFailed = true;
     });
@@ -71,6 +71,57 @@ export async function askChatGpt(
     scrollToBottom: options.scrollToBottom ?? false
   });
   return true;
+}
+
+export async function sampleChatGptText(
+  prompt: string,
+  options: {
+    systemPrompt?: string;
+    maxTokens?: number;
+    temperature?: number;
+  } = {}
+): Promise<string | null> {
+  const bridge = connectApp();
+  if (!bridge) return null;
+  await appReady;
+  if (appConnectionFailed || !bridge.getHostCapabilities()?.sampling) return null;
+  try {
+    const result = await bridge.createSamplingMessage({
+      messages: [
+        {
+          role: "user",
+          content: { type: "text", text: prompt }
+        }
+      ],
+      maxTokens: options.maxTokens ?? 220,
+      includeContext: "thisServer",
+      ...(options.systemPrompt ? { systemPrompt: options.systemPrompt } : {}),
+      ...(options.temperature === undefined
+        ? {}
+        : { temperature: options.temperature })
+    });
+    return samplingText(result);
+  } catch {
+    return null;
+  }
+}
+
+function samplingText(result: unknown): string | null {
+  if (!result || typeof result !== "object") return null;
+  const content = (result as { content?: unknown }).content;
+  const blocks = Array.isArray(content) ? content : [content];
+  const text = blocks
+    .filter(
+      (block): block is { type: "text"; text: string } =>
+        !!block &&
+        typeof block === "object" &&
+        (block as { type?: unknown }).type === "text" &&
+        typeof (block as { text?: unknown }).text === "string"
+    )
+    .map((block) => block.text)
+    .join("\n")
+    .trim();
+  return text || null;
 }
 
 export async function requestReaderPip(): Promise<boolean> {

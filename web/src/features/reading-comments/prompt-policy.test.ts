@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { CommentLength, ReadingCommentMode } from "@ss/shared";
 import {
+  buildLiveReadingDraftPrompt,
   buildLiveReadingPrompt,
   buildReadingCommentPrompt,
   normalizeCommentLength
@@ -215,5 +216,21 @@ describe("buildLiveReadingPrompt", () => {
     expect(prompt).toContain("先调用 publish_companion_comment");
     expect(prompt).toContain("source=live_reading");
     expect(prompt).not.toContain("不自动保存短评到 Dock");
+  });
+});
+
+describe("buildLiveReadingDraftPrompt", () => {
+  it("asks the host model for plain short-comment text without tool instructions", () => {
+    const prompt = buildLiveReadingDraftPrompt({
+      title: "测试小说",
+      position: { kind: "paragraph", index: 12, label: "第 12 段" },
+      text: "他把没说出口的话咽了回去。"
+    });
+
+    expect(prompt).toContain("第 12 段");
+    expect(prompt).toContain("他把没说出口的话咽了回去");
+    expect(prompt).toContain("最多 160 字");
+    expect(prompt).toContain("只返回最终短评正文");
+    expect(prompt).not.toContain("publish_companion_comment");
   });
 });
