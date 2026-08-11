@@ -112,6 +112,8 @@ const DEEP_ANALYSIS_DOCK_TEXT = "已生成长评，可回聊天区查看。";
 const MAX_NOVEL_FILE_SIZE = 5 * 1024 * 1024;
 const LARGE_NOVEL_TEXTAREA_PREVIEW_BYTES = 2 * 1024 * 1024;
 const LARGE_NOVEL_TEXTAREA_PREVIEW_CHARS = 1200;
+const ANNOTATION_QUOTE_NOTE_PREFIX = "__ss_annotation_v24__:";
+const ANNOTATION_REPLY_CONTENT_PREFIX = "__ss_annotation_reply_v24__:";
 
 export function App() {
   const initial = initialToolOutput<OpenOutput>();
@@ -215,30 +217,35 @@ export function App() {
           .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
           .slice(0, 20)
       );
-      const liveJob = syncJobRef.current;
-      if (liveJob?.mode === "live_reading") {
-        const liveComment = comments.find(
+      const latestLiveComment = comments
+        .filter(
           (comment) =>
-            comment.sessionId === sessionId &&
-            comment.source === "live_reading" &&
-            comment.operationId === liveJob.batches[0]?.id
-        );
-        if (liveComment) {
-          setSessionBundle((current) =>
-            current?.session.id === sessionId
-              ? {
-                  ...current,
-                  session: {
-                    ...current.session,
-                    assistantSyncedPosition: liveComment.position,
-                    updatedAt: new Date().toISOString()
-                  }
-                }
-              : current
-          );
-          clearSyncJobState();
-          void cache.removeSyncJob(sessionId).catch(() => undefined);
-        }
+            comment.sessionId === sessionId && comment.source === "live_reading"
+        )
+        .sort(
+          (left, right) =>
+            right.position.index - left.position.index ||
+            right.createdAt.localeCompare(left.createdAt)
+        )[0];
+      if (latestLiveComment) {
+        setSessionBundle((current) => {
+          if (current?.session.id !== sessionId) return current;
+          const synced = current.session.assistantSyncedPosition;
+          if (
+            synced?.kind === latestLiveComment.position.kind &&
+            synced.index >= latestLiveComment.position.index
+          ) {
+            return current;
+          }
+          return {
+            ...current,
+            session: {
+              ...current.session,
+              assistantSyncedPosition: latestLiveComment.position,
+              updatedAt: new Date().toISOString()
+            }
+          };
+        });
       }
       setCompanionError("");
     } catch {
@@ -255,9 +262,11 @@ export function App() {
     async (sessionId: string, positionIndex: number, background = false) => {
       if (!background) setAnnotationsLoading(true);
       try {
-        const result = await callTool("list_annotations_v23", {
+        const result = await callTool("list_companion_comments", {
           sessionId,
-          positionIndex
+          scope: "recent",
+          positionIndex,
+          limit: 1
         });
         const next = Array.isArray(result.structuredContent?.annotations)
           ? (result.structuredContent.annotations as ReadingAnnotation[])
@@ -1532,7 +1541,11 @@ export function App() {
 
   const sendLiveReading = useCallback(
     async (index: number) => {
-      if (!sessionBundle || sessionBundle.session.type !== "novel" || syncJob) return;
+      if (
+        !sessionBundle ||
+        sessionBundle.session.type !== "novel" ||
+        (syncJob && syncJob.mode !== "live_reading")
+      ) return;
       const session = sessionBundle.session;
       if (
         session.assistantSyncedPosition?.kind === session.userCurrentPosition.kind &&
@@ -1576,22 +1589,11 @@ export function App() {
         oversizedParagraph: false,
         status: "pending" as const
       };
-      const job: ReadingSyncJob = {
-        sessionId: sessionBundle.session.id,
-        title: session.title,
-        type: "novel",
-        mode: "live_reading",
-        targetPosition: session.userCurrentPosition,
-        confirmedThrough: session.assistantSyncedPosition,
-        batches: [batch],
-        activeBatchIndex: 0,
-        createdAt: new Date().toISOString()
-      };
       try {
         await callTool("send_current_context", {
-          sessionId: job.sessionId,
-          previousSyncedPosition: job.confirmedThrough,
-          currentPosition: job.targetPosition,
+          sessionId: session.id,
+          previousSyncedPosition: session.assistantSyncedPosition,
+          currentPosition: session.userCurrentPosition,
           contextRange: { start, end: index },
           includedText: text,
           ...(sourceContext ? { sourceContext } : {}),
@@ -1609,7 +1611,7 @@ export function App() {
           buildLiveReadingPrompt({
             sessionId: sessionBundle.session.id,
             title: session.title,
-            position: job.targetPosition,
+            position: session.userCurrentPosition,
             operationId: batch.id,
             autoSaveCompanionComments:
               session.sessionPreferences.autoSaveCompanionComments,
@@ -1618,9 +1620,6 @@ export function App() {
           }),
           { scrollToBottom: false }
         );
-        const sent = markBatchSent(job, batch.id);
-        storeSyncJob(sent);
-        await cache.putSyncJob(sent).catch(() => undefined);
       } catch {
         setToast("这次实时跟读没有发送成功。");
       }
@@ -1632,7 +1631,6 @@ export function App() {
     enabled: sessionBundle?.session.liveReadingEnabled ?? false,
     userPositionIndex: sessionBundle?.session.userCurrentPosition.index ?? 1,
     isScrolling: false,
-    hasPendingConfirmation: Boolean(syncJob),
     triggerKey: sessionBundle
       ? buildLiveReadingOperationId(
           sessionBundle.session.id,
@@ -1642,11 +1640,6 @@ export function App() {
           sessionBundle.session.sessionPreferences.commentLength
         )
       : undefined,
-    hasUnconfirmedGap:
-      Boolean(sessionBundle) &&
-      (sessionBundle!.session.userCurrentPosition.index -
-        (sessionBundle!.session.assistantSyncedPosition?.index ?? 0) >
-        2),
     sourceVerified:
       sourceAvailability === "available_local" &&
       !(
@@ -1884,13 +1877,12 @@ export function App() {
     if (!sessionBundle || annotationSaving) return false;
     setAnnotationSaving(true);
     try {
-      const result = await callTool("create_annotation_v23", {
+      const result = await callTool("save_quote", {
         sessionId: sessionBundle.session.id,
+        content: anchor.selectedText,
         position: sessionBundle.session.userCurrentPosition,
-        anchor,
-        author: "user",
-        ...(comment ? { comment } : {}),
-        operationId: `user-annotation-${crypto.randomUUID()}`
+        note: encodeAnnotationQuoteNote(anchor, comment),
+        operationId: `annotation-v24:${crypto.randomUUID()}`
       });
       const annotation = result.structuredContent?.annotation as
         | ReadingAnnotation
@@ -1915,12 +1907,12 @@ export function App() {
     if (!sessionBundle || annotationSaving) return;
     setAnnotationSaving(true);
     try {
-      const result = await callTool("reply_to_annotation_v23", {
+      const result = await callTool("save_reaction", {
         sessionId: sessionBundle.session.id,
-        annotationId,
-        author: "user",
-        text,
-        operationId: `user-reply-${crypto.randomUUID()}`
+        content: `${ANNOTATION_REPLY_CONTENT_PREFIX}${JSON.stringify({ annotationId, text })}`,
+        position: sessionBundle.session.userCurrentPosition,
+        speaker: "user",
+        operationId: `annotation-reply-v24:${crypto.randomUUID()}`
       });
       const annotation = result.structuredContent?.annotation as
         | ReadingAnnotation
@@ -2680,6 +2672,16 @@ function getSourceContext(sourceManifest: SourceManifest | null | undefined) {
       ? { pageCount: sourceManifest.pageCount }
       : {})
   };
+}
+
+function encodeAnnotationQuoteNote(anchor: TextAnchor, comment?: string) {
+  return `${ANNOTATION_QUOTE_NOTE_PREFIX}${JSON.stringify({
+    ...(anchor.startOffset !== undefined ? { startOffset: anchor.startOffset } : {}),
+    ...(anchor.endOffset !== undefined ? { endOffset: anchor.endOffset } : {}),
+    ...(anchor.prefix !== undefined ? { prefix: anchor.prefix } : {}),
+    ...(anchor.suffix !== undefined ? { suffix: anchor.suffix } : {}),
+    ...(comment ? { comment } : {})
+  })}`;
 }
 
 function sourceSyncBlockedMessage(sourceAvailability: SourceAvailability) {

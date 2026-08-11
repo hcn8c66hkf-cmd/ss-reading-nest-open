@@ -5,13 +5,16 @@ export function useLiveReading(input: {
   userPositionIndex: number;
   triggerKey?: string;
   isScrolling: boolean;
-  hasPendingConfirmation: boolean;
-  hasUnconfirmedGap: boolean;
   sourceVerified: boolean;
   delayMs?: number;
   onStablePosition: (index: number) => void;
 }) {
   const sentKeys = useRef(new Set<string>());
+  const onStablePosition = useRef(input.onStablePosition);
+
+  useEffect(() => {
+    onStablePosition.current = input.onStablePosition;
+  }, [input.onStablePosition]);
 
   useEffect(() => {
     const triggerKey = input.triggerKey ?? String(input.userPositionIndex);
@@ -19,8 +22,6 @@ export function useLiveReading(input: {
       !input.enabled ||
       sentKeys.current.has(triggerKey) ||
       input.isScrolling ||
-      input.hasPendingConfirmation ||
-      input.hasUnconfirmedGap ||
       !input.sourceVerified
     ) {
       return;
@@ -28,7 +29,7 @@ export function useLiveReading(input: {
     const timer = window.setTimeout(
       () => {
         sentKeys.current.add(triggerKey);
-        input.onStablePosition(input.userPositionIndex);
+        onStablePosition.current(input.userPositionIndex);
       },
       input.delayMs ?? 1_800
     );
@@ -38,10 +39,7 @@ export function useLiveReading(input: {
     input.userPositionIndex,
     input.triggerKey,
     input.isScrolling,
-    input.hasPendingConfirmation,
-    input.hasUnconfirmedGap,
     input.sourceVerified,
-    input.delayMs,
-    input.onStablePosition
+    input.delayMs
   ]);
 }

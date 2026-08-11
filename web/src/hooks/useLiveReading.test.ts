@@ -16,8 +16,6 @@ describe("useLiveReading", () => {
           enabled: true,
           userPositionIndex: props.index,
           isScrolling: false,
-          hasPendingConfirmation: false,
-          hasUnconfirmedGap: false,
           sourceVerified: true,
           delayMs: 1_800,
           onStablePosition
@@ -34,23 +32,19 @@ describe("useLiveReading", () => {
     expect(onStablePosition).toHaveBeenCalledWith(3);
   });
 
-  it("does not send while scrolling, awaiting confirmation, disabled, or behind a gap", () => {
+  it("does not send while scrolling, disabled, or without a verified source", () => {
     vi.useFakeTimers();
     const onStablePosition = vi.fn();
     const { rerender } = renderHook(
       (props: {
         enabled: boolean;
         scrolling: boolean;
-        pending: boolean;
-        gap: boolean;
         sourceVerified: boolean;
       }) =>
         useLiveReading({
           enabled: props.enabled,
           userPositionIndex: 5,
           isScrolling: props.scrolling,
-          hasPendingConfirmation: props.pending,
-          hasUnconfirmedGap: props.gap,
           sourceVerified: props.sourceVerified,
           delayMs: 1_800,
           onStablePosition
@@ -59,19 +53,15 @@ describe("useLiveReading", () => {
         initialProps: {
           enabled: false,
           scrolling: false,
-          pending: false,
-          gap: false,
           sourceVerified: true
         }
       }
     );
 
     for (const props of [
-      { enabled: false, scrolling: false, pending: false, gap: false, sourceVerified: true },
-      { enabled: true, scrolling: true, pending: false, gap: false, sourceVerified: true },
-      { enabled: true, scrolling: false, pending: true, gap: false, sourceVerified: true },
-      { enabled: true, scrolling: false, pending: false, gap: true, sourceVerified: true },
-      { enabled: true, scrolling: false, pending: false, gap: false, sourceVerified: false }
+      { enabled: false, scrolling: false, sourceVerified: true },
+      { enabled: true, scrolling: true, sourceVerified: true },
+      { enabled: true, scrolling: false, sourceVerified: false }
     ]) {
       rerender(props);
       act(() => vi.advanceTimersByTime(2_000));
@@ -90,8 +80,6 @@ describe("useLiveReading", () => {
           userPositionIndex: props.index,
           triggerKey: `session-1-paragraph-${props.index}-reaction_only-short`,
           isScrolling: false,
-          hasPendingConfirmation: false,
-          hasUnconfirmedGap: false,
           sourceVerified: true,
           delayMs: 1_800,
           onStablePosition: (index) => onStablePosition(index, props.revision)
@@ -111,5 +99,30 @@ describe("useLiveReading", () => {
     act(() => vi.advanceTimersByTime(1_800));
     expect(onStablePosition).toHaveBeenCalledTimes(2);
     expect(onStablePosition.mock.calls.at(-1)?.[0]).toBe(3);
+  });
+
+  it("does not restart the dwell timer when the callback identity changes", () => {
+    vi.useFakeTimers();
+    const onStablePosition = vi.fn();
+    const { rerender } = renderHook(
+      (props: { revision: number }) =>
+        useLiveReading({
+          enabled: true,
+          userPositionIndex: 9,
+          triggerKey: "session-1-paragraph-9-reaction_only-short",
+          isScrolling: false,
+          sourceVerified: true,
+          delayMs: 1_800,
+          onStablePosition: (index) => onStablePosition(index, props.revision)
+        }),
+      { initialProps: { revision: 0 } }
+    );
+
+    act(() => vi.advanceTimersByTime(1_000));
+    rerender({ revision: 1 });
+    act(() => vi.advanceTimersByTime(800));
+
+    expect(onStablePosition).toHaveBeenCalledTimes(1);
+    expect(onStablePosition).toHaveBeenCalledWith(9, 1);
   });
 });
