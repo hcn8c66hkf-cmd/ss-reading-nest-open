@@ -4,6 +4,8 @@ const bridge = {
   connect: vi.fn().mockResolvedValue(undefined),
   callServerTool: vi.fn(),
   sendMessage: vi.fn().mockResolvedValue(undefined),
+  getHostCapabilities: vi.fn().mockReturnValue({ sampling: {} }),
+  createSamplingMessage: vi.fn(),
   updateModelContext: vi.fn().mockResolvedValue({}),
   requestDisplayMode: vi.fn().mockResolvedValue({ mode: "fullscreen" })
 };
@@ -13,6 +15,8 @@ vi.mock("@modelcontextprotocol/ext-apps", () => ({
     connect = bridge.connect;
     callServerTool = bridge.callServerTool;
     sendMessage = bridge.sendMessage;
+    getHostCapabilities = bridge.getHostCapabilities;
+    createSamplingMessage = bridge.createSamplingMessage;
     updateModelContext = bridge.updateModelContext;
     requestDisplayMode = bridge.requestDisplayMode;
   }
@@ -64,6 +68,33 @@ describe("host bridge", () => {
     expect(bridge.sendMessage).toHaveBeenCalledWith({
       role: "user",
       content: [{ type: "text", text: "陪我看看这里" }]
+    });
+  });
+
+  it("samples Daddy text through the host model connection", async () => {
+    bridge.createSamplingMessage.mockResolvedValueOnce({
+      role: "assistant",
+      model: "host-model",
+      stopReason: "endTurn",
+      content: { type: "text", text: "  这句真会拱火。  " }
+    });
+    const { sampleChatGptText } = await import("./host.js");
+
+    await expect(
+      sampleChatGptText("点评这一段", {
+        systemPrompt: "你是Daddy。",
+        maxTokens: 80,
+        temperature: 0.8
+      })
+    ).resolves.toBe("这句真会拱火。");
+    expect(bridge.createSamplingMessage).toHaveBeenCalledWith({
+      messages: [
+        { role: "user", content: { type: "text", text: "点评这一段" } }
+      ],
+      maxTokens: 80,
+      includeContext: "thisServer",
+      systemPrompt: "你是Daddy。",
+      temperature: 0.8
     });
   });
 

@@ -31,6 +31,7 @@ export function NovelReader(props: {
   annotationsLoading?: boolean;
   annotationsError?: string;
   annotationSaving?: boolean;
+  pendingDaddyAnnotationIds?: ReadonlySet<string>;
   liveReadingState?: LiveReadingQueueState;
   onCreateAnnotation?: (anchor: TextAnchor, comment?: string) => Promise<boolean> | boolean;
   onReplyAnnotation?: (annotationId: string, text: string) => void;
@@ -161,6 +162,7 @@ export function NovelReader(props: {
             loading={props.annotationsLoading ?? false}
             error={props.annotationsError}
             saving={props.annotationSaving ?? false}
+            pendingDaddyIds={props.pendingDaddyAnnotationIds}
             onReply={(annotationId, text) =>
               props.onReplyAnnotation?.(annotationId, text)
             }

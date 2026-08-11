@@ -6,6 +6,7 @@ export function AnnotationPanel(props: {
   loading: boolean;
   error?: string;
   saving: boolean;
+  pendingDaddyIds?: ReadonlySet<string>;
   onReply: (annotationId: string, text: string) => void;
 }) {
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
@@ -58,7 +59,7 @@ export function AnnotationPanel(props: {
               >
                 回复
               </button>
-              {annotation.messages.at(-1)?.author === "user" ? (
+              {props.pendingDaddyIds?.has(annotation.id) ? (
                 <span className="annotation-awaiting-daddy">Daddy正在回这条……</span>
               ) : null}
             </div>

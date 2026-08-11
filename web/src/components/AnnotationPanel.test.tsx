@@ -58,6 +58,7 @@ describe("AnnotationPanel", () => {
         }]}
         loading={false}
         saving={false}
+        pendingDaddyIds={new Set(["annotation-1"])}
         onReply={vi.fn()}
       />
     );

@@ -25,6 +25,7 @@ import {
   requestReaderFullscreen,
   requestReaderInline,
   requestReaderPip,
+  sampleChatGptText,
   saveReaderWidgetState,
   updateModelContext
 } from "./bridge/host.js";
@@ -55,6 +56,7 @@ import {
   buildRecentOnlyPrompt
 } from "./features/reading-sync/build-messages.js";
 import {
+  buildLiveReadingDraftPrompt,
   buildLiveReadingPrompt,
   buildReadingCommentPrompt
 } from "./features/reading-comments/prompt-policy.js";
@@ -114,6 +116,11 @@ const LARGE_NOVEL_TEXTAREA_PREVIEW_BYTES = 2 * 1024 * 1024;
 const LARGE_NOVEL_TEXTAREA_PREVIEW_CHARS = 1200;
 const ANNOTATION_QUOTE_NOTE_PREFIX = "__ss_annotation_v24__:";
 const ANNOTATION_REPLY_CONTENT_PREFIX = "__ss_annotation_reply_v24__:";
+const DADDY_SAMPLING_SYSTEM_PROMPT = [
+  "你是正在和用户一起读书的Daddy，也是她熟悉的亲密共读搭子。",
+  "说话自然、敏锐、有一点会吐槽，不端着，不写教科书式总结。",
+  "严格只回答用户提供的这一段或这一条书边评论，不虚构没看到的剧情。"
+].join("\n");
 
 export function App() {
   const initial = initialToolOutput<OpenOutput>();
@@ -160,6 +167,9 @@ export function App() {
   const [annotationsLoading, setAnnotationsLoading] = useState(false);
   const [annotationsError, setAnnotationsError] = useState("");
   const [annotationSaving, setAnnotationSaving] = useState(false);
+  const [pendingDaddyAnnotationIds, setPendingDaddyAnnotationIds] = useState<Set<string>>(
+    () => new Set()
+  );
   const [pendingCommentDraft, setPendingCommentDraft] =
     useState<PendingCompanionCommentDraft | null>(null);
   const [pendingCommentSaving, setPendingCommentSaving] = useState(false);
@@ -278,6 +288,15 @@ export function App() {
               annotation.position.index === positionIndex
           )
         );
+        setPendingDaddyAnnotationIds((current) => {
+          const pending = new Set(current);
+          for (const annotation of next) {
+            if (annotation.messages.at(-1)?.author === "assistant") {
+              pending.delete(annotation.id);
+            }
+          }
+          return pending.size === current.size ? current : pending;
+        });
         setAnnotationsError("");
       } catch {
         if (!background) {
@@ -325,6 +344,7 @@ export function App() {
     if (screen !== "novel" || !sessionId || !positionIndex) {
       setAnnotations([]);
       setAnnotationsError("");
+      setPendingDaddyAnnotationIds(new Set());
       return;
     }
     void loadAnnotations(sessionId, positionIndex);
@@ -1613,6 +1633,52 @@ export function App() {
             hasMore: false
           }
         });
+        const sampled = await sampleChatGptText(
+          buildLiveReadingDraftPrompt({
+            title: session.title,
+            position: targetPosition,
+            text
+          }),
+          {
+            systemPrompt: DADDY_SAMPLING_SYSTEM_PROMPT,
+            maxTokens: 150,
+            temperature: 0.85
+          }
+        );
+        if (sampled) {
+          const result = await callTool("publish_companion_comment", {
+            sessionId: session.id,
+            position: targetPosition,
+            mode: "reaction_only",
+            length: "short",
+            text: trimDaddyText(sampled, 200),
+            source: "live_reading",
+            operationId: batch.id
+          });
+          const comment = result.structuredContent?.comment as CompanionComment | undefined;
+          if (!comment) throw new Error("Missing persisted live comment");
+          setCompanionComments((current) =>
+            [comment, ...current.filter((item) => item.id !== comment.id)]
+              .filter((item) => item.sessionId === comment.sessionId && item.inRecent)
+              .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+              .slice(0, 20)
+          );
+          setSessionBundle((current) => {
+            if (current?.session.id !== session.id) return current;
+            const synced = current.session.assistantSyncedPosition;
+            if (synced && synced.index >= comment.position.index) return current;
+            return {
+              ...current,
+              session: {
+                ...current.session,
+                assistantSyncedPosition: comment.position,
+                updatedAt: comment.createdAt
+              }
+            };
+          });
+          return true;
+        }
+
         const sent = await askChatGpt(
           buildLiveReadingPrompt({
             sessionId: sessionBundle.session.id,
@@ -1945,30 +2011,67 @@ export function App() {
 
   async function askDaddyToReply(annotation: ReadingAnnotation): Promise<boolean> {
     if (!sessionBundle) return false;
-    const operationId = `annotation-daddy-v25:${encodeURIComponent(annotation.id)}:${crypto.randomUUID()}`;
+    setPendingDaddyAnnotationIds((current) => new Set(current).add(annotation.id));
     const thread = annotation.messages
       .map((message) => `${message.author === "assistant" ? "Daddy" : "用户"}：${message.text}`)
       .join("\n");
-    const sent = await askChatGpt(
-      [
-        `我们正在共读《${sessionBundle.session.title}》的${annotation.position.label}。`,
-        `划线原文：${annotation.anchor.selectedText}`,
-        thread ? `当前评论线程：\n${thread}` : "当前只有划线，还没有评论。",
-        "请自然地接着用户最后一句回复 1–3 句。不要调用 reply_to_annotation。",
-        "先调用 publish_companion_comment；小窝会凭下面这个专用 operationId 把 text 接进这条批注线程，而不是放进短评 Dock。工具成功后，再在聊天区说相同内容。",
-        `publish_companion_comment 固定参数：${JSON.stringify({
+    const prompt = [
+      `我们正在共读《${sessionBundle.session.title}》的${annotation.position.label}。`,
+      `划线原文：${annotation.anchor.selectedText}`,
+      thread ? `当前评论线程：\n${thread}` : "当前只有划线，还没有评论。",
+      "请自然地接着用户最后一句回复 1–3 句，最多 260 字。",
+      "只返回准备写进书边的回复正文，不要标题、引号、参数、工具调用或保存说明。"
+    ].join("\n\n");
+    try {
+      const sampled = await sampleChatGptText(prompt, {
+        systemPrompt: DADDY_SAMPLING_SYSTEM_PROMPT,
+        maxTokens: 220,
+        temperature: 0.8
+      });
+      if (sampled) {
+        const result = await callTool("reply_to_annotation_v23", {
           sessionId: sessionBundle.session.id,
-          position: annotation.position,
-          mode: "reaction_only",
-          length: "short",
-          source: "quick_action",
-          operationId
-        })}；text=你对这条批注的最终回复全文。`
-      ].join("\n\n"),
-      { scrollToBottom: false }
-    );
-    setToast(sent ? "评论已保存，Daddy正在回这条。" : "评论已保存，但这次没有叫到Daddy。" );
-    return sent;
+          annotationId: annotation.id,
+          author: "assistant",
+          text: trimDaddyText(sampled, 500),
+          operationId: `annotation-daddy-v26:${annotation.id}:${crypto.randomUUID()}`
+        });
+        const saved = result.structuredContent?.annotation as ReadingAnnotation | undefined;
+        if (!saved) throw new Error("Missing Daddy annotation reply");
+        setAnnotations((current) =>
+          current.map((item) => (item.id === saved.id ? saved : item))
+        );
+        setToast("Daddy已经回在这条批注下面啦。");
+        return true;
+      }
+
+      const sent = await askChatGpt(
+        [
+          prompt,
+          "当前页面宿主不能把生成结果直接交回小窝。请调用 reply_to_annotation 写入你的最终回复后，再在聊天区回复相同内容。",
+          `reply_to_annotation 固定参数：${JSON.stringify({
+            sessionId: sessionBundle.session.id,
+            annotationId: annotation.id,
+            author: "assistant",
+            operationId: `annotation-daddy-fallback-v26:${annotation.id}:${crypto.randomUUID()}`
+          })}；text=你的最终回复全文。`
+        ].join("\n\n"),
+        { scrollToBottom: false }
+      );
+      if (!sent) throw new Error("Host did not accept Daddy reply request");
+      setToast("已经请Daddy来回这条；写进书边后会自动出现。");
+      return true;
+    } catch (error) {
+      console.warn("Daddy annotation reply failed", error);
+      setToast("Daddy这次没能写进书边，再点一次回复就能重试。");
+      return false;
+    } finally {
+      setPendingDaddyAnnotationIds((current) => {
+        const next = new Set(current);
+        next.delete(annotation.id);
+        return next;
+      });
+    }
   }
 
   function rememberPendingCommentDraft(input: {
@@ -2320,6 +2423,7 @@ export function App() {
           annotationsLoading={annotationsLoading}
           annotationsError={annotationsError || undefined}
           annotationSaving={annotationSaving}
+          pendingDaddyAnnotationIds={pendingDaddyAnnotationIds}
           liveReadingState={liveReadingState}
           onCreateAnnotation={createReadingAnnotation}
           onReplyAnnotation={(annotationId, text) =>
@@ -2705,6 +2809,13 @@ function encodeAnnotationQuoteNote(anchor: TextAnchor, comment?: string) {
     ...(anchor.suffix !== undefined ? { suffix: anchor.suffix } : {}),
     ...(comment ? { comment } : {})
   })}`;
+}
+
+function trimDaddyText(text: string, maximumLength: number) {
+  const normalized = text.replace(/\s+/g, " ").trim();
+  return normalized.length <= maximumLength
+    ? normalized
+    : normalized.slice(0, maximumLength).trimEnd();
 }
 
 function sourceSyncBlockedMessage(sourceAvailability: SourceAvailability) {
