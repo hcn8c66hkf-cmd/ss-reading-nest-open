@@ -28,31 +28,20 @@ const annotation: ReadingAnnotation = {
 };
 
 describe("AnnotationPanel", () => {
-  it("creates a selected-text comment and keeps Daddy replies in the thread", () => {
-    const onCreate = vi.fn();
+  it("keeps user and Daddy replies in the thread", () => {
     const onReply = vi.fn();
     const onAskDaddy = vi.fn();
-    const anchor = { selectedText: "这一句值得留下", startOffset: 3, endOffset: 10 };
-
     render(
       <AnnotationPanel
-        selectedAnchor={anchor}
         annotations={[annotation]}
         loading={false}
         saving={false}
-        onCreate={onCreate}
         onReply={onReply}
         onAskDaddy={onAskDaddy}
       />
     );
 
     expect(screen.getByText("我也读到了那种克制。")).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("批注内容"), {
-      target: { value: "我想把这一句圈起来。" }
-    });
-    fireEvent.click(screen.getByRole("button", { name: "划线并评论" }));
-    expect(onCreate).toHaveBeenCalledWith(anchor, "我想把这一句圈起来。");
-
     fireEvent.click(screen.getByRole("button", { name: "回复" }));
     fireEvent.change(screen.getByLabelText("回复批注"), {
       target: { value: "嗯，我也是。" }

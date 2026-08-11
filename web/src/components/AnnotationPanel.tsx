@@ -1,21 +1,16 @@
-import { useEffect, useState } from "react";
-import type { ReadingAnnotation, TextAnchor } from "@ss/shared";
+import { useState } from "react";
+import type { ReadingAnnotation } from "@ss/shared";
 
 export function AnnotationPanel(props: {
-  selectedAnchor: TextAnchor | null;
   annotations: ReadingAnnotation[];
   loading: boolean;
   error?: string;
   saving: boolean;
-  onCreate: (anchor: TextAnchor, comment?: string) => void;
   onReply: (annotationId: string, text: string) => void;
   onAskDaddy: (annotation: ReadingAnnotation) => void;
 }) {
-  const [comment, setComment] = useState("");
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
   const [reply, setReply] = useState("");
-
-  useEffect(() => setComment(""), [props.selectedAnchor?.selectedText]);
 
   return (
     <section className="annotation-panel" aria-label="共读划线与评论">
@@ -26,36 +21,7 @@ export function AnnotationPanel(props: {
         </div>
       </header>
 
-      {props.selectedAnchor ? (
-        <div className="annotation-composer">
-          <blockquote>“{props.selectedAnchor.selectedText}”</blockquote>
-          <textarea
-            aria-label="批注内容"
-            value={comment}
-            onChange={(event) => setComment(event.target.value)}
-            placeholder="写下你的想法（也可以只划线）"
-          />
-          <div>
-            <button
-              type="button"
-              disabled={props.saving}
-              onClick={() => props.onCreate(props.selectedAnchor!)}
-            >
-              只划线
-            </button>
-            <button
-              type="button"
-              className="annotation-primary"
-              disabled={!comment.trim() || props.saving}
-              onClick={() => props.onCreate(props.selectedAnchor!, comment.trim())}
-            >
-              {props.saving ? "保存中…" : "划线并评论"}
-            </button>
-          </div>
-        </div>
-      ) : (
-        <p className="annotation-hint">长按或拖动选中文字，就会出现批注框。</p>
-      )}
+      <p className="annotation-hint">长按选中文字，选区旁边就能直接划线或评论。</p>
 
       {props.loading ? <p className="annotation-empty">正在翻开书边批注……</p> : null}
       {!props.loading && props.error ? <p className="annotation-empty">{props.error}</p> : null}
