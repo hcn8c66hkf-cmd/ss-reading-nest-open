@@ -22,18 +22,29 @@ import {
   setReadingSessionStatusInputSchema,
   setSourceManifestInputSchema,
   startReadingSessionInputSchema,
+  textAnchorSchema,
   deleteReadingSessionInputSchema,
   deleteCloudSourceInputSchema,
   uploadCloudSourceInputSchema,
   updateSessionPreferencesInputSchema,
   updateReadingPositionInputSchema
 } from "@ss/shared";
-import type { ReadingSession, SendCurrentContextInput, SourceManifest } from "@ss/shared";
+import type {
+  ReadingSession,
+  SendCurrentContextInput,
+  SourceManifest,
+  TextAnchor
+} from "@ss/shared";
 import { ReadingService } from "../services/reading-service.js";
 import type { CloudSourceService } from "../services/cloud-source-service.js";
 import { toolResult } from "./tool-result.js";
 
-export const READING_NEST_URI = "ui://ss-reading-nest/app-v23.html";
+export const READING_NEST_URI = "ui://ss-reading-nest/app-v24.html";
+
+const ANNOTATION_QUOTE_OPERATION_PREFIX = "annotation-v24:";
+const ANNOTATION_QUOTE_NOTE_PREFIX = "__ss_annotation_v24__:";
+const ANNOTATION_REPLY_OPERATION_PREFIX = "annotation-reply-v24:";
+const ANNOTATION_REPLY_CONTENT_PREFIX = "__ss_annotation_reply_v24__:";
 
 const readOnly = {
   readOnlyHint: true,
@@ -47,10 +58,23 @@ const mutation = {
 };
 
 export const TOOL_CONFIGS = {
-  open_reading_nest_v23: {
+  open_reading_nest_v24: {
     title: "打开 S×S 小窝共读",
     description:
-      "Use this primary v23 tool when the user wants to open the reading nest or continue recent reading.",
+      "Use this primary v24 tool when the user wants to open the reading nest or continue recent reading.",
+    inputSchema: openReadingNestInputSchema,
+    annotations: readOnly,
+    _meta: {
+      ui: { resourceUri: READING_NEST_URI },
+      "openai/outputTemplate": READING_NEST_URI,
+      "openai/toolInvocation/invoking": "正在点亮小窝…",
+      "openai/toolInvocation/invoked": "小窝已经准备好"
+    }
+  },
+  open_reading_nest_v23: {
+    title: "打开 S×S 小窝共读（v23 兼容入口）",
+    description:
+      "Legacy compatibility entry. Prefer open_reading_nest_v24 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -63,7 +87,7 @@ export const TOOL_CONFIGS = {
   open_reading_nest_v22: {
     title: "打开 S×S 小窝共读（v22 兼容入口）",
     description:
-      "Legacy compatibility entry. Prefer open_reading_nest_v23 whenever it is available.",
+      "Legacy compatibility entry. Prefer open_reading_nest_v24 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -76,7 +100,7 @@ export const TOOL_CONFIGS = {
   open_reading_nest: {
     title: "打开 S×S 小窝共读（旧入口）",
     description:
-      "Legacy compatibility entry. Prefer open_reading_nest_v23 whenever it is available.",
+      "Legacy compatibility entry. Prefer open_reading_nest_v24 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -286,6 +310,57 @@ export const TOOL_CONFIGS = {
   }
 } as const;
 
+function decodeAnnotationQuote(input: {
+  content: string;
+  note?: string;
+  operationId?: string;
+}): { anchor: TextAnchor; comment?: string } | null {
+  if (!input.operationId?.startsWith(ANNOTATION_QUOTE_OPERATION_PREFIX)) return null;
+  if (!input.note?.startsWith(ANNOTATION_QUOTE_NOTE_PREFIX)) {
+    throw new Error("Invalid annotation compatibility payload");
+  }
+  const payload = JSON.parse(input.note.slice(ANNOTATION_QUOTE_NOTE_PREFIX.length)) as {
+    startOffset?: unknown;
+    endOffset?: unknown;
+    prefix?: unknown;
+    suffix?: unknown;
+    comment?: unknown;
+  };
+  const anchor = textAnchorSchema.parse({
+    selectedText: input.content,
+    ...(payload.startOffset !== undefined ? { startOffset: payload.startOffset } : {}),
+    ...(payload.endOffset !== undefined ? { endOffset: payload.endOffset } : {}),
+    ...(payload.prefix !== undefined ? { prefix: payload.prefix } : {}),
+    ...(payload.suffix !== undefined ? { suffix: payload.suffix } : {})
+  });
+  const comment = typeof payload.comment === "string" ? payload.comment.trim() : undefined;
+  if (comment && comment.length > 2_000) {
+    throw new Error("Annotation comment is too long");
+  }
+  return { anchor, ...(comment ? { comment } : {}) };
+}
+
+function decodeAnnotationReply(input: {
+  content: string;
+  operationId?: string;
+}): { annotationId: string; text: string } | null {
+  if (!input.operationId?.startsWith(ANNOTATION_REPLY_OPERATION_PREFIX)) return null;
+  if (!input.content.startsWith(ANNOTATION_REPLY_CONTENT_PREFIX)) {
+    throw new Error("Invalid annotation reply compatibility payload");
+  }
+  const payload = JSON.parse(
+    input.content.slice(ANNOTATION_REPLY_CONTENT_PREFIX.length)
+  ) as { annotationId?: unknown; text?: unknown };
+  const annotationId = typeof payload.annotationId === "string"
+    ? payload.annotationId.trim()
+    : "";
+  const text = typeof payload.text === "string" ? payload.text.trim() : "";
+  if (!annotationId || !text || text.length > 2_000) {
+    throw new Error("Invalid annotation reply compatibility payload");
+  }
+  return { annotationId, text };
+}
+
 export function registerReadingTools(
   server: McpServer,
   service: ReadingService,
@@ -310,6 +385,12 @@ export function registerReadingTools(
     );
   };
 
+  registerAppTool(
+    server,
+    "open_reading_nest_v24",
+    TOOL_CONFIGS.open_reading_nest_v24,
+    openReadingNest
+  );
   registerAppTool(
     server,
     "open_reading_nest_v23",
@@ -492,7 +573,16 @@ export function registerReadingTools(
     TOOL_CONFIGS.list_companion_comments,
     async (input) => {
       const result = await service.listCompanionComments(input);
-      return toolResult(result, "已读取这本书的Daddy陪读短评。");
+      const annotationResult = input.positionIndex
+        ? await service.listAnnotations({
+            sessionId: input.sessionId,
+            positionIndex: input.positionIndex
+          })
+        : undefined;
+      return toolResult(
+        { ...result, ...(annotationResult ?? {}) },
+        "已读取这本书的Daddy陪读短评。"
+      );
     }
   );
 
@@ -636,11 +726,40 @@ export function registerReadingTools(
   );
 
   server.registerTool("save_quote", TOOL_CONFIGS.save_quote, async (input) => {
+    const annotation = decodeAnnotationQuote(input);
+    if (annotation) {
+      const saved = await service.createAnnotation({
+        sessionId: input.sessionId,
+        position: input.position,
+        anchor: annotation.anchor,
+        author: "user",
+        ...(annotation.comment ? { comment: annotation.comment } : {}),
+        operationId: input.operationId!
+      });
+      return toolResult(
+        { saved: true, annotation: saved },
+        annotation.comment ? "你的划线和评论都留在书边啦。" : "这句话已经划好线。"
+      );
+    }
     const quote = await service.saveQuote(input);
     return toolResult({ saved: true, quote }, "摘录已经放进小窝。");
   });
 
   server.registerTool("save_reaction", TOOL_CONFIGS.save_reaction, async (input) => {
+    const annotationReply = decodeAnnotationReply(input);
+    if (annotationReply) {
+      const saved = await service.replyToAnnotation({
+        sessionId: input.sessionId,
+        annotationId: annotationReply.annotationId,
+        author: "user",
+        text: annotationReply.text,
+        operationId: input.operationId!
+      });
+      return toolResult(
+        { saved: true, annotation: saved },
+        "回复已经接在这条批注下面。"
+      );
+    }
     const reaction = await service.saveReaction(input);
     return toolResult({ saved: true, reaction }, "吐槽已经记下。");
   });

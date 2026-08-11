@@ -7,12 +7,12 @@ import {
 } from "./register-tools.js";
 
 describe("tool descriptors", () => {
-  it("binds the current UI resource to the v23 and compatibility render tools", () => {
-    expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v23.html");
-    expect(TOOL_CONFIGS.open_reading_nest_v23._meta?.ui).toEqual({
+  it("binds the current UI resource to the v24 and compatibility render tools", () => {
+    expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v24.html");
+    expect(TOOL_CONFIGS.open_reading_nest_v24._meta?.ui).toEqual({
       resourceUri: READING_NEST_URI
     });
-    expect(TOOL_CONFIGS.open_reading_nest_v23._meta?.["openai/outputTemplate"]).toBe(
+    expect(TOOL_CONFIGS.open_reading_nest_v24._meta?.["openai/outputTemplate"]).toBe(
       READING_NEST_URI
     );
     expect(TOOL_CONFIGS.open_reading_nest._meta?.["openai/outputTemplate"]).toBe(
@@ -20,6 +20,7 @@ describe("tool descriptors", () => {
     );
     for (const [name, config] of Object.entries(TOOL_CONFIGS)) {
       if (
+        name !== "open_reading_nest_v24" &&
         name !== "open_reading_nest_v23" &&
         name !== "open_reading_nest_v22" &&
         name !== "open_reading_nest" &&
@@ -94,7 +95,7 @@ describe("tool descriptors", () => {
     registerReadingTools(server as never, service as never, undefined, {
       sourceEndpointBase: "https://worker.example.test/source/secret"
     });
-    const result = (await handlers.get("open_reading_nest_v23")?.()) as {
+    const result = (await handlers.get("open_reading_nest_v24")?.()) as {
       structuredContent?: Record<string, unknown>;
     };
 
@@ -103,8 +104,9 @@ describe("tool descriptors", () => {
     );
     expect(JSON.stringify(result)).not.toMatch(/sourceText|bytesBase64|data:image/);
     expect(handlers.has("open_reading_nest")).toBe(true);
+    expect(handlers.has("open_reading_nest_v23")).toBe(true);
     expect(handlers.has("open_reading_nest_v22")).toBe(true);
-    expect(configs.get("open_reading_nest_v23")._meta).toMatchObject({
+    expect(configs.get("open_reading_nest_v24")._meta).toMatchObject({
       ui: { resourceUri: READING_NEST_URI },
       "ui/resourceUri": READING_NEST_URI,
       "openai/outputTemplate": READING_NEST_URI
@@ -234,7 +236,7 @@ describe("tool descriptors", () => {
   });
 
   it("exposes book management and threaded annotation tools", () => {
-    expect(Object.keys(TOOL_CONFIGS)).toHaveLength(31);
+    expect(Object.keys(TOOL_CONFIGS)).toHaveLength(32);
     expect(TOOL_CONFIGS.create_annotation.annotations).toMatchObject({
       readOnlyHint: false,
       idempotentHint: true
@@ -289,6 +291,86 @@ describe("tool descriptors", () => {
     expect(JSON.stringify(TOOL_CONFIGS.delete_cloud_source)).not.toMatch(
       /sourceText|publicUrl|signedUrl|currentText|includedText/
     );
+  });
+
+  it("saves and reloads annotations through stable legacy-catalog tools", async () => {
+    const handlers = new Map<string, (args: any) => Promise<any>>();
+    const server = {
+      registerTool: (name: string, _config: unknown, handler: (args: any) => Promise<any>) => {
+        handlers.set(name, handler);
+      }
+    };
+    const createAnnotation = async (input: any) => ({
+      id: "annotation-1",
+      sessionId: input.sessionId,
+      position: input.position,
+      anchor: input.anchor,
+      createdBy: "user",
+      messages: input.comment ? [{ id: "message-1", author: "user", text: input.comment }] : [],
+      operationId: input.operationId,
+      createdAt: "2026-08-11T00:00:00.000Z",
+      updatedAt: "2026-08-11T00:00:00.000Z"
+    });
+    const replyToAnnotation = async (input: any) => ({
+      id: input.annotationId,
+      sessionId: input.sessionId,
+      position: { kind: "paragraph", index: 12, label: "第 12 段" },
+      anchor: { selectedText: "她把信折好" },
+      createdBy: "user",
+      messages: [{ id: "message-2", author: "user", text: input.text }],
+      createdAt: "2026-08-11T00:00:00.000Z",
+      updatedAt: "2026-08-11T00:01:00.000Z"
+    });
+    const service = {
+      listAllSessions: async () => [],
+      getSessionBundle: async () => ({ session: {}, quotes: [], reactions: [], bookmarks: [] }),
+      listCompanionComments: async () => ({ comments: [] }),
+      listAnnotations: async () => ({ annotations: [{ id: "annotation-1" }] }),
+      createAnnotation,
+      replyToAnnotation,
+      saveQuote: async () => { throw new Error("must not save a quote"); },
+      saveReaction: async () => { throw new Error("must not save a reaction"); }
+    };
+
+    registerReadingTools(server as never, service as never);
+    const created = await handlers.get("save_quote")?.({
+      sessionId: "session-1",
+      content: "她把信折好",
+      position: { kind: "paragraph", index: 12, label: "第 12 段" },
+      note: `__ss_annotation_v24__:${JSON.stringify({
+        startOffset: 3,
+        endOffset: 9,
+        prefix: "雨停后，",
+        suffix: "放回抽屉。",
+        comment: "这里像是在告别。"
+      })}`,
+      operationId: "annotation-v24:op-1"
+    });
+    const replied = await handlers.get("save_reaction")?.({
+      sessionId: "session-1",
+      content: `__ss_annotation_reply_v24__:${JSON.stringify({
+        annotationId: "annotation-1",
+        text: "嗯，我也是。"
+      })}`,
+      position: { kind: "paragraph", index: 12, label: "第 12 段" },
+      speaker: "user",
+      operationId: "annotation-reply-v24:op-2"
+    });
+    const listed = await handlers.get("list_companion_comments")?.({
+      sessionId: "session-1",
+      scope: "recent",
+      positionIndex: 12,
+      limit: 1
+    });
+
+    expect(created.structuredContent.annotation.anchor).toMatchObject({
+      selectedText: "她把信折好",
+      startOffset: 3,
+      endOffset: 9
+    });
+    expect(created.structuredContent.annotation.messages[0].text).toBe("这里像是在告别。");
+    expect(replied.structuredContent.annotation.messages[0].text).toBe("嗯，我也是。");
+    expect(listed.structuredContent.annotations).toEqual([{ id: "annotation-1" }]);
   });
 
   it("uploads cloud source through an app-only tool with metadata-only structured content", async () => {
