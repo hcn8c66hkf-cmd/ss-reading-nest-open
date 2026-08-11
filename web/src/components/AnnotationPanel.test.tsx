@@ -30,14 +30,12 @@ const annotation: ReadingAnnotation = {
 describe("AnnotationPanel", () => {
   it("keeps user and Daddy replies in the thread", () => {
     const onReply = vi.fn();
-    const onAskDaddy = vi.fn();
     render(
       <AnnotationPanel
         annotations={[annotation]}
         loading={false}
         saving={false}
         onReply={onReply}
-        onAskDaddy={onAskDaddy}
       />
     );
 
@@ -48,8 +46,22 @@ describe("AnnotationPanel", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "保存回复" }));
     expect(onReply).toHaveBeenCalledWith("annotation-1", "嗯，我也是。");
+    expect(screen.queryByRole("button", { name: "请Daddy回这条" })).not.toBeInTheDocument();
+  });
 
-    fireEvent.click(screen.getByRole("button", { name: "请Daddy回这条" }));
-    expect(onAskDaddy).toHaveBeenCalledWith(annotation);
+  it("shows automatic Daddy reply state after the user's latest comment", () => {
+    render(
+      <AnnotationPanel
+        annotations={[{
+          ...annotation,
+          messages: [annotation.messages[0]!]
+        }]}
+        loading={false}
+        saving={false}
+        onReply={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText("Daddy正在回这条……")).toBeInTheDocument();
   });
 });

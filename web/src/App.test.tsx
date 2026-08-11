@@ -165,7 +165,7 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "进入阅读小窝" }));
 
-    expect(await screen.findByText(/用户读到：第 1 段/)).toBeInTheDocument();
+    expect(await screen.findByText(/你在：第 1 段/)).toBeInTheDocument();
     expect(screen.getByText(content.slice(0, 20), { exact: false })).toBeInTheDocument();
     expect(await deviceCache.get("large-file-session")).toMatchObject({
       metadata: {
@@ -652,12 +652,12 @@ describe("App", () => {
       }
     });
     fireEvent.click(screen.getByRole("button", { name: "进入阅读小窝" }));
-    await screen.findByText(/Daddy确认读到：尚未同步/);
+    await screen.findByText(/Daddy上次读到：还没有/);
 
     for (let index = 0; index < 27; index += 1) {
       fireEvent.click(screen.getByRole("button", { name: "下一段" }));
     }
-    await screen.findByText(/用户读到：第 28 段/);
+    await screen.findByText(/你在：第 28 段/);
     fireEvent.click(screen.getByRole("button", { name: "陪我看看这里" }));
 
     expect(await screen.findByText("中间有较多剧情，要怎么同步？")).toBeInTheDocument();
@@ -1503,7 +1503,7 @@ describe("App", () => {
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: "继续阅读《Reader Comment Book》" }));
 
-    expect(await screen.findByText("用户读到：第 3 段")).toBeInTheDocument();
+    expect(await screen.findByText("你在：第 3 段")).toBeInTheDocument();
     expect(await screen.findByText("Daddy已经追到第八段啦，这里可以接着聊。")).toBeInTheDocument();
     expect(screen.getByText("第 8 段")).toBeInTheDocument();
     await deviceCache.remove("reader-comment-session");
@@ -1551,7 +1551,7 @@ describe("App", () => {
       target: { value: sourceText }
     });
     fireEvent.click(screen.getByRole("button", { name: "进入阅读小窝" }));
-    expect(await screen.findByText("用户读到：第 2 段")).toBeInTheDocument();
+    expect(await screen.findByText("你在：第 2 段")).toBeInTheDocument();
     expect(await deviceCache.get("ipad-refresh-session")).not.toBeNull();
 
     firstRender.unmount();
@@ -1562,7 +1562,7 @@ describe("App", () => {
       await screen.findByRole("button", { name: "继续阅读《iPad Refresh Book》" })
     ).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "继续阅读《iPad Refresh Book》" }));
-    expect(await screen.findByText("用户读到：第 2 段")).toBeInTheDocument();
+    expect(await screen.findByText("你在：第 2 段")).toBeInTheDocument();
     await deviceCache.remove("ipad-refresh-session");
   });
 
@@ -1635,7 +1635,7 @@ describe("App", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "进入阅读小窝" }));
 
-    expect(await screen.findByText("用户读到：第 1 段")).toBeInTheDocument();
+    expect(await screen.findByText("你在：第 1 段")).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith(
       "https://worker.example.test/source/secret/upload",
       expect.objectContaining({ method: "POST" })
@@ -1736,7 +1736,7 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "进入阅读小窝" }));
 
     expect(
-      await screen.findByText(/用户读到：第 1 段/, {}, { timeout: 10_000 })
+      await screen.findByText(/你在：第 1 段/, {}, { timeout: 10_000 })
     ).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith(
       "https://worker.example.test/source/secret/upload",
@@ -2397,7 +2397,7 @@ describe("App", () => {
     fireEvent.click(
       await screen.findByRole("button", { name: "继续阅读《A 书》" })
     );
-    expect(await screen.findByText("用户读到：第 2 段")).toBeInTheDocument();
+    expect(await screen.findByText("你在：第 2 段")).toBeInTheDocument();
     expect(await screen.findByText("A 书短评")).toBeInTheDocument();
     expect(screen.queryByText("B 书短评")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "更多操作" }));
@@ -2411,7 +2411,7 @@ describe("App", () => {
     fireEvent.click(
       await screen.findByRole("button", { name: "继续阅读《B 书》" })
     );
-    expect(await screen.findByText("用户读到：第 3 段")).toBeInTheDocument();
+    expect(await screen.findByText("你在：第 3 段")).toBeInTheDocument();
     expect(await screen.findByText("B 书短评")).toBeInTheDocument();
     expect(screen.queryByText("A 书短评")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "更多操作" }));

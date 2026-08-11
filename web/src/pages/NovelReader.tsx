@@ -15,6 +15,7 @@ import { ReaderHeader } from "../components/ReaderHeader.js";
 import { ReaderActions } from "../components/ReaderActions.js";
 import { ReadingSyncStatus } from "../components/ReadingSyncStatus.js";
 import { AnnotationPanel } from "../components/AnnotationPanel.js";
+import type { LiveReadingQueueState } from "../hooks/useLiveReading.js";
 
 export function NovelReader(props: {
   session: ReadingSession;
@@ -30,9 +31,9 @@ export function NovelReader(props: {
   annotationsLoading?: boolean;
   annotationsError?: string;
   annotationSaving?: boolean;
+  liveReadingState?: LiveReadingQueueState;
   onCreateAnnotation?: (anchor: TextAnchor, comment?: string) => Promise<boolean> | boolean;
   onReplyAnnotation?: (annotationId: string, text: string) => void;
-  onAskDaddyReply?: (annotation: ReadingAnnotation) => void;
   onFinish: () => void;
   onBack: () => void;
   onFullscreen: () => void;
@@ -127,7 +128,10 @@ export function NovelReader(props: {
         onSettings={props.onSettings}
         onMore={props.onMore}
       />
-      <ReadingSyncStatus session={props.session} />
+      <ReadingSyncStatus
+        session={props.session}
+        liveReadingState={props.liveReadingState}
+      />
       <div className="reader-workspace">
         <section
           ref={scrollRef}
@@ -160,7 +164,6 @@ export function NovelReader(props: {
             onReply={(annotationId, text) =>
               props.onReplyAnnotation?.(annotationId, text)
             }
-            onAskDaddy={(annotation) => props.onAskDaddyReply?.(annotation)}
           />
           <div className="page-buttons">
             <button onClick={previous} disabled={index === 0}>上一段</button>
@@ -245,7 +248,7 @@ export function NovelReader(props: {
         </div>
       ) : null}
       <ReaderActions
-        primaryLabel="陪我看看这里"
+        primaryLabel={props.session.liveReadingEnabled ? "提醒Daddy看本段" : "陪我看看这里"}
         secondaryLabel="保存这句"
         onPrimary={() => props.onLook(current, selected, selectedAnchor ?? undefined)}
         primaryDisabled={props.syncRequestInFlight}

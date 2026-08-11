@@ -68,6 +68,7 @@ export function buildLiveReadingPrompt(input: {
   sessionId: string;
   title: string;
   position: ReadingPosition;
+  text: string;
   operationId: string;
   autoSaveCompanionComments: boolean;
   requestedMode?: ReadingCommentMode;
@@ -88,10 +89,12 @@ export function buildLiveReadingPrompt(input: {
       ];
   return [
     `【实时陪读：${input.position.label}】《${input.title}》`,
+    `本段原文：\n${input.text}`,
     "固定模式：reaction_only；固定长度：short；风格：danmaku。",
     "只输出 1-3 句弹幕式短评。",
     "不总结全文，不重复剧情，不写完整书评。",
     "只做即时反应、吐槽、嗑点或伏笔提醒。",
+    "只有 publish_companion_comment 成功写下短评，才算读完本段；不要只在聊天区口头回复。",
     ...publication
   ].join("\n\n");
 }

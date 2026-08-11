@@ -3,6 +3,7 @@ import type { ToolCallResult } from "../types/openai.js";
 
 let app: McpApp | undefined;
 let appReady: Promise<void> | undefined;
+let appConnectionFailed = false;
 
 export interface ReadingHostContext {
   displayMode?: "inline" | "pip" | "fullscreen";
@@ -25,7 +26,9 @@ function connectApp() {
   if (typeof window === "undefined" || window.parent === window) return undefined;
   if (!app) {
     app = new McpApp({ name: "S×S 小窝共读", version: "0.2.1" });
-    appReady = app.connect().catch(() => undefined);
+    appReady = app.connect().catch(() => {
+      appConnectionFailed = true;
+    });
   }
   return app;
 }
@@ -37,7 +40,9 @@ export async function callTool(
   const bridge = connectApp();
   if (bridge) {
     await appReady;
-    return (await bridge.callServerTool({ name, arguments: args })) as ToolCallResult;
+    if (!appConnectionFailed) {
+      return (await bridge.callServerTool({ name, arguments: args })) as ToolCallResult;
+    }
   }
   if (window.openai?.callTool) return window.openai.callTool(name, args);
   return { structuredContent: {} };
@@ -46,18 +51,26 @@ export async function callTool(
 export async function askChatGpt(
   prompt: string,
   options: { scrollToBottom?: boolean } = {}
-) {
-  await requestReaderPip();
+): Promise<boolean> {
   const bridge = connectApp();
   if (bridge) {
     await appReady;
-    await bridge.sendMessage({ role: "user", content: [{ type: "text", text: prompt }] });
-    return;
+    if (!appConnectionFailed) {
+      try {
+        await bridge.sendMessage({ role: "user", content: [{ type: "text", text: prompt }] });
+        return true;
+      } catch {
+        // Fall through to the ChatGPT compatibility alias when the shared bridge
+        // is present but this host rejects ui/message.
+      }
+    }
   }
-  await window.openai?.sendFollowUpMessage?.({
+  if (!window.openai?.sendFollowUpMessage) return false;
+  await window.openai.sendFollowUpMessage({
     prompt,
     scrollToBottom: options.scrollToBottom ?? false
   });
+  return true;
 }
 
 export async function requestReaderPip(): Promise<boolean> {
