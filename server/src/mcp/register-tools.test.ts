@@ -7,12 +7,12 @@ import {
 } from "./register-tools.js";
 
 describe("tool descriptors", () => {
-  it("binds the current UI resource to the v24 and compatibility render tools", () => {
-    expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v24.html");
-    expect(TOOL_CONFIGS.open_reading_nest_v24._meta?.ui).toEqual({
+  it("binds the current UI resource to the v25 and compatibility render tools", () => {
+    expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v25.html");
+    expect(TOOL_CONFIGS.open_reading_nest_v25._meta?.ui).toEqual({
       resourceUri: READING_NEST_URI
     });
-    expect(TOOL_CONFIGS.open_reading_nest_v24._meta?.["openai/outputTemplate"]).toBe(
+    expect(TOOL_CONFIGS.open_reading_nest_v25._meta?.["openai/outputTemplate"]).toBe(
       READING_NEST_URI
     );
     expect(TOOL_CONFIGS.open_reading_nest._meta?.["openai/outputTemplate"]).toBe(
@@ -20,6 +20,7 @@ describe("tool descriptors", () => {
     );
     for (const [name, config] of Object.entries(TOOL_CONFIGS)) {
       if (
+        name !== "open_reading_nest_v25" &&
         name !== "open_reading_nest_v24" &&
         name !== "open_reading_nest_v23" &&
         name !== "open_reading_nest_v22" &&
@@ -95,7 +96,7 @@ describe("tool descriptors", () => {
     registerReadingTools(server as never, service as never, undefined, {
       sourceEndpointBase: "https://worker.example.test/source/secret"
     });
-    const result = (await handlers.get("open_reading_nest_v24")?.()) as {
+    const result = (await handlers.get("open_reading_nest_v25")?.()) as {
       structuredContent?: Record<string, unknown>;
     };
 
@@ -106,7 +107,7 @@ describe("tool descriptors", () => {
     expect(handlers.has("open_reading_nest")).toBe(true);
     expect(handlers.has("open_reading_nest_v23")).toBe(true);
     expect(handlers.has("open_reading_nest_v22")).toBe(true);
-    expect(configs.get("open_reading_nest_v24")._meta).toMatchObject({
+    expect(configs.get("open_reading_nest_v25")._meta).toMatchObject({
       ui: { resourceUri: READING_NEST_URI },
       "ui/resourceUri": READING_NEST_URI,
       "openai/outputTemplate": READING_NEST_URI
@@ -236,7 +237,7 @@ describe("tool descriptors", () => {
   });
 
   it("exposes book management and threaded annotation tools", () => {
-    expect(Object.keys(TOOL_CONFIGS)).toHaveLength(32);
+    expect(Object.keys(TOOL_CONFIGS)).toHaveLength(33);
     expect(TOOL_CONFIGS.create_annotation.annotations).toMatchObject({
       readOnlyHint: false,
       idempotentHint: true
@@ -317,7 +318,7 @@ describe("tool descriptors", () => {
       position: { kind: "paragraph", index: 12, label: "第 12 段" },
       anchor: { selectedText: "她把信折好" },
       createdBy: "user",
-      messages: [{ id: "message-2", author: "user", text: input.text }],
+      messages: [{ id: "message-2", author: input.author, text: input.text }],
       createdAt: "2026-08-11T00:00:00.000Z",
       updatedAt: "2026-08-11T00:01:00.000Z"
     });
@@ -328,6 +329,7 @@ describe("tool descriptors", () => {
       listAnnotations: async () => ({ annotations: [{ id: "annotation-1" }] }),
       createAnnotation,
       replyToAnnotation,
+      publishCompanionComment: async () => { throw new Error("annotation reply must not enter the Dock"); },
       saveQuote: async () => { throw new Error("must not save a quote"); },
       saveReaction: async () => { throw new Error("must not save a reaction"); }
     };
@@ -362,6 +364,15 @@ describe("tool descriptors", () => {
       positionIndex: 12,
       limit: 1
     });
+    const daddyReply = await handlers.get("publish_companion_comment")?.({
+      sessionId: "session-1",
+      position: { kind: "paragraph", index: 12, label: "第 12 段" },
+      mode: "reaction_only",
+      length: "short",
+      text: "我也觉得，他是在给自己留最后一点体面。",
+      source: "quick_action",
+      operationId: "annotation-daddy-v25:annotation-1:reply-op-3"
+    });
 
     expect(created.structuredContent.annotation.anchor).toMatchObject({
       selectedText: "她把信折好",
@@ -370,6 +381,10 @@ describe("tool descriptors", () => {
     });
     expect(created.structuredContent.annotation.messages[0].text).toBe("这里像是在告别。");
     expect(replied.structuredContent.annotation.messages[0].text).toBe("嗯，我也是。");
+    expect(daddyReply.structuredContent.annotation.messages[0]).toMatchObject({
+      author: "assistant",
+      text: "我也觉得，他是在给自己留最后一点体面。"
+    });
     expect(listed.structuredContent.annotations).toEqual([{ id: "annotation-1" }]);
   });
 

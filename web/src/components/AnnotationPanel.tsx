@@ -7,7 +7,6 @@ export function AnnotationPanel(props: {
   error?: string;
   saving: boolean;
   onReply: (annotationId: string, text: string) => void;
-  onAskDaddy: (annotation: ReadingAnnotation) => void;
 }) {
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
   const [reply, setReply] = useState("");
@@ -59,9 +58,9 @@ export function AnnotationPanel(props: {
               >
                 回复
               </button>
-              <button type="button" onClick={() => props.onAskDaddy(annotation)}>
-                请Daddy回这条
-              </button>
+              {annotation.messages.at(-1)?.author === "user" ? (
+                <span className="annotation-awaiting-daddy">Daddy正在回这条……</span>
+              ) : null}
             </div>
             {replyingTo === annotation.id ? (
               <form

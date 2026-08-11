@@ -1,4 +1,4 @@
-import { act, renderHook } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useLiveReading } from "./useLiveReading.js";
 
@@ -7,122 +7,95 @@ afterEach(() => {
 });
 
 describe("useLiveReading", () => {
-  it("waits 1800ms and resets when the position changes", () => {
-    vi.useFakeTimers();
-    const onStablePosition = vi.fn();
-    const { rerender } = renderHook(
-      (props: { index: number }) =>
+  it("queues every paragraph when the user flips faster than Daddy", async () => {
+    const onQueuedPosition = vi.fn().mockResolvedValue(true);
+    const { result, rerender } = renderHook(
+      (props: { user: number; assistant: number }) =>
         useLiveReading({
           enabled: true,
-          userPositionIndex: props.index,
-          isScrolling: false,
+          sessionKey: "session-1:reaction_only:short",
+          userPositionIndex: props.user,
+          assistantPositionIndex: props.assistant,
           sourceVerified: true,
-          delayMs: 1_800,
-          onStablePosition
+          onQueuedPosition
         }),
-      { initialProps: { index: 2 } }
+      { initialProps: { user: 2, assistant: 1 } }
     );
 
-    act(() => vi.advanceTimersByTime(1_000));
-    expect(onStablePosition).not.toHaveBeenCalled();
-    rerender({ index: 3 });
-    act(() => vi.advanceTimersByTime(1_799));
-    expect(onStablePosition).not.toHaveBeenCalled();
-    act(() => vi.advanceTimersByTime(1));
-    expect(onStablePosition).toHaveBeenCalledWith(3);
+    await waitFor(() => expect(onQueuedPosition).toHaveBeenCalledWith(2));
+    rerender({ user: 4, assistant: 1 });
+    expect(result.current).toEqual({ activeIndex: 2, queuedCount: 2 });
+
+    rerender({ user: 4, assistant: 2 });
+    await waitFor(() => expect(onQueuedPosition).toHaveBeenCalledWith(3));
+    expect(result.current).toEqual({ activeIndex: 3, queuedCount: 1 });
+
+    rerender({ user: 4, assistant: 3 });
+    await waitFor(() => expect(onQueuedPosition).toHaveBeenCalledWith(4));
+    expect(result.current).toEqual({ activeIndex: 4, queuedCount: 0 });
   });
 
-  it("does not send while scrolling, disabled, or without a verified source", () => {
-    vi.useFakeTimers();
-    const onStablePosition = vi.fn();
+  it("does not repeat a paragraph after its short comment confirms completion", async () => {
+    const onQueuedPosition = vi.fn().mockResolvedValue(true);
     const { rerender } = renderHook(
-      (props: {
-        enabled: boolean;
-        scrolling: boolean;
-        sourceVerified: boolean;
-      }) =>
+      (props: { user: number; assistant: number }) =>
+        useLiveReading({
+          enabled: true,
+          sessionKey: "session-1:reaction_only:short",
+          userPositionIndex: props.user,
+          assistantPositionIndex: props.assistant,
+          sourceVerified: true,
+          onQueuedPosition
+        }),
+      { initialProps: { user: 8, assistant: 7 } }
+    );
+
+    await waitFor(() => expect(onQueuedPosition).toHaveBeenCalledTimes(1));
+    rerender({ user: 8, assistant: 8 });
+    rerender({ user: 8, assistant: 8 });
+    expect(onQueuedPosition).toHaveBeenCalledTimes(1);
+  });
+
+  it("stays idle while disabled or the source is unavailable", () => {
+    const onQueuedPosition = vi.fn();
+    const { rerender } = renderHook(
+      (props: { enabled: boolean; sourceVerified: boolean }) =>
         useLiveReading({
           enabled: props.enabled,
+          sessionKey: "session-1",
           userPositionIndex: 5,
-          isScrolling: props.scrolling,
+          assistantPositionIndex: 1,
           sourceVerified: props.sourceVerified,
-          delayMs: 1_800,
-          onStablePosition
+          onQueuedPosition
         }),
-      {
-        initialProps: {
-          enabled: false,
-          scrolling: false,
-          sourceVerified: true
-        }
-      }
+      { initialProps: { enabled: false, sourceVerified: true } }
     );
 
-    for (const props of [
-      { enabled: false, scrolling: false, sourceVerified: true },
-      { enabled: true, scrolling: true, sourceVerified: true },
-      { enabled: true, scrolling: false, sourceVerified: false }
-    ]) {
-      rerender(props);
-      act(() => vi.advanceTimersByTime(2_000));
-    }
-
-    expect(onStablePosition).not.toHaveBeenCalled();
+    rerender({ enabled: true, sourceVerified: false });
+    expect(onQueuedPosition).not.toHaveBeenCalled();
   });
 
-  it("does not repeat the same stable live-reading trigger across rerenders", () => {
+  it("retries once if no persisted short comment arrives", async () => {
     vi.useFakeTimers();
-    const onStablePosition = vi.fn();
-    const { rerender } = renderHook(
-      (props: { index: number; revision: number }) =>
-        useLiveReading({
-          enabled: true,
-          userPositionIndex: props.index,
-          triggerKey: `session-1-paragraph-${props.index}-reaction_only-short`,
-          isScrolling: false,
-          sourceVerified: true,
-          delayMs: 1_800,
-          onStablePosition: (index) => onStablePosition(index, props.revision)
-        }),
-      { initialProps: { index: 2, revision: 0 } }
+    const onQueuedPosition = vi.fn().mockResolvedValue(true);
+    renderHook(() =>
+      useLiveReading({
+        enabled: true,
+        sessionKey: "session-1",
+        userPositionIndex: 3,
+        assistantPositionIndex: 2,
+        sourceVerified: true,
+        retryMs: 1_000,
+        onQueuedPosition
+      })
     );
 
-    act(() => vi.advanceTimersByTime(1_800));
-    rerender({ index: 2, revision: 1 });
-    act(() => vi.advanceTimersByTime(1_800));
-    rerender({ index: 2, revision: 2 });
-    act(() => vi.advanceTimersByTime(1_800));
-    expect(onStablePosition).toHaveBeenCalledTimes(1);
-    expect(onStablePosition.mock.calls.at(-1)?.[0]).toBe(2);
-
-    rerender({ index: 3, revision: 3 });
-    act(() => vi.advanceTimersByTime(1_800));
-    expect(onStablePosition).toHaveBeenCalledTimes(2);
-    expect(onStablePosition.mock.calls.at(-1)?.[0]).toBe(3);
-  });
-
-  it("does not restart the dwell timer when the callback identity changes", () => {
-    vi.useFakeTimers();
-    const onStablePosition = vi.fn();
-    const { rerender } = renderHook(
-      (props: { revision: number }) =>
-        useLiveReading({
-          enabled: true,
-          userPositionIndex: 9,
-          triggerKey: "session-1-paragraph-9-reaction_only-short",
-          isScrolling: false,
-          sourceVerified: true,
-          delayMs: 1_800,
-          onStablePosition: (index) => onStablePosition(index, props.revision)
-        }),
-      { initialProps: { revision: 0 } }
-    );
-
-    act(() => vi.advanceTimersByTime(1_000));
-    rerender({ revision: 1 });
-    act(() => vi.advanceTimersByTime(800));
-
-    expect(onStablePosition).toHaveBeenCalledTimes(1);
-    expect(onStablePosition).toHaveBeenCalledWith(9, 1);
+    await act(async () => Promise.resolve());
+    expect(onQueuedPosition).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      vi.advanceTimersByTime(1_000);
+      await Promise.resolve();
+    });
+    expect(onQueuedPosition).toHaveBeenCalledTimes(2);
   });
 });

@@ -179,6 +179,7 @@ describe("buildLiveReadingPrompt", () => {
       sessionId: "session-1",
       title: "测试小说",
       position: { kind: "paragraph", index: 12, label: "第 12 段" },
+      text: "他把没说出口的话咽了回去。",
       operationId: "live-op-1",
       autoSaveCompanionComments: true,
       requestedMode: "deep_analysis",
@@ -188,6 +189,8 @@ describe("buildLiveReadingPrompt", () => {
     expect(prompt).toContain("reaction_only");
     expect(prompt).toContain("short");
     expect(prompt).toContain("1-3 句弹幕式短评");
+    expect(prompt).toContain("他把没说出口的话咽了回去");
+    expect(prompt).toContain("才算读完本段");
     expect(prompt).toContain("不总结全文");
     expect(prompt).toContain("不重复剧情");
     expect(prompt).toContain("不写完整书评");
@@ -204,6 +207,7 @@ describe("buildLiveReadingPrompt", () => {
       sessionId: "session-1",
       title: "测试小说",
       position: { kind: "paragraph", index: 12, label: "第 12 段" },
+      text: "这一段原文。",
       operationId: "live-op-1",
       autoSaveCompanionComments: false
     });

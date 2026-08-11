@@ -53,9 +53,9 @@ describe("MangaReader v0.2 positions", () => {
       />
     );
 
-    expect(screen.getByText("用户读到：第 2 页")).toBeInTheDocument();
-    expect(screen.getByText("Daddy确认读到：第 1 页")).toBeInTheDocument();
-    expect(screen.getByText(/待补课：第 2–2 页/)).toBeInTheDocument();
+    expect(screen.getByText("你在：第 2 页")).toBeInTheDocument();
+    expect(screen.getByText("Daddy上次读到：第 1 页")).toBeInTheDocument();
+    expect(screen.getByText(/还没一起看到这里/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "下一页" }));
     expect(onPosition).toHaveBeenCalledWith(3);

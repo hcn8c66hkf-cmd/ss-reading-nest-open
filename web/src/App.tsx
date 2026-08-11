@@ -1210,7 +1210,9 @@ export function App() {
         successPrompt: policyPrompt,
         fallbackPrompt,
         updateModelContext,
-        sendMessage: askChatGpt
+        sendMessage: async (prompt, options) => {
+          await askChatGpt(prompt, options);
+        }
       });
       rememberPendingCommentDraft({
         position: sessionBundle.session.userCurrentPosition,
@@ -1234,6 +1236,10 @@ export function App() {
     selectedAnchor?: TextAnchor
   ) {
     if (!sessionBundle) return;
+    if (sessionBundle.session.liveReadingEnabled) {
+      setToast("这一段已经排给Daddy；短评出现就代表他读完啦。");
+      return;
+    }
     if (syncRequestInFlight || syncJobRef.current) return;
     const userIndex = sessionBundle.session.userCurrentPosition.index;
     const assistantIndex = sessionBundle.session.assistantSyncedPosition?.index ?? 0;
@@ -1540,24 +1546,23 @@ export function App() {
   }
 
   const sendLiveReading = useCallback(
-    async (index: number) => {
+    async (index: number): Promise<boolean> => {
       if (
         !sessionBundle ||
-        sessionBundle.session.type !== "novel" ||
-        (syncJob && syncJob.mode !== "live_reading")
-      ) return;
+        sessionBundle.session.type !== "novel"
+      ) return false;
       const session = sessionBundle.session;
       if (
         session.assistantSyncedPosition?.kind === session.userCurrentPosition.kind &&
         session.assistantSyncedPosition.index >= index
       ) {
-        return;
+        return true;
       }
       const permission = checkSourceSyncPermission({
         mode: "live_reading",
         sourceAvailability
       });
-      if (!permission.allowed) return;
+      if (!permission.allowed) return false;
       const mode = session.sessionPreferences.readingCommentMode;
       const length = session.sessionPreferences.commentLength;
       const operationId = buildLiveReadingOperationId(session.id, session.userCurrentPosition.kind, index, mode, length);
@@ -1569,9 +1574,10 @@ export function App() {
             comment.source === "live_reading"
         )
       ) {
-        return;
+        return true;
       }
       const sourceContext = getSourceContext(session.sourceManifest);
+      const targetPosition = makePosition("novel", index, chunks.length);
       const start = index;
       const text = chunks
         .slice(start - 1, index)
@@ -1593,7 +1599,7 @@ export function App() {
         await callTool("send_current_context", {
           sessionId: session.id,
           previousSyncedPosition: session.assistantSyncedPosition,
-          currentPosition: session.userCurrentPosition,
+          currentPosition: targetPosition,
           contextRange: { start, end: index },
           includedText: text,
           ...(sourceContext ? { sourceContext } : {}),
@@ -1607,11 +1613,12 @@ export function App() {
             hasMore: false
           }
         });
-        await askChatGpt(
+        const sent = await askChatGpt(
           buildLiveReadingPrompt({
             sessionId: sessionBundle.session.id,
             title: session.title,
-            position: session.userCurrentPosition,
+            position: targetPosition,
+            text,
             operationId: batch.id,
             autoSaveCompanionComments:
               session.sessionPreferences.autoSaveCompanionComments,
@@ -1620,40 +1627,41 @@ export function App() {
           }),
           { scrollToBottom: false }
         );
+        if (!sent) throw new Error("Host did not accept follow-up message");
+        return true;
       } catch {
         setToast("这次实时跟读没有发送成功。");
+        return false;
       }
     },
-    [chunks, companionComments, sessionBundle, sourceAvailability, syncJob]
+    [chunks, companionComments, sessionBundle, sourceAvailability]
   );
 
-  useLiveReading({
-    enabled: sessionBundle?.session.liveReadingEnabled ?? false,
-    userPositionIndex: sessionBundle?.session.userCurrentPosition.index ?? 1,
-    isScrolling: false,
-    triggerKey: sessionBundle
-      ? buildLiveReadingOperationId(
+  const liveReadingState = useLiveReading({
+    enabled:
+      (sessionBundle?.session.liveReadingEnabled ?? false) &&
+      sessionBundle?.session.type === "novel",
+    sessionKey: sessionBundle
+      ? [
           sessionBundle.session.id,
-          sessionBundle.session.userCurrentPosition.kind,
-          sessionBundle.session.userCurrentPosition.index,
           sessionBundle.session.sessionPreferences.readingCommentMode,
           sessionBundle.session.sessionPreferences.commentLength
-        )
+        ].join(":")
       : undefined,
-    sourceVerified:
-      sourceAvailability === "available_local" &&
-      !(
-        sessionBundle?.session.assistantSyncedPosition?.kind ===
-          sessionBundle?.session.userCurrentPosition.kind &&
-        (sessionBundle?.session.assistantSyncedPosition?.index ?? 0) >=
-          (sessionBundle?.session.userCurrentPosition.index ?? 1)
-      ),
-    delayMs: 1_800,
-    onStablePosition: sendLiveReading
+    userPositionIndex: sessionBundle?.session.userCurrentPosition.index ?? 1,
+    assistantPositionIndex:
+      sessionBundle?.session.assistantSyncedPosition?.index ?? 0,
+    sourceVerified: sourceAvailability === "available_local",
+    onQueuedPosition: sendLiveReading
   });
 
   async function changeLiveReading(enabled: boolean) {
     if (!sessionBundle) return;
+    if (enabled && syncJobRef.current) {
+      const cancelled = cancelSyncJob(syncJobRef.current);
+      clearSyncJobState();
+      await cache.putSyncJob(cancelled).catch(() => undefined);
+    }
     const result = await callTool("set_live_reading_mode", {
       sessionId: sessionBundle.session.id,
       enabled
@@ -1737,7 +1745,9 @@ export function App() {
         successPrompt: policyPrompt,
         fallbackPrompt,
         updateModelContext,
-        sendMessage: askChatGpt
+        sendMessage: async (prompt, options) => {
+          await askChatGpt(prompt, options);
+        }
       });
       rememberPendingCommentDraft({
         position,
@@ -1892,7 +1902,11 @@ export function App() {
         ...current.filter((item) => item.id !== annotation.id),
         annotation
       ]);
-      setToast(comment ? "你的划线和评论都留在书边啦。" : "这句话已经划好线。" );
+      if (comment) {
+        await askDaddyToReply(annotation);
+      } else {
+        setToast("这句话已经划好线。" );
+      }
       return true;
     } catch (error) {
       console.warn("Failed to save reading annotation", error);
@@ -1921,7 +1935,7 @@ export function App() {
       setAnnotations((current) =>
         current.map((item) => (item.id === annotation.id ? annotation : item))
       );
-      setToast("回复已经接在这条批注下面。" );
+      await askDaddyToReply(annotation);
     } catch {
       setToast("这条回复没有保存成功，请重试。");
     } finally {
@@ -1929,23 +1943,32 @@ export function App() {
     }
   }
 
-  async function askDaddyToReply(annotation: ReadingAnnotation) {
-    if (!sessionBundle) return;
-    const operationId = `assistant-reply-${crypto.randomUUID()}`;
+  async function askDaddyToReply(annotation: ReadingAnnotation): Promise<boolean> {
+    if (!sessionBundle) return false;
+    const operationId = `annotation-daddy-v25:${encodeURIComponent(annotation.id)}:${crypto.randomUUID()}`;
     const thread = annotation.messages
       .map((message) => `${message.author === "assistant" ? "Daddy" : "用户"}：${message.text}`)
       .join("\n");
-    await askChatGpt(
+    const sent = await askChatGpt(
       [
         `我们正在共读《${sessionBundle.session.title}》的${annotation.position.label}。`,
         `划线原文：${annotation.anchor.selectedText}`,
         thread ? `当前评论线程：\n${thread}` : "当前只有划线，还没有评论。",
-        "请自然地接着这条批注回复，先调用 reply_to_annotation 把你的回复写回书边，再在聊天区说同样的话。",
-        `调用参数：sessionId=${sessionBundle.session.id} annotationId=${annotation.id} author=assistant operationId=${operationId} text=你的最终回复全文。`
+        "请自然地接着用户最后一句回复 1–3 句。不要调用 reply_to_annotation。",
+        "先调用 publish_companion_comment；小窝会凭下面这个专用 operationId 把 text 接进这条批注线程，而不是放进短评 Dock。工具成功后，再在聊天区说相同内容。",
+        `publish_companion_comment 固定参数：${JSON.stringify({
+          sessionId: sessionBundle.session.id,
+          position: annotation.position,
+          mode: "reaction_only",
+          length: "short",
+          source: "quick_action",
+          operationId
+        })}；text=你对这条批注的最终回复全文。`
       ].join("\n\n"),
       { scrollToBottom: false }
     );
-    setToast("已经请Daddy来回这条批注啦。" );
+    setToast(sent ? "评论已保存，Daddy正在回这条。" : "评论已保存，但这次没有叫到Daddy。" );
+    return sent;
   }
 
   function rememberPendingCommentDraft(input: {
@@ -2297,11 +2320,11 @@ export function App() {
           annotationsLoading={annotationsLoading}
           annotationsError={annotationsError || undefined}
           annotationSaving={annotationSaving}
+          liveReadingState={liveReadingState}
           onCreateAnnotation={createReadingAnnotation}
           onReplyAnnotation={(annotationId, text) =>
             void replyToReadingAnnotation(annotationId, text)
           }
-          onAskDaddyReply={(annotation) => void askDaddyToReply(annotation)}
           onFinish={finishToday}
           onFullscreen={() => void openFullscreenReader()}
           fullscreenLabel={readerImmersive ? "退出全屏" : "全屏阅读"}
