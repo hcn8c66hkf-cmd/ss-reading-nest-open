@@ -34,6 +34,7 @@ describe("host bridge", () => {
       configurable: true,
       value: {
         setWidgetState: vi.fn(),
+        sendFollowUpMessage: vi.fn().mockResolvedValue(undefined),
         widgetState: {
           screen: "novel",
           sessionId: "session-1",
@@ -58,16 +59,30 @@ describe("host bridge", () => {
     });
   });
 
-  it("requests fullscreen and sends a message without forcing chat scroll", async () => {
+  it("requests fullscreen and prefers the Work follow-up compatibility path", async () => {
     const { askChatGpt, requestReaderFullscreen } = await import("./host.js");
 
     await expect(requestReaderFullscreen()).resolves.toBe(true);
     await askChatGpt("陪我看看这里", { scrollToBottom: false });
 
     expect(bridge.requestDisplayMode).toHaveBeenCalledWith({ mode: "fullscreen" });
+    expect(window.openai?.sendFollowUpMessage).toHaveBeenCalledWith({
+      prompt: "陪我看看这里",
+      scrollToBottom: false
+    });
+    expect(bridge.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the shared message bridge when the Work alias rejects", async () => {
+    if (window.openai) {
+      vi.mocked(window.openai.sendFollowUpMessage!).mockRejectedValueOnce(new Error("rejected"));
+    }
+    const { askChatGpt } = await import("./host.js");
+
+    await expect(askChatGpt("再试一次", { scrollToBottom: false })).resolves.toBe(true);
     expect(bridge.sendMessage).toHaveBeenCalledWith({
       role: "user",
-      content: [{ type: "text", text: "陪我看看这里" }]
+      content: [{ type: "text", text: "再试一次" }]
     });
   });
 
@@ -87,15 +102,18 @@ describe("host bridge", () => {
         temperature: 0.8
       })
     ).resolves.toBe("这句真会拱火。");
-    expect(bridge.createSamplingMessage).toHaveBeenCalledWith({
-      messages: [
-        { role: "user", content: { type: "text", text: "点评这一段" } }
-      ],
-      maxTokens: 80,
-      includeContext: "thisServer",
-      systemPrompt: "你是Daddy。",
-      temperature: 0.8
-    });
+    expect(bridge.createSamplingMessage).toHaveBeenCalledWith(
+      {
+        messages: [
+          { role: "user", content: { type: "text", text: "点评这一段" } }
+        ],
+        maxTokens: 80,
+        includeContext: "thisServer",
+        systemPrompt: "你是Daddy。",
+        temperature: 0.8
+      },
+      { timeout: 12_000, maxTotalTimeout: 12_000 }
+    );
   });
 
   it("starts the direct ChatGPT fullscreen request in the user gesture call stack", async () => {

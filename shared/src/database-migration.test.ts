@@ -373,6 +373,33 @@ describe("migrateReadingDatabase v5", () => {
     }
   });
 
+  it("preserves the durable event cursor without persisting paragraph text", () => {
+    const migrated = migrateReadingDatabase({
+      schemaVersion: 5,
+      sessions: [],
+      quotes: [],
+      reactions: [],
+      bookmarks: [],
+      companionComments: [],
+      annotations: [],
+      readingEvents: [
+        {
+          id: "event-1",
+          sessionId: "session-1",
+          kind: "live_reading",
+          position: { kind: "paragraph", index: 6, label: "第 6 段" },
+          requestedMode: "light_chat",
+          requestedLength: "short",
+          operationId: "live-6",
+          createdAt: NOW
+        }
+      ]
+    });
+
+    expect(migrated.readingEvents).toHaveLength(1);
+    expect(JSON.stringify(migrated.readingEvents)).not.toContain("includedText");
+  });
+
   it("rejects unsupported or malformed data", () => {
     expect(() => migrateReadingDatabase({ schemaVersion: 99 })).toThrow();
     expect(() =>

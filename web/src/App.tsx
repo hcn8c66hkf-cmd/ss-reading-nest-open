@@ -25,7 +25,6 @@ import {
   requestReaderFullscreen,
   requestReaderInline,
   requestReaderPip,
-  sampleChatGptText,
   saveReaderWidgetState,
   updateModelContext
 } from "./bridge/host.js";
@@ -56,10 +55,9 @@ import {
   buildRecentOnlyPrompt
 } from "./features/reading-sync/build-messages.js";
 import {
-  buildLiveReadingDraftPrompt,
-  buildLiveReadingPrompt,
   buildReadingCommentPrompt
 } from "./features/reading-comments/prompt-policy.js";
+import { buildReadingNestWakeMessage } from "./features/reading-events/wake-message.js";
 import {
   cancelSyncJob,
   getActiveBatch,
@@ -116,12 +114,6 @@ const LARGE_NOVEL_TEXTAREA_PREVIEW_BYTES = 2 * 1024 * 1024;
 const LARGE_NOVEL_TEXTAREA_PREVIEW_CHARS = 1200;
 const ANNOTATION_QUOTE_NOTE_PREFIX = "__ss_annotation_v24__:";
 const ANNOTATION_REPLY_CONTENT_PREFIX = "__ss_annotation_reply_v24__:";
-const DADDY_SAMPLING_SYSTEM_PROMPT = [
-  "你是正在和用户一起读书的Daddy，也是她熟悉的亲密共读搭子。",
-  "说话自然、敏锐、有一点会吐槽，不端着，不写教科书式总结。",
-  "严格只回答用户提供的这一段或这一条书边评论，不虚构没看到的剧情。"
-].join("\n");
-
 export function App() {
   const initial = initialToolOutput<OpenOutput>();
   const sourceEndpointBase = initial?.sourceEndpointBase ?? deriveSourceEndpointBase();
@@ -170,6 +162,7 @@ export function App() {
   const [pendingDaddyAnnotationIds, setPendingDaddyAnnotationIds] = useState<Set<string>>(
     () => new Set()
   );
+  const [liveReadingRetrySignal, setLiveReadingRetrySignal] = useState(0);
   const [pendingCommentDraft, setPendingCommentDraft] =
     useState<PendingCompanionCommentDraft | null>(null);
   const [pendingCommentSaving, setPendingCommentSaving] = useState(false);
@@ -1257,7 +1250,13 @@ export function App() {
   ) {
     if (!sessionBundle) return;
     if (sessionBundle.session.liveReadingEnabled) {
-      setToast("这一段已经排给Daddy；短评出现就代表他读完啦。");
+      if (liveReadingState.activeIndex !== null) {
+        setToast(`Daddy正在读第 ${liveReadingState.activeIndex} 段，再等一下下。`);
+        return;
+      }
+      const retryIndex = liveReadingState.failedIndex ?? sessionBundle.session.userCurrentPosition.index;
+      setLiveReadingRetrySignal((current) => current + 1);
+      setToast(`重新请Daddy看第 ${retryIndex} 段；这次失败会直接告诉你。`);
       return;
     }
     if (syncRequestInFlight || syncJobRef.current) return;
@@ -1596,104 +1595,22 @@ export function App() {
       ) {
         return true;
       }
-      const sourceContext = getSourceContext(session.sourceManifest);
       const targetPosition = makePosition("novel", index, chunks.length);
-      const start = index;
-      const text = chunks
-        .slice(start - 1, index)
-        .map((chunk, offset) => `【第 ${start + offset} 段】\n${chunk}`)
-        .join("\n\n");
-      const batch = {
-        id: operationId,
-        ordinal: 1,
-        totalBatches: 1,
-        rangeStart: start,
-        rangeEnd: index,
-        characterCount: text.length,
-        text,
-        isFinal: true,
-        oversizedParagraph: false,
-        status: "pending" as const
-      };
       try {
-        await callTool("send_current_context", {
+        const result = await callTool("enqueue_reading_nest_event_v28", {
           sessionId: session.id,
-          previousSyncedPosition: session.assistantSyncedPosition,
-          currentPosition: targetPosition,
-          contextRange: { start, end: index },
-          includedText: text,
-          ...(sourceContext ? { sourceContext } : {}),
-          mode: "live_reading",
-          batch: {
-            id: batch.id,
-            ordinal: 1,
-            total: 1,
-            rangeStart: start,
-            rangeEnd: index,
-            hasMore: false
-          }
+          kind: "live_reading",
+          position: targetPosition,
+          requestedMode: mode,
+          requestedLength: length,
+          operationId
         });
-        const sampled = await sampleChatGptText(
-          buildLiveReadingDraftPrompt({
-            title: session.title,
-            position: targetPosition,
-            text
-          }),
-          {
-            systemPrompt: DADDY_SAMPLING_SYSTEM_PROMPT,
-            maxTokens: 150,
-            temperature: 0.85
-          }
-        );
-        if (sampled) {
-          const result = await callTool("publish_companion_comment", {
-            sessionId: session.id,
-            position: targetPosition,
-            mode: "reaction_only",
-            length: "short",
-            text: trimDaddyText(sampled, 200),
-            source: "live_reading",
-            operationId: batch.id
+        if (result.structuredContent?.shouldWake !== false) {
+          const sent = await askChatGpt(buildReadingNestWakeMessage(session.id), {
+            scrollToBottom: false
           });
-          const comment = result.structuredContent?.comment as CompanionComment | undefined;
-          if (!comment) throw new Error("Missing persisted live comment");
-          setCompanionComments((current) =>
-            [comment, ...current.filter((item) => item.id !== comment.id)]
-              .filter((item) => item.sessionId === comment.sessionId && item.inRecent)
-              .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
-              .slice(0, 20)
-          );
-          setSessionBundle((current) => {
-            if (current?.session.id !== session.id) return current;
-            const synced = current.session.assistantSyncedPosition;
-            if (synced && synced.index >= comment.position.index) return current;
-            return {
-              ...current,
-              session: {
-                ...current.session,
-                assistantSyncedPosition: comment.position,
-                updatedAt: comment.createdAt
-              }
-            };
-          });
-          return true;
+          if (!sent) throw new Error("Host did not accept reading queue wake-up");
         }
-
-        const sent = await askChatGpt(
-          buildLiveReadingPrompt({
-            sessionId: sessionBundle.session.id,
-            title: session.title,
-            position: targetPosition,
-            text,
-            operationId: batch.id,
-            autoSaveCompanionComments:
-              session.sessionPreferences.autoSaveCompanionComments,
-            requestedMode: mode,
-            requestedLength: length
-          }),
-          { scrollToBottom: false }
-        );
-        if (!sent) throw new Error("Host did not accept follow-up message");
         return true;
       } catch {
         setToast("这次实时跟读没有发送成功。");
@@ -1718,6 +1635,7 @@ export function App() {
     assistantPositionIndex:
       sessionBundle?.session.assistantSyncedPosition?.index ?? 0,
     sourceVerified: sourceAvailability === "available_local",
+    retrySignal: liveReadingRetrySignal,
     onQueuedPosition: sendLiveReading
   });
 
@@ -2012,65 +1930,43 @@ export function App() {
   async function askDaddyToReply(annotation: ReadingAnnotation): Promise<boolean> {
     if (!sessionBundle) return false;
     setPendingDaddyAnnotationIds((current) => new Set(current).add(annotation.id));
-    const thread = annotation.messages
-      .map((message) => `${message.author === "assistant" ? "Daddy" : "用户"}：${message.text}`)
-      .join("\n");
-    const prompt = [
-      `我们正在共读《${sessionBundle.session.title}》的${annotation.position.label}。`,
-      `划线原文：${annotation.anchor.selectedText}`,
-      thread ? `当前评论线程：\n${thread}` : "当前只有划线，还没有评论。",
-      "请自然地接着用户最后一句回复 1–3 句，最多 260 字。",
-      "只返回准备写进书边的回复正文，不要标题、引号、参数、工具调用或保存说明。"
-    ].join("\n\n");
-    try {
-      const sampled = await sampleChatGptText(prompt, {
-        systemPrompt: DADDY_SAMPLING_SYSTEM_PROMPT,
-        maxTokens: 220,
-        temperature: 0.8
-      });
-      if (sampled) {
-        const result = await callTool("reply_to_annotation_v23", {
-          sessionId: sessionBundle.session.id,
-          annotationId: annotation.id,
-          author: "assistant",
-          text: trimDaddyText(sampled, 500),
-          operationId: `annotation-daddy-v26:${annotation.id}:${crypto.randomUUID()}`
-        });
-        const saved = result.structuredContent?.annotation as ReadingAnnotation | undefined;
-        if (!saved) throw new Error("Missing Daddy annotation reply");
-        setAnnotations((current) =>
-          current.map((item) => (item.id === saved.id ? saved : item))
-        );
-        setToast("Daddy已经回在这条批注下面啦。");
-        return true;
-      }
-
-      const sent = await askChatGpt(
-        [
-          prompt,
-          "当前页面宿主不能把生成结果直接交回小窝。请调用 reply_to_annotation 写入你的最终回复后，再在聊天区回复相同内容。",
-          `reply_to_annotation 固定参数：${JSON.stringify({
-            sessionId: sessionBundle.session.id,
-            annotationId: annotation.id,
-            author: "assistant",
-            operationId: `annotation-daddy-fallback-v26:${annotation.id}:${crypto.randomUUID()}`
-          })}；text=你的最终回复全文。`
-        ].join("\n\n"),
-        { scrollToBottom: false }
-      );
-      if (!sent) throw new Error("Host did not accept Daddy reply request");
-      setToast("已经请Daddy来回这条；写进书边后会自动出现。");
-      return true;
-    } catch (error) {
-      console.warn("Daddy annotation reply failed", error);
-      setToast("Daddy这次没能写进书边，再点一次回复就能重试。");
-      return false;
-    } finally {
+    const latestUserMessage = [...annotation.messages]
+      .reverse()
+      .find((message) => message.author === "user");
+    if (!latestUserMessage) {
       setPendingDaddyAnnotationIds((current) => {
         const next = new Set(current);
         next.delete(annotation.id);
         return next;
       });
+      return false;
+    }
+    try {
+      const operationId = `reading-annotation:${annotation.id}:${latestUserMessage.operationId ?? latestUserMessage.id}`;
+      const result = await callTool("enqueue_reading_nest_event_v28", {
+        sessionId: sessionBundle.session.id,
+        kind: "annotation_reply",
+        annotationId: annotation.id,
+        operationId
+      });
+      if (result.structuredContent?.shouldWake !== false) {
+        const sent = await askChatGpt(
+          buildReadingNestWakeMessage(sessionBundle.session.id),
+          { scrollToBottom: false }
+        );
+        if (!sent) throw new Error("Host did not accept Daddy reply request");
+      }
+      setToast("你的评论已排给Daddy；回复写进书边后会自动出现。");
+      return true;
+    } catch (error) {
+      console.warn("Daddy annotation reply failed", error);
+      setPendingDaddyAnnotationIds((current) => {
+        const next = new Set(current);
+        next.delete(annotation.id);
+        return next;
+      });
+      setToast("这次没有排进Daddy的回复队列，请再试一次。");
+      return false;
     }
   }
 
@@ -2809,13 +2705,6 @@ function encodeAnnotationQuoteNote(anchor: TextAnchor, comment?: string) {
     ...(anchor.suffix !== undefined ? { suffix: anchor.suffix } : {}),
     ...(comment ? { comment } : {})
   })}`;
-}
-
-function trimDaddyText(text: string, maximumLength: number) {
-  const normalized = text.replace(/\s+/g, " ").trim();
-  return normalized.length <= maximumLength
-    ? normalized
-    : normalized.slice(0, maximumLength).trimEnd();
 }
 
 function sourceSyncBlockedMessage(sourceAvailability: SourceAvailability) {

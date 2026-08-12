@@ -188,6 +188,37 @@ export interface ReadingAnnotation {
   updatedAt: string;
 }
 
+export type ReadingNestEventKind = "live_reading" | "annotation_reply";
+
+export interface ReadingNestLiveReadingEvent {
+  id: string;
+  sessionId: string;
+  kind: "live_reading";
+  position: ReadingPosition;
+  requestedMode: ReadingCommentMode;
+  requestedLength: CommentLength;
+  operationId: string;
+  createdAt: string;
+  respondedAt?: string;
+  responseId?: string;
+}
+
+export interface ReadingNestAnnotationReplyEvent {
+  id: string;
+  sessionId: string;
+  kind: "annotation_reply";
+  position: ReadingPosition;
+  annotationId: string;
+  operationId: string;
+  createdAt: string;
+  respondedAt?: string;
+  responseId?: string;
+}
+
+export type ReadingNestEvent =
+  | ReadingNestLiveReadingEvent
+  | ReadingNestAnnotationReplyEvent;
+
 export interface ReadingDatabase {
   schemaVersion: 5;
   sessions: ReadingSession[];
@@ -196,6 +227,8 @@ export interface ReadingDatabase {
   bookmarks: Bookmark[];
   companionComments: CompanionComment[];
   annotations: ReadingAnnotation[];
+  /** Added compatibly within schema v5; old snapshots are normalized to an empty queue. */
+  readingEvents?: ReadingNestEvent[];
 }
 
 export type ReadingSyncMode =

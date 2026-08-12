@@ -7,6 +7,7 @@ import {
   type ReadingDatabase,
   type ReadingSession,
   type ReadingAnnotation,
+  type ReadingNestEvent,
   type SourceManifest
 } from "@ss/shared";
 
@@ -19,8 +20,13 @@ export function normalizeReadingDatabase(input: unknown): ReadingDatabase {
     reactions: database.reactions.map(copyReaction),
     bookmarks: database.bookmarks.map(copyBookmark),
     companionComments: database.companionComments.map(copyCompanionComment),
-    annotations: database.annotations.map(copyAnnotation)
+    annotations: database.annotations.map(copyAnnotation),
+    readingEvents: (database.readingEvents ?? []).map(copyReadingEvent)
   };
+}
+
+function copyReadingEvent(event: ReadingNestEvent): ReadingNestEvent {
+  return structuredClone(event);
 }
 
 function copyAnnotation(annotation: ReadingAnnotation): ReadingAnnotation {

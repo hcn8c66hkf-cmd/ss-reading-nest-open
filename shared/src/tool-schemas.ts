@@ -38,6 +38,7 @@ export const companionCommentSourceSchema = z.enum([
   "manual_save"
 ]);
 export const annotationAuthorSchema = z.enum(["user", "assistant"]);
+export const readingNestEventKindSchema = z.enum(["live_reading", "annotation_reply"]);
 export const readingPositionSchema = z.object({
   kind: z.enum(["paragraph", "page"]),
   index: z.number().int().min(1),
@@ -327,6 +328,40 @@ export const listAnnotationsInputSchema = z
   .object({
     sessionId: sessionIdSchema,
     positionIndex: z.number().int().min(1).optional()
+  })
+  .strict();
+export const enqueueReadingNestEventInputSchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      sessionId: sessionIdSchema,
+      kind: z.literal("live_reading"),
+      position: readingPositionSchema,
+      requestedMode: readingCommentModeSchema,
+      requestedLength: commentLengthSchema,
+      operationId: z.string().min(1).max(200)
+    })
+    .strict(),
+  z
+    .object({
+      sessionId: sessionIdSchema,
+      kind: z.literal("annotation_reply"),
+      annotationId: z.string().min(1).max(200),
+      operationId: z.string().min(1).max(200)
+    })
+    .strict()
+]);
+export const readingNestTickInputSchema = z
+  .object({
+    sessionId: sessionIdSchema,
+    consumerName: z.string().trim().min(1).max(80).optional(),
+    maxEvents: z.number().int().min(1).max(10).optional()
+  })
+  .strict();
+export const readingNestPostMessageInputSchema = z
+  .object({
+    sessionId: sessionIdSchema,
+    eventId: z.string().min(1).max(200),
+    text: z.string().trim().min(1).max(2_000)
   })
   .strict();
 export const renameReadingSessionInputSchema = z

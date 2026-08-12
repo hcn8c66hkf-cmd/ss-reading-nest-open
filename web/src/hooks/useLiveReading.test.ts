@@ -24,15 +24,15 @@ describe("useLiveReading", () => {
 
     await waitFor(() => expect(onQueuedPosition).toHaveBeenCalledWith(2));
     rerender({ user: 4, assistant: 1 });
-    expect(result.current).toEqual({ activeIndex: 2, queuedCount: 2 });
+    expect(result.current).toEqual({ activeIndex: 2, queuedCount: 2, failedIndex: null });
 
     rerender({ user: 4, assistant: 2 });
     await waitFor(() => expect(onQueuedPosition).toHaveBeenCalledWith(3));
-    expect(result.current).toEqual({ activeIndex: 3, queuedCount: 1 });
+    expect(result.current).toEqual({ activeIndex: 3, queuedCount: 1, failedIndex: null });
 
     rerender({ user: 4, assistant: 3 });
     await waitFor(() => expect(onQueuedPosition).toHaveBeenCalledWith(4));
-    expect(result.current).toEqual({ activeIndex: 4, queuedCount: 0 });
+    expect(result.current).toEqual({ activeIndex: 4, queuedCount: 0, failedIndex: null });
   });
 
   it("does not repeat a paragraph after its short comment confirms completion", async () => {
@@ -75,10 +75,10 @@ describe("useLiveReading", () => {
     expect(onQueuedPosition).not.toHaveBeenCalled();
   });
 
-  it("retries once if no persisted short comment arrives", async () => {
+  it("surfaces a retryable failure if no persisted short comment arrives", async () => {
     vi.useFakeTimers();
     const onQueuedPosition = vi.fn().mockResolvedValue(true);
-    renderHook(() =>
+    const { result } = renderHook(() =>
       useLiveReading({
         enabled: true,
         sessionKey: "session-1",
@@ -96,6 +96,38 @@ describe("useLiveReading", () => {
       vi.advanceTimersByTime(1_000);
       await Promise.resolve();
     });
+    expect(onQueuedPosition).toHaveBeenCalledTimes(1);
+    expect(result.current).toEqual({ activeIndex: null, queuedCount: 0, failedIndex: 3 });
+  });
+
+  it("retries the failed paragraph only after a manual retry signal", async () => {
+    vi.useFakeTimers();
+    const onQueuedPosition = vi.fn().mockResolvedValue(true);
+    const { result, rerender } = renderHook(
+      (props: { retrySignal: number }) =>
+        useLiveReading({
+          enabled: true,
+          sessionKey: "session-1",
+          userPositionIndex: 3,
+          assistantPositionIndex: 2,
+          sourceVerified: true,
+          retrySignal: props.retrySignal,
+          retryMs: 1_000,
+          onQueuedPosition
+        }),
+      { initialProps: { retrySignal: 0 } }
+    );
+
+    await act(async () => Promise.resolve());
+    await act(async () => {
+      vi.advanceTimersByTime(1_000);
+      await Promise.resolve();
+    });
+    expect(result.current.failedIndex).toBe(3);
+
+    rerender({ retrySignal: 1 });
+    await act(async () => Promise.resolve());
     expect(onQueuedPosition).toHaveBeenCalledTimes(2);
+    expect(result.current).toEqual({ activeIndex: 3, queuedCount: 0, failedIndex: null });
   });
 });

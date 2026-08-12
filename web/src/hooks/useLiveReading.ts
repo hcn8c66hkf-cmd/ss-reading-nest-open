@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 export interface LiveReadingQueueState {
   activeIndex: number | null;
   queuedCount: number;
+  failedIndex: number | null;
 }
 
 export function useLiveReading(input: {
@@ -11,27 +12,34 @@ export function useLiveReading(input: {
   userPositionIndex: number;
   assistantPositionIndex: number;
   sourceVerified: boolean;
+  retrySignal?: number;
   retryMs?: number;
   onQueuedPosition: (index: number) => Promise<boolean | void> | boolean | void;
 }): LiveReadingQueueState {
   const queue = useRef<number[]>([]);
   const queuedKeys = useRef(new Set<string>());
   const activeIndex = useRef<number | null>(null);
+  const failedIndex = useRef<number | null>(null);
   const lastObservedIndex = useRef<number | null>(null);
   const assistantPositionIndex = useRef(input.assistantPositionIndex);
   const enabled = useRef(input.enabled);
   const sourceVerified = useRef(input.sourceVerified);
   const onQueuedPosition = useRef(input.onQueuedPosition);
   const timeout = useRef<number | null>(null);
-  const retryCounts = useRef(new Map<number, number>());
+  const lastRetrySignal = useRef(input.retrySignal);
   const [state, setState] = useState<LiveReadingQueueState>({
     activeIndex: null,
-    queuedCount: 0
+    queuedCount: 0,
+    failedIndex: null
   });
   const pump = useRef<() => void>(() => undefined);
 
   const publishState = () => {
-    setState({ activeIndex: activeIndex.current, queuedCount: queue.current.length });
+    setState({
+      activeIndex: activeIndex.current,
+      queuedCount: queue.current.length,
+      failedIndex: failedIndex.current
+    });
   };
 
   const clearTimeoutRef = () => {
@@ -40,14 +48,18 @@ export function useLiveReading(input: {
   };
 
   pump.current = () => {
-    if (!enabled.current || !sourceVerified.current || activeIndex.current !== null) return;
+    if (
+      !enabled.current ||
+      !sourceVerified.current ||
+      activeIndex.current !== null ||
+      failedIndex.current !== null
+    ) return;
     const next = queue.current.shift();
     if (next === undefined) {
       publishState();
       return;
     }
     if (assistantPositionIndex.current >= next) {
-      retryCounts.current.delete(next);
       publishState();
       queueMicrotask(() => pump.current());
       return;
@@ -58,23 +70,25 @@ export function useLiveReading(input: {
       if (activeIndex.current !== next) return;
       if (sent === false) {
         activeIndex.current = null;
-        queue.current.unshift(next);
+        failedIndex.current = next;
+        queuedKeys.current.delete(`${input.sessionKey}:${next}`);
         publishState();
-        timeout.current = window.setTimeout(() => pump.current(), 1_500);
         return;
       }
       clearTimeoutRef();
       timeout.current = window.setTimeout(() => {
         if (activeIndex.current !== next) return;
-        const retries = retryCounts.current.get(next) ?? 0;
         activeIndex.current = null;
-        if (retries < 1) {
-          retryCounts.current.set(next, retries + 1);
-          queue.current.unshift(next);
-        }
+        failedIndex.current = next;
+        queuedKeys.current.delete(`${input.sessionKey}:${next}`);
         publishState();
-        pump.current();
       }, input.retryMs ?? 30_000);
+    }).catch(() => {
+      if (activeIndex.current !== next) return;
+      activeIndex.current = null;
+      failedIndex.current = next;
+      queuedKeys.current.delete(`${input.sessionKey}:${next}`);
+      publishState();
     });
   };
 
@@ -93,10 +107,33 @@ export function useLiveReading(input: {
     queue.current = [];
     queuedKeys.current.clear();
     activeIndex.current = null;
+    failedIndex.current = null;
     lastObservedIndex.current = null;
-    retryCounts.current.clear();
     publishState();
   }, [input.enabled, input.sessionKey]);
+
+  useEffect(() => {
+    if (lastRetrySignal.current === input.retrySignal) return;
+    lastRetrySignal.current = input.retrySignal;
+    if (!input.enabled || !input.sourceVerified || !input.sessionKey) return;
+    const index = failedIndex.current ?? input.userPositionIndex;
+    if (index <= input.assistantPositionIndex || activeIndex.current === index) return;
+    const key = `${input.sessionKey}:${index}`;
+    clearTimeoutRef();
+    failedIndex.current = null;
+    queue.current = queue.current.filter((item) => item !== index);
+    queuedKeys.current.add(key);
+    queue.current.unshift(index);
+    publishState();
+    pump.current();
+  }, [
+    input.assistantPositionIndex,
+    input.enabled,
+    input.retrySignal,
+    input.sessionKey,
+    input.sourceVerified,
+    input.userPositionIndex
+  ]);
 
   useEffect(() => {
     if (!input.enabled || !input.sourceVerified || !input.sessionKey) return;
@@ -129,10 +166,17 @@ export function useLiveReading(input: {
 
   useEffect(() => {
     assistantPositionIndex.current = input.assistantPositionIndex;
+    if (
+      failedIndex.current !== null &&
+      input.assistantPositionIndex >= failedIndex.current
+    ) {
+      failedIndex.current = null;
+      publishState();
+      pump.current();
+    }
     const active = activeIndex.current;
     if (active === null || input.assistantPositionIndex < active) return;
     clearTimeoutRef();
-    retryCounts.current.delete(active);
     activeIndex.current = null;
     publishState();
     pump.current();

@@ -10,6 +10,7 @@ import {
   type SourceManifest,
   type CompanionComment,
   type ReadingAnnotation,
+  type ReadingNestEvent,
   type SessionPreferences,
   type SessionStatus
 } from "./models.js";
@@ -65,6 +66,7 @@ interface RepairableV4Database extends Omit<RepairableV3Database, "schemaVersion
 interface RepairableV5Database extends Omit<RepairableV4Database, "schemaVersion"> {
   schemaVersion: 5;
   annotations?: ReadingAnnotation[];
+  readingEvents?: ReadingNestEvent[];
 }
 
 type NormalizedV4Database = Omit<ReadingDatabase, "schemaVersion" | "annotations"> & {
@@ -172,7 +174,10 @@ function normalizeV5(database: RepairableV5Database): ReadingDatabase {
   return {
     ...normalized,
     schemaVersion: 5,
-    annotations: structuredClone(database.annotations ?? [])
+    annotations: structuredClone(database.annotations ?? []),
+    ...(database.readingEvents
+      ? { readingEvents: structuredClone(database.readingEvents) }
+      : {})
   };
 }
 

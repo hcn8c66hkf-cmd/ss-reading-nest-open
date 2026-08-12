@@ -13,9 +13,9 @@ export function createMcpServerFromRepository(
 ) {
   const server = new McpServer({
     name: "S×S 小窝共读",
-    version: "0.2.1"
+    version: "0.3.2"
   });
-  const service = new ReadingService(repository);
+  const service = new ReadingService(repository, undefined, cloudSourceService);
   registerReadingResource(server, widgetHtml, options.workerOrigin);
   registerReadingTools(server, service, cloudSourceService, options);
   return server;

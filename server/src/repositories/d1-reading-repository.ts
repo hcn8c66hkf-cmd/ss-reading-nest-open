@@ -33,7 +33,8 @@ const emptyDatabase = (): ReadingDatabase => ({
   reactions: [],
   bookmarks: [],
   companionComments: [],
-  annotations: []
+  annotations: [],
+  readingEvents: []
 });
 
 export class D1ReadingRepository implements ReadingRepository {

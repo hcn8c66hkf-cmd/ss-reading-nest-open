@@ -15,7 +15,8 @@ const emptyDatabase = (): ReadingDatabase => ({
   reactions: [],
   bookmarks: [],
   companionComments: [],
-  annotations: []
+  annotations: [],
+  readingEvents: []
 });
 
 export class JsonReadingRepository implements ReadingRepository {

@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 import {
   DEFAULT_SESSION_PREFERENCES,
   MAX_HISTORY_COMPANION_COMMENTS,
-  MAX_RECENT_COMPANION_COMMENTS
+  MAX_RECENT_COMPANION_COMMENTS,
+  splitNovelTextForVersion
 } from "@ss/shared";
 import type {
   Bookmark,
@@ -12,6 +13,7 @@ import type {
   Quote,
   Reaction,
   ReadingAnnotation,
+  ReadingNestEvent,
   AnnotationAuthor,
   TextAnchor,
   ReadingCommentMode,
@@ -36,6 +38,10 @@ type CloudSourceDeletionService = {
     deleted: boolean;
     cloudSourceDeleted: boolean;
     cloudSourceDeleteError?: string;
+  }>;
+  restoreNovelSource?(sessionId: string): Promise<{
+    sourceText: string;
+    sourceManifest: { segmentationVersion: number };
   }>;
 };
 
@@ -358,6 +364,270 @@ export class ReadingService {
     };
   }
 
+  async enqueueReadingNestEvent(input:
+    | {
+        sessionId: string;
+        kind: "live_reading";
+        position: ReadingPosition;
+        requestedMode: ReadingCommentMode;
+        requestedLength: CommentLength;
+        operationId: string;
+      }
+    | {
+        sessionId: string;
+        kind: "annotation_reply";
+        annotationId: string;
+        operationId: string;
+      }
+  ): Promise<{
+    event: ReadingNestEvent;
+    created: boolean;
+    shouldWake: boolean;
+    pendingCount: number;
+  }> {
+    return this.repository.mutate((database) => {
+      const session = this.requireSession(database.sessions, input.sessionId);
+      if (
+        input.kind === "live_reading" &&
+        (!session.sourceManifest?.cloudSync.enabled ||
+          !this.cloudSourceService?.restoreNovelSource)
+      ) {
+        throw new AppError(
+          "INVALID_OPERATION",
+          "实时陪读需要可恢复的私人云端正文，请先完成本书的云端同步。"
+        );
+      }
+      const events = (database.readingEvents ??= []);
+      const existing = events.find(
+        (event) =>
+          event.sessionId === input.sessionId && event.operationId === input.operationId
+      );
+      if (existing) {
+        return {
+          event: structuredClone(existing),
+          created: false,
+          shouldWake: !existing.respondedAt,
+          pendingCount: events.filter(
+            (event) => event.sessionId === input.sessionId && !event.respondedAt
+          ).length
+        };
+      }
+
+      const pendingBefore = events.some(
+        (event) => event.sessionId === input.sessionId && !event.respondedAt
+      );
+      const createdAt = this.deps.now().toISOString();
+      let event: ReadingNestEvent;
+      if (input.kind === "live_reading") {
+        event = {
+          id: this.deps.id(),
+          sessionId: input.sessionId,
+          kind: input.kind,
+          position: structuredClone(input.position),
+          requestedMode: input.requestedMode,
+          requestedLength: input.requestedLength,
+          operationId: input.operationId,
+          createdAt
+        };
+      } else {
+        const annotation = database.annotations.find(
+          (item) => item.sessionId === input.sessionId && item.id === input.annotationId
+        );
+        if (!annotation) {
+          throw new AppError("INVALID_OPERATION", "找不到要回复的书边批注。");
+        }
+        event = {
+          id: this.deps.id(),
+          sessionId: input.sessionId,
+          kind: input.kind,
+          position: structuredClone(annotation.position),
+          annotationId: annotation.id,
+          operationId: input.operationId,
+          createdAt
+        };
+      }
+      events.push(event);
+      this.pruneReadingEvents(database, input.sessionId);
+      return {
+        event: structuredClone(event),
+        created: true,
+        shouldWake: input.kind === "annotation_reply" || !pendingBefore,
+        pendingCount: events.filter(
+          (item) => item.sessionId === input.sessionId && !item.respondedAt
+        ).length
+      };
+    });
+  }
+
+  async tickReadingNest(input: {
+    sessionId: string;
+    maxEvents?: number;
+  }): Promise<{
+    events: Array<Record<string, unknown>>;
+    pendingCount: number;
+    cursor?: string;
+  }> {
+    const database = await this.repository.read();
+    const session = this.requireSession(database.sessions, input.sessionId);
+    const pending = (database.readingEvents ?? [])
+      .filter((event) => event.sessionId === input.sessionId && !event.respondedAt)
+      .sort(
+        (left, right) =>
+          Number(right.kind === "annotation_reply") - Number(left.kind === "annotation_reply") ||
+          left.createdAt.localeCompare(right.createdAt)
+      );
+    const maximum = Math.min(10, Math.max(1, input.maxEvents ?? 5));
+    const selectedEvents = pending.slice(0, maximum);
+    let novelChunks: string[] | undefined;
+    if (selectedEvents.some((event) => event.kind === "live_reading")) {
+      if (!this.cloudSourceService?.restoreNovelSource) {
+        throw new AppError("INVALID_OPERATION", "云端正文服务尚未启用，暂时不能领取实时陪读事件。");
+      }
+      const restored = await this.cloudSourceService.restoreNovelSource(input.sessionId);
+      novelChunks = splitNovelTextForVersion(
+        restored.sourceText,
+        restored.sourceManifest.segmentationVersion
+      );
+    }
+    const events = selectedEvents.map((event) => {
+      if (event.kind === "live_reading") {
+        const includedText = novelChunks?.[event.position.index - 1];
+        if (!includedText) {
+          throw new AppError("INVALID_OPERATION", `云端正文缺少${event.position.label}。`);
+        }
+        return {
+          eventId: event.id,
+          kind: event.kind,
+          title: session.title,
+          position: structuredClone(event.position),
+          includedText,
+          requestedMode: event.requestedMode,
+          requestedLength: event.requestedLength,
+          instruction:
+            "读完这段后写 1–3 句自然短评或吐槽，最多 200 字；不要总结没提供的剧情。"
+        };
+      }
+      const annotation = database.annotations.find(
+        (item) => item.sessionId === input.sessionId && item.id === event.annotationId
+      );
+      return {
+        eventId: event.id,
+        kind: event.kind,
+        title: session.title,
+        position: structuredClone(event.position),
+        annotationId: event.annotationId,
+        anchor: annotation ? structuredClone(annotation.anchor) : undefined,
+        messages: annotation ? structuredClone(annotation.messages.slice(-12)) : [],
+        instruction:
+          "自然接住用户最后一句，回复 1–3 句，最多 500 字；不要写保存说明。"
+      };
+    });
+    return {
+      events,
+      pendingCount: pending.length,
+      ...(events.length ? { cursor: String(events.at(-1)?.eventId) } : {})
+    };
+  }
+
+  async postReadingNestMessage(input: {
+    sessionId: string;
+    eventId: string;
+    text: string;
+  }): Promise<{
+    saved: true;
+    eventId: string;
+    kind: ReadingNestEvent["kind"];
+    comment?: CompanionComment;
+    annotation?: ReadingAnnotation;
+    pendingCount: number;
+  }> {
+    return this.repository.mutate((database) => {
+      const session = this.requireSession(database.sessions, input.sessionId);
+      const events = (database.readingEvents ??= []);
+      const event = events.find(
+        (item) => item.sessionId === input.sessionId && item.id === input.eventId
+      );
+      if (!event) throw new AppError("INVALID_OPERATION", "找不到这条待处理共读事件。");
+      const responseOperationId = `reading-event-response:${event.id}`;
+
+      let comment: CompanionComment | undefined;
+      let annotation: ReadingAnnotation | undefined;
+      if (event.kind === "live_reading") {
+        if (input.text.length > 200) {
+          throw new AppError("INVALID_OPERATION", "实时陪读短评不能超过 200 字符。");
+        }
+        comment = database.companionComments.find(
+          (item) => item.sessionId === input.sessionId && item.operationId === responseOperationId
+        );
+        if (!comment) {
+          const now = this.deps.now().toISOString();
+          comment = {
+            id: this.deps.id(),
+            sessionId: input.sessionId,
+            position: structuredClone(event.position),
+            mode: "reaction_only",
+            length: "short",
+            text: input.text,
+            source: "live_reading",
+            inRecent: true,
+            inHistory: session.sessionPreferences.autoSaveCompanionComments,
+            operationId: responseOperationId,
+            createdAt: now
+          };
+          database.companionComments.push(comment);
+          const current = session.assistantSyncedPosition;
+          if (
+            event.position.kind === session.userCurrentPosition.kind &&
+            event.position.index <= session.userCurrentPosition.index &&
+            (!current || event.position.index >= current.index)
+          ) {
+            session.assistantSyncedPosition = structuredClone(event.position);
+            session.updatedAt = now;
+          }
+          this.pruneCompanionComments(database, input.sessionId, "recent");
+          if (comment.inHistory) this.pruneCompanionComments(database, input.sessionId, "history");
+          this.removeUnusedCompanionComments(database);
+        }
+        event.responseId = comment.id;
+      } else {
+        annotation = database.annotations.find(
+          (item) => item.sessionId === input.sessionId && item.id === event.annotationId
+        );
+        if (!annotation) throw new AppError("INVALID_OPERATION", "找不到要回复的书边批注。");
+        const existing = annotation.messages.find(
+          (message) => message.operationId === responseOperationId
+        );
+        if (!existing) {
+          const now = this.deps.now().toISOString();
+          const message = {
+            id: this.deps.id(),
+            author: "assistant" as const,
+            text: input.text,
+            operationId: responseOperationId,
+            createdAt: now
+          };
+          annotation.messages.push(message);
+          annotation.updatedAt = now;
+          event.responseId = message.id;
+        } else {
+          event.responseId = existing.id;
+        }
+      }
+      event.respondedAt ??= this.deps.now().toISOString();
+      this.pruneReadingEvents(database, input.sessionId);
+      return {
+        saved: true,
+        eventId: event.id,
+        kind: event.kind,
+        ...(comment ? { comment: structuredClone(comment) } : {}),
+        ...(annotation ? { annotation: structuredClone(annotation) } : {}),
+        pendingCount: events.filter(
+          (item) => item.sessionId === input.sessionId && !item.respondedAt
+        ).length
+      };
+    });
+  }
+
   async clearCompanionComments(
     sessionId: string,
     scope: "recent" | "history" | "all"
@@ -613,6 +883,9 @@ export class ReadingService {
       database.annotations = database.annotations.filter(
         (item) => item.sessionId !== sessionId
       );
+      database.readingEvents = (database.readingEvents ?? []).filter(
+        (item) => item.sessionId !== sessionId
+      );
       return {
         sessionId,
         deleted: true,
@@ -690,6 +963,18 @@ export class ReadingService {
   private removeUnusedCompanionComments(database: ReadingDatabase) {
     database.companionComments = database.companionComments.filter(
       (comment) => comment.inRecent || comment.inHistory
+    );
+  }
+
+  private pruneReadingEvents(database: ReadingDatabase, sessionId: string) {
+    const events = database.readingEvents ?? [];
+    const responded = events
+      .filter((event) => event.sessionId === sessionId && event.respondedAt)
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+    const keepResponded = new Set(responded.slice(0, 100).map((event) => event.id));
+    database.readingEvents = events.filter(
+      (event) =>
+        event.sessionId !== sessionId || !event.respondedAt || keepResponded.has(event.id)
     );
   }
 

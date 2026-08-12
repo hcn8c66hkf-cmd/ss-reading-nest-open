@@ -25,7 +25,7 @@ export interface ReadingHostContext {
 function connectApp() {
   if (typeof window === "undefined" || window.parent === window) return undefined;
   if (!app) {
-    app = new McpApp({ name: "S×S 小窝共读", version: "0.3.0" });
+    app = new McpApp({ name: "S×S 小窝共读", version: "0.3.2" });
     appReady = app.connect().catch(() => {
       appConnectionFailed = true;
     });
@@ -52,6 +52,18 @@ export async function askChatGpt(
   prompt: string,
   options: { scrollToBottom?: boolean } = {}
 ): Promise<boolean> {
+  if (window.openai?.sendFollowUpMessage) {
+    try {
+      await window.openai.sendFollowUpMessage({
+        prompt,
+        scrollToBottom: options.scrollToBottom ?? false
+      });
+      return true;
+    } catch {
+      // Fall through to the shared MCP Apps bridge. Some Work hosts expose
+      // both paths but only accept one of them for component-authored turns.
+    }
+  }
   const bridge = connectApp();
   if (bridge) {
     await appReady;
@@ -65,12 +77,7 @@ export async function askChatGpt(
       }
     }
   }
-  if (!window.openai?.sendFollowUpMessage) return false;
-  await window.openai.sendFollowUpMessage({
-    prompt,
-    scrollToBottom: options.scrollToBottom ?? false
-  });
-  return true;
+  return false;
 }
 
 export async function sampleChatGptText(
@@ -79,6 +86,7 @@ export async function sampleChatGptText(
     systemPrompt?: string;
     maxTokens?: number;
     temperature?: number;
+    timeoutMs?: number;
   } = {}
 ): Promise<string | null> {
   const bridge = connectApp();
@@ -86,20 +94,24 @@ export async function sampleChatGptText(
   await appReady;
   if (appConnectionFailed || !bridge.getHostCapabilities()?.sampling) return null;
   try {
-    const result = await bridge.createSamplingMessage({
-      messages: [
-        {
-          role: "user",
-          content: { type: "text", text: prompt }
-        }
-      ],
-      maxTokens: options.maxTokens ?? 220,
-      includeContext: "thisServer",
-      ...(options.systemPrompt ? { systemPrompt: options.systemPrompt } : {}),
-      ...(options.temperature === undefined
-        ? {}
-        : { temperature: options.temperature })
-    });
+    const timeout = options.timeoutMs ?? 12_000;
+    const result = await bridge.createSamplingMessage(
+      {
+        messages: [
+          {
+            role: "user",
+            content: { type: "text", text: prompt }
+          }
+        ],
+        maxTokens: options.maxTokens ?? 220,
+        includeContext: "thisServer",
+        ...(options.systemPrompt ? { systemPrompt: options.systemPrompt } : {}),
+        ...(options.temperature === undefined
+          ? {}
+          : { temperature: options.temperature })
+      },
+      { timeout, maxTotalTimeout: timeout }
+    );
     return samplingText(result);
   } catch {
     return null;

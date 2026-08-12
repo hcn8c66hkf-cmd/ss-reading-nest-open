@@ -24,9 +24,13 @@ export function ReadingSyncStatus({
         <span>
           {activeLabel
             ? `Daddy正在读：${activeLabel}${liveReadingState?.queuedCount ? ` · 后面排队 ${liveReadingState.queuedCount} 段` : ""}`
+            : liveReadingState.failedIndex
+              ? `第 ${liveReadingState.failedIndex} ${user.kind === "page" ? "页" : "段"}这次没接上，点下方提醒Daddy重试`
+              : liveReadingState.queuedCount
+                ? `已有 ${liveReadingState.queuedCount} 段等待Daddy`
             : assistant?.index === user.index
               ? "本段已读完 ✓"
-              : "正在把本段排给Daddy……"}
+              : "这一段还没有短评"}
         </span>
       </aside>
     );

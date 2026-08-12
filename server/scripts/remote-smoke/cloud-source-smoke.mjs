@@ -36,6 +36,8 @@ const forbidden = [
 ];
 
 const expectedTools = [
+  "open_reading_nest_v28",
+  "open_reading_nest_v27",
   "open_reading_nest_v26",
   "open_reading_nest_v25",
   "open_reading_nest_v24",
@@ -55,6 +57,9 @@ const expectedTools = [
   "create_annotation_v23",
   "reply_to_annotation_v23",
   "list_annotations_v23",
+  "enqueue_reading_nest_event_v28",
+  "reading_nest_tick",
+  "reading_nest_post_message",
   "rename_reading_session",
   "set_reading_session_status",
   "delete_reading_session",
@@ -104,7 +109,7 @@ try {
   for (const name of expectedTools) assert(toolNames.includes(name), `missing tool ${name}`);
   assert(!toolNames.includes("restore_cloud_source"), "assistant-visible restore_cloud_source must not exist");
 
-  const openNest = await callTool("open_reading_nest_v26", {});
+  const openNest = await callTool("open_reading_nest_v28", {});
   assert(
     openNest.structuredContent?.sourceEndpointBase === sourceBase,
     "open_reading_nest did not return the component source endpoint"

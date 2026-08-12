@@ -7,6 +7,7 @@ import {
   confirmAssistantSyncedPositionInputSchema,
   finishTodayReadingInputSchema,
   generateDiaryContextInputSchema,
+  enqueueReadingNestEventInputSchema,
   getCloudSourceStatusInputSchema,
   openReadingNestInputSchema,
   listCompanionCommentsInputSchema,
@@ -14,6 +15,8 @@ import {
   publishCompanionCommentInputSchema,
   renameReadingSessionInputSchema,
   replyToAnnotationInputSchema,
+  readingNestPostMessageInputSchema,
+  readingNestTickInputSchema,
   saveBookmarkInputSchema,
   saveQuoteInputSchema,
   saveReactionInputSchema,
@@ -39,7 +42,7 @@ import { ReadingService } from "../services/reading-service.js";
 import type { CloudSourceService } from "../services/cloud-source-service.js";
 import { toolResult } from "./tool-result.js";
 
-export const READING_NEST_URI = "ui://ss-reading-nest/app-v26.html";
+export const READING_NEST_URI = "ui://ss-reading-nest/app-v28.html";
 
 const ANNOTATION_QUOTE_OPERATION_PREFIX = "annotation-v24:";
 const ANNOTATION_QUOTE_NOTE_PREFIX = "__ss_annotation_v24__:";
@@ -59,10 +62,36 @@ const mutation = {
 };
 
 export const TOOL_CONFIGS = {
-  open_reading_nest_v26: {
+  open_reading_nest_v28: {
     title: "打开 S×S 小窝共读",
     description:
-      "Use this primary v26 tool when the user wants to open the reading nest or continue recent reading.",
+      "Use this primary v28 tool when the user wants to open the reading nest or continue recent reading.",
+    inputSchema: openReadingNestInputSchema,
+    annotations: readOnly,
+    _meta: {
+      ui: { resourceUri: READING_NEST_URI },
+      "openai/outputTemplate": READING_NEST_URI,
+      "openai/toolInvocation/invoking": "正在点亮小窝…",
+      "openai/toolInvocation/invoked": "小窝已经准备好"
+    }
+  },
+  open_reading_nest_v27: {
+    title: "打开 S×S 小窝共读（v27 兼容入口）",
+    description:
+      "Legacy compatibility entry. Prefer open_reading_nest_v28 whenever it is available.",
+    inputSchema: openReadingNestInputSchema,
+    annotations: readOnly,
+    _meta: {
+      ui: { resourceUri: READING_NEST_URI },
+      "openai/outputTemplate": READING_NEST_URI,
+      "openai/toolInvocation/invoking": "正在点亮小窝…",
+      "openai/toolInvocation/invoked": "小窝已经准备好"
+    }
+  },
+  open_reading_nest_v26: {
+    title: "打开 S×S 小窝共读（v26 兼容入口）",
+    description:
+      "Legacy compatibility entry. Prefer open_reading_nest_v28 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -75,7 +104,7 @@ export const TOOL_CONFIGS = {
   open_reading_nest_v25: {
     title: "打开 S×S 小窝共读（v25 兼容入口）",
     description:
-      "Legacy compatibility entry. Prefer open_reading_nest_v26 whenever it is available.",
+      "Legacy compatibility entry. Prefer open_reading_nest_v28 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -88,7 +117,7 @@ export const TOOL_CONFIGS = {
   open_reading_nest_v24: {
     title: "打开 S×S 小窝共读（v24 兼容入口）",
     description:
-      "Legacy compatibility entry. Prefer open_reading_nest_v26 whenever it is available.",
+      "Legacy compatibility entry. Prefer open_reading_nest_v28 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -101,7 +130,7 @@ export const TOOL_CONFIGS = {
   open_reading_nest_v23: {
     title: "打开 S×S 小窝共读（v23 兼容入口）",
     description:
-      "Legacy compatibility entry. Prefer open_reading_nest_v26 whenever it is available.",
+      "Legacy compatibility entry. Prefer open_reading_nest_v28 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -114,7 +143,7 @@ export const TOOL_CONFIGS = {
   open_reading_nest_v22: {
     title: "打开 S×S 小窝共读（v22 兼容入口）",
     description:
-      "Legacy compatibility entry. Prefer open_reading_nest_v26 whenever it is available.",
+      "Legacy compatibility entry. Prefer open_reading_nest_v28 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -127,7 +156,7 @@ export const TOOL_CONFIGS = {
   open_reading_nest: {
     title: "打开 S×S 小窝共读（旧入口）",
     description:
-      "Legacy compatibility entry. Prefer open_reading_nest_v26 whenever it is available.",
+      "Legacy compatibility entry. Prefer open_reading_nest_v28 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -266,6 +295,28 @@ export const TOOL_CONFIGS = {
     inputSchema: listAnnotationsInputSchema,
     annotations: readOnly,
     _meta: { ui: { visibility: ["app"] } }
+  },
+  enqueue_reading_nest_event_v28: {
+    title: "页面投递共读事件",
+    description:
+      "App-only v28 bridge that durably queues a paragraph or user annotation for Daddy.",
+    inputSchema: enqueueReadingNestEventInputSchema,
+    annotations: { ...mutation, idempotentHint: true },
+    _meta: { ui: { visibility: ["app"] } }
+  },
+  reading_nest_tick: {
+    title: "领取共读小窝待处理事件",
+    description:
+      "When the reading page says new events are waiting, call this first. Read every returned event, prioritize annotation_reply, and use reading_nest_post_message for each response. Call tick again until pendingCount is 0.",
+    inputSchema: readingNestTickInputSchema,
+    annotations: readOnly
+  },
+  reading_nest_post_message: {
+    title: "把Daddy短评或回复写回小窝",
+    description:
+      "Use this for every event returned by reading_nest_tick. It atomically saves the message and only then marks the paragraph read or annotation answered.",
+    inputSchema: readingNestPostMessageInputSchema,
+    annotations: { ...mutation, idempotentHint: true }
   },
   rename_reading_session: {
     title: "重命名书籍",
@@ -423,6 +474,18 @@ export function registerReadingTools(
     );
   };
 
+  registerAppTool(
+    server,
+    "open_reading_nest_v28",
+    TOOL_CONFIGS.open_reading_nest_v28,
+    openReadingNest
+  );
+  registerAppTool(
+    server,
+    "open_reading_nest_v27",
+    TOOL_CONFIGS.open_reading_nest_v27,
+    openReadingNest
+  );
   registerAppTool(
     server,
     "open_reading_nest_v26",
@@ -724,6 +787,54 @@ export function registerReadingTools(
     async (input) => {
       const result = await service.listAnnotations(input);
       return toolResult(result, "已读取这本书的共读划线与评论线程。");
+    }
+  );
+
+  registerAppTool(
+    server,
+    "enqueue_reading_nest_event_v28",
+    TOOL_CONFIGS.enqueue_reading_nest_event_v28,
+    async (input) => {
+      const result = await service.enqueueReadingNestEvent(input);
+      return toolResult(
+        {
+          eventId: result.event.id,
+          kind: result.event.kind,
+          position: result.event.position,
+          created: result.created,
+          shouldWake: result.shouldWake,
+          pendingCount: result.pendingCount
+        },
+        result.created ? "共读事件已排好，等待Daddy领取。" : "这条共读事件已经在队列里。"
+      );
+    }
+  );
+
+  server.registerTool(
+    "reading_nest_tick",
+    TOOL_CONFIGS.reading_nest_tick,
+    async ({ sessionId, maxEvents }) => {
+      const result = await service.tickReadingNest({ sessionId, maxEvents });
+      return toolResult(
+        result,
+        result.pendingCount
+          ? `有 ${result.pendingCount} 条共读事件待处理。请逐条调用 reading_nest_post_message 写回，然后再次调用 reading_nest_tick。`
+          : "共读队列已经清空。"
+      );
+    }
+  );
+
+  server.registerTool(
+    "reading_nest_post_message",
+    TOOL_CONFIGS.reading_nest_post_message,
+    async (input) => {
+      const result = await service.postReadingNestMessage(input);
+      return toolResult(
+        result,
+        result.kind === "annotation_reply"
+          ? "Daddy的回复已经写进这条书边批注。请继续领取剩余事件。"
+          : "Daddy短评已写进小窝，这一段现在才算读完。请继续领取剩余事件。"
+      );
     }
   );
 
