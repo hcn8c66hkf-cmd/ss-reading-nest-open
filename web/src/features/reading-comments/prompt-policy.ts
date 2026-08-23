@@ -99,6 +99,48 @@ export function buildLiveReadingPrompt(input: {
   ].join("\n\n");
 }
 
+export function buildLiveReadingModelContext(input: {
+  sessionId: string;
+  title: string;
+  position: ReadingPosition;
+  text: string;
+  operationId: string;
+}): Record<string, unknown> {
+  return {
+    kind: "reading_nest_live_reading_v1",
+    sessionId: input.sessionId,
+    title: input.title,
+    position: input.position,
+    currentText: input.text,
+    responsePolicy: {
+      mode: "reaction_only",
+      length: "short",
+      style: "danmaku",
+      instructions: [
+        "只输出 1-3 句弹幕式短评。",
+        "不总结全文，不重复剧情，不写完整书评。",
+        "只做即时反应、吐槽、嗑点或伏笔提醒。",
+        "生成最终短评后，先调用 publish_companion_comment 保存完全相同的短评。",
+        "工具成功后，再在聊天区回复完全相同的短评。",
+        "工具失败时必须明确说明短评未同步到 Dock。"
+      ],
+      publishTool: "publish_companion_comment",
+      publishArguments: {
+        sessionId: input.sessionId,
+        position: input.position,
+        mode: "reaction_only",
+        length: "short",
+        source: "live_reading",
+        operationId: input.operationId
+      }
+    }
+  };
+}
+
+export function buildLiveReadingWakePrompt(position: ReadingPosition): string {
+  return `请继续共读小窝的${position.label}，留下 1-3 句短评并写回 Daddy陪读。`;
+}
+
 export function buildLiveReadingDraftPrompt(input: {
   title: string;
   position: ReadingPosition;

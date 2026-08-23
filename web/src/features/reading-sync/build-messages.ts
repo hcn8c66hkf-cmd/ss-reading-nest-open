@@ -106,6 +106,15 @@ export function buildCurrentOnlyPrompt(input: {
   ].join("\n");
 }
 
+export function buildCurrentOnlyWakePrompt(input: {
+  position: number;
+  selectedText?: string;
+}): string {
+  return input.selectedText
+    ? `请回应我在第 ${input.position} 段选中的句子，并写回书边批注。`
+    : `请只看共读小窝的第 ${input.position} 段，按当前陪读偏好回应。`;
+}
+
 export function buildRecentOnlyPrompt(input: {
   sessionId: string;
   title: string;

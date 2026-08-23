@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import type { CommentLength, ReadingCommentMode } from "@ss/shared";
 import {
   buildLiveReadingDraftPrompt,
+  buildLiveReadingModelContext,
   buildLiveReadingPrompt,
+  buildLiveReadingWakePrompt,
   buildReadingCommentPrompt,
   normalizeCommentLength
 } from "./prompt-policy.js";
@@ -231,6 +233,53 @@ describe("buildLiveReadingDraftPrompt", () => {
     expect(prompt).toContain("他把没说出口的话咽了回去");
     expect(prompt).toContain("最多 160 字");
     expect(prompt).toContain("只返回最终短评正文");
+    expect(prompt).not.toContain("publish_companion_comment");
+  });
+});
+
+describe("hidden live-reading context", () => {
+  const input = {
+    sessionId: "session-1",
+    title: "测试小说",
+    position: { kind: "paragraph" as const, index: 12, label: "第 12 段" },
+    text: "这是一段不该出现在可见触发消息里的原文。",
+    operationId: "live-op-1"
+  };
+
+  it("keeps the paragraph and exact publish arguments in model context", () => {
+    const context = buildLiveReadingModelContext(input);
+
+    expect(context).toMatchObject({
+      kind: "reading_nest_live_reading_v1",
+      sessionId: "session-1",
+      title: "测试小说",
+      position: input.position,
+      currentText: input.text,
+      responsePolicy: {
+        mode: "reaction_only",
+        length: "short",
+        style: "danmaku",
+        publishTool: "publish_companion_comment",
+        publishArguments: {
+          sessionId: "session-1",
+          position: input.position,
+          mode: "reaction_only",
+          length: "short",
+          source: "live_reading",
+          operationId: "live-op-1"
+        }
+      }
+    });
+  });
+
+  it("keeps the visible wake-up message short and free of article/tool payload", () => {
+    const prompt = buildLiveReadingWakePrompt(input.position);
+
+    expect(prompt).toContain("第 12 段");
+    expect(prompt).toContain("1-3 句短评");
+    expect(prompt).not.toContain(input.text);
+    expect(prompt).not.toContain(input.sessionId);
+    expect(prompt).not.toContain(input.operationId);
     expect(prompt).not.toContain("publish_companion_comment");
   });
 });
