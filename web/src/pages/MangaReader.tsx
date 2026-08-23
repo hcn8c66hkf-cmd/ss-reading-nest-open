@@ -28,9 +28,11 @@ export function MangaReader(props: {
   onFinish: () => void;
   onBack: () => void;
   onFullscreen: () => void;
+  onCollapse: () => void;
   fullscreenLabel?: string;
   themeMode?: "light" | "dark";
   immersive?: boolean;
+  displayMode?: "inline" | "pip" | "fullscreen";
   onToggleTheme?: () => void;
   onSettings: () => void;
   onMore: () => void;
@@ -65,7 +67,7 @@ export function MangaReader(props: {
 
   return (
     <main
-      className={`reader-shell manga-shell reader-with-dock companion-layout-${props.companionLayout}${
+      className={`reader-shell manga-shell reader-with-dock companion-layout-${props.companionLayout} reader-host-${props.displayMode ?? "inline"}${
         props.immersive ? " reader-immersive" : ""
       }`}
     >
@@ -76,6 +78,7 @@ export function MangaReader(props: {
         themeMode={props.themeMode}
         onBack={props.onBack}
         onFullscreen={props.onFullscreen}
+        onCollapse={props.onCollapse}
         onToggleTheme={props.onToggleTheme}
         onSettings={props.onSettings}
         onMore={props.onMore}

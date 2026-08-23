@@ -46,13 +46,19 @@ import { ReadingService } from "../services/reading-service.js";
 import type { CloudSourceService } from "../services/cloud-source-service.js";
 import { toolResult } from "./tool-result.js";
 
-export const READING_NEST_URI = "ui://ss-reading-nest/app-v31.html";
+export const READING_NEST_URI = "ui://ss-reading-nest/app-v32.html";
 
 const ANNOTATION_QUOTE_OPERATION_PREFIX = "annotation-v24:";
 const ANNOTATION_QUOTE_NOTE_PREFIX = "__ss_annotation_v24__:";
 const ANNOTATION_REPLY_OPERATION_PREFIX = "annotation-reply-v24:";
 const ANNOTATION_REPLY_CONTENT_PREFIX = "__ss_annotation_reply_v24__:";
 const DADDY_ANNOTATION_REPLY_OPERATION_PREFIX = "annotation-daddy-v25:";
+const ANNOTATION_FAVORITE_COMPAT_OPERATION_PREFIX = "annotation-favorite-v32:";
+const READING_MEMORY_COMPAT_OPERATION_PREFIX = "reading-memory-v32:";
+const READING_FACT_COMPAT_OPERATION_PREFIX = "reading-fact-v32:";
+const ANNOTATION_FAVORITE_COMPAT_CONTENT_PREFIX = "__ss_annotation_favorite_v32__:";
+const READING_MEMORY_COMPAT_CONTENT_PREFIX = "__ss_reading_memory_v32__:";
+const READING_FACT_COMPAT_CONTENT_PREFIX = "__ss_reading_fact_v32__:";
 
 const readOnly = {
   readOnlyHint: true,
@@ -66,10 +72,23 @@ const mutation = {
 };
 
 export const TOOL_CONFIGS = {
-  open_reading_nest_v31: {
+  open_reading_nest_v32: {
     title: "打开 S×S 小窝共读",
     description:
-      "Use this primary v31 tool when the user wants to open the reading nest or continue recent reading.",
+      "Use this primary v32 tool when the user wants to open the reading nest or continue recent reading.",
+    inputSchema: openReadingNestInputSchema,
+    annotations: readOnly,
+    _meta: {
+      ui: { resourceUri: READING_NEST_URI },
+      "openai/outputTemplate": READING_NEST_URI,
+      "openai/toolInvocation/invoking": "正在点亮小窝…",
+      "openai/toolInvocation/invoked": "小窝已经准备好"
+    }
+  },
+  open_reading_nest_v31: {
+    title: "打开 S×S 小窝共读（v31 兼容入口）",
+    description:
+      "Legacy compatibility entry. Prefer open_reading_nest_v32 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -82,7 +101,7 @@ export const TOOL_CONFIGS = {
   open_reading_nest_v30: {
     title: "打开 S×S 小窝共读（v30 兼容入口）",
     description:
-      "Legacy compatibility entry. Prefer open_reading_nest_v31 whenever it is available.",
+      "Legacy compatibility entry. Prefer open_reading_nest_v32 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -95,7 +114,7 @@ export const TOOL_CONFIGS = {
   open_reading_nest_v29: {
     title: "打开 S×S 小窝共读（v29 兼容入口）",
     description:
-      "Legacy compatibility entry. Prefer open_reading_nest_v31 whenever it is available.",
+      "Legacy compatibility entry. Prefer open_reading_nest_v32 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -108,7 +127,7 @@ export const TOOL_CONFIGS = {
   open_reading_nest_v28: {
     title: "打开 S×S 小窝共读（v28 兼容入口）",
     description:
-      "Legacy compatibility entry. Prefer open_reading_nest_v31 whenever it is available.",
+      "Legacy compatibility entry. Prefer open_reading_nest_v32 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -121,7 +140,7 @@ export const TOOL_CONFIGS = {
   open_reading_nest_v27: {
     title: "打开 S×S 小窝共读（v27 兼容入口）",
     description:
-      "Legacy compatibility entry. Prefer open_reading_nest_v31 whenever it is available.",
+      "Legacy compatibility entry. Prefer open_reading_nest_v32 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -134,7 +153,7 @@ export const TOOL_CONFIGS = {
   open_reading_nest_v26: {
     title: "打开 S×S 小窝共读（v26 兼容入口）",
     description:
-      "Legacy compatibility entry. Prefer open_reading_nest_v31 whenever it is available.",
+      "Legacy compatibility entry. Prefer open_reading_nest_v32 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -147,7 +166,7 @@ export const TOOL_CONFIGS = {
   open_reading_nest_v25: {
     title: "打开 S×S 小窝共读（v25 兼容入口）",
     description:
-      "Legacy compatibility entry. Prefer open_reading_nest_v31 whenever it is available.",
+      "Legacy compatibility entry. Prefer open_reading_nest_v32 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -160,7 +179,7 @@ export const TOOL_CONFIGS = {
   open_reading_nest_v24: {
     title: "打开 S×S 小窝共读（v24 兼容入口）",
     description:
-      "Legacy compatibility entry. Prefer open_reading_nest_v31 whenever it is available.",
+      "Legacy compatibility entry. Prefer open_reading_nest_v32 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -173,7 +192,7 @@ export const TOOL_CONFIGS = {
   open_reading_nest_v23: {
     title: "打开 S×S 小窝共读（v23 兼容入口）",
     description:
-      "Legacy compatibility entry. Prefer open_reading_nest_v31 whenever it is available.",
+      "Legacy compatibility entry. Prefer open_reading_nest_v32 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -186,7 +205,7 @@ export const TOOL_CONFIGS = {
   open_reading_nest_v22: {
     title: "打开 S×S 小窝共读（v22 兼容入口）",
     description:
-      "Legacy compatibility entry. Prefer open_reading_nest_v31 whenever it is available.",
+      "Legacy compatibility entry. Prefer open_reading_nest_v32 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -199,7 +218,7 @@ export const TOOL_CONFIGS = {
   open_reading_nest: {
     title: "打开 S×S 小窝共读（旧入口）",
     description:
-      "Legacy compatibility entry. Prefer open_reading_nest_v31 whenever it is available.",
+      "Legacy compatibility entry. Prefer open_reading_nest_v32 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -518,6 +537,23 @@ function decodeDaddyAnnotationReplyOperation(operationId: string): string | null
   return annotationId;
 }
 
+function decodeCompatJson(
+  content: string,
+  operationId: string | undefined,
+  operationPrefix: string,
+  contentPrefix: string
+): Record<string, unknown> | null {
+  if (!operationId?.startsWith(operationPrefix)) return null;
+  if (!content.startsWith(contentPrefix)) {
+    throw new Error("Invalid reading compatibility payload");
+  }
+  const parsed = JSON.parse(content.slice(contentPrefix.length)) as unknown;
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("Invalid reading compatibility payload");
+  }
+  return parsed as Record<string, unknown>;
+}
+
 function collectionVersion(items: unknown[]): string {
   const value = JSON.stringify(items);
   let hash = 2_166_136_261;
@@ -551,6 +587,13 @@ export function registerReadingTools(
       "已打开 S×S 小窝共读。"
     );
   };
+
+  registerAppTool(
+    server,
+    "open_reading_nest_v32",
+    TOOL_CONFIGS.open_reading_nest_v32,
+    openReadingNest
+  );
 
   registerAppTool(
     server,
@@ -795,13 +838,34 @@ export function registerReadingTools(
     "list_companion_comments",
     TOOL_CONFIGS.list_companion_comments,
     async ({ knownVersion, ...input }) => {
-      const result = await service.listCompanionComments(input);
-      const annotationResult = input.positionIndex
-        ? await service.listAnnotations({
+      const [result, annotationResult, favoriteResult, memoryResult, factResult, layeredContext] =
+        await Promise.all([
+          service.listCompanionComments(input),
+          input.positionIndex
+            ? service.listAnnotations({
+                sessionId: input.sessionId,
+                positionIndex: input.positionIndex
+              })
+            : undefined,
+          service.listAnnotationFavorites(input.sessionId),
+          service.listReadingMemories({
             sessionId: input.sessionId,
-            positionIndex: input.positionIndex
-          })
-        : undefined;
+            includeSuperseded: false,
+            limit: 50
+          }),
+          service.listReadingFacts({
+            sessionId: input.sessionId,
+            includeInactive: false,
+            limit: 100
+          }),
+          input.positionIndex
+            ? service.getLayeredReadingContext({
+                sessionId: input.sessionId,
+                depth: "daily",
+                positionIndex: input.positionIndex
+              })
+            : undefined
+        ]);
       const version = collectionVersion([
         ...result.comments.map((comment) => ({
           id: comment.id,
@@ -813,6 +877,20 @@ export function registerReadingTools(
           id: annotation.id,
           updatedAt: annotation.updatedAt,
           lastMessageId: annotation.messages?.at(-1)?.id ?? ""
+        })),
+        ...favoriteResult.favorites.map((item) => ({
+          id: item.id,
+          operationId: item.operationId
+        })),
+        ...memoryResult.memories.map((item) => ({
+          id: item.id,
+          updatedAt: item.updatedAt,
+          revision: item.revision
+        })),
+        ...factResult.facts.map((item) => ({
+          id: item.id,
+          updatedAt: item.updatedAt,
+          revision: item.revision
         }))
       ]);
       const unchanged = knownVersion === version;
@@ -822,7 +900,14 @@ export function registerReadingTools(
           unchanged,
           ...(unchanged
             ? { comments: [], ...(annotationResult ? { annotations: [] } : {}) }
-            : { ...result, ...(annotationResult ?? {}) })
+            : {
+                ...result,
+                ...(annotationResult ?? {}),
+                ...favoriteResult,
+                ...memoryResult,
+                ...factResult,
+                ...(layeredContext ? { layeredContext } : {})
+              })
         },
         unchanged ? "Daddy陪读短评没有更新。" : "已读取这本书的Daddy陪读短评。"
       );
@@ -934,7 +1019,7 @@ export function registerReadingTools(
     TOOL_CONFIGS.upsert_reading_memory,
     async (input) => {
       const memory = await service.upsertReadingMemory(input);
-      return toolResult({ saved: true, memory }, "长期阅读记忆已经保存。" );
+      return toolResult({ saved: true, memory }, "长期阅读记忆已经保存。");
     }
   );
 
@@ -952,7 +1037,7 @@ export function registerReadingTools(
     TOOL_CONFIGS.upsert_reading_fact,
     async (input) => {
       const fact = await service.upsertReadingFact(input);
-      return toolResult({ saved: true, fact }, "阅读事实卡已经保存。" );
+      return toolResult({ saved: true, fact }, "阅读事实卡已经保存。");
     }
   );
 
@@ -1059,6 +1144,54 @@ export function registerReadingTools(
         { saved: true, annotation: saved },
         annotation.comment ? "你的划线和评论都留在书边啦。" : "这句话已经划好线。"
       );
+    }
+    const favoriteCompat = decodeCompatJson(
+      input.content,
+      input.operationId,
+      ANNOTATION_FAVORITE_COMPAT_OPERATION_PREFIX,
+      ANNOTATION_FAVORITE_COMPAT_CONTENT_PREFIX
+    );
+    if (favoriteCompat) {
+      const parsed = setAnnotationFavoriteInputSchema.parse({
+        ...favoriteCompat,
+        sessionId: input.sessionId,
+        operationId: input.operationId
+      });
+      const result = await service.setAnnotationFavorite(parsed);
+      return toolResult(
+        { saved: true, ...result },
+        result.favorite ? "这条共读批注已经收藏。" : "这条共读批注已取消收藏。"
+      );
+    }
+    const memoryCompat = decodeCompatJson(
+      input.content,
+      input.operationId,
+      READING_MEMORY_COMPAT_OPERATION_PREFIX,
+      READING_MEMORY_COMPAT_CONTENT_PREFIX
+    );
+    if (memoryCompat) {
+      const parsed = upsertReadingMemoryInputSchema.parse({
+        ...memoryCompat,
+        sessionId: input.sessionId,
+        operationId: input.operationId
+      });
+      const memory = await service.upsertReadingMemory(parsed);
+      return toolResult({ saved: true, memory }, "长期阅读记忆已经保存。" );
+    }
+    const factCompat = decodeCompatJson(
+      input.content,
+      input.operationId,
+      READING_FACT_COMPAT_OPERATION_PREFIX,
+      READING_FACT_COMPAT_CONTENT_PREFIX
+    );
+    if (factCompat) {
+      const parsed = upsertReadingFactInputSchema.parse({
+        ...factCompat,
+        sessionId: input.sessionId,
+        operationId: input.operationId
+      });
+      const fact = await service.upsertReadingFact(parsed);
+      return toolResult({ saved: true, fact }, "阅读事实卡已经保存。" );
     }
     const quote = await service.saveQuote(input);
     return toolResult({ saved: true, quote }, "摘录已经放进小窝。");

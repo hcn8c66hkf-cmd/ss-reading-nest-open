@@ -9,6 +9,7 @@ declare global {
     positionIndex?: number;
     scrollTop?: number;
     immersive?: boolean;
+    collapsed?: boolean;
   }
 
   interface Window {

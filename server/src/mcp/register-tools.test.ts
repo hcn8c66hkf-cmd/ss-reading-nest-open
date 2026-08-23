@@ -7,12 +7,12 @@ import {
 } from "./register-tools.js";
 
 describe("tool descriptors", () => {
-  it("binds the current UI resource to the v31 and compatibility render tools", () => {
-    expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v31.html");
-    expect(TOOL_CONFIGS.open_reading_nest_v31._meta?.ui).toEqual({
+  it("binds the current UI resource to the v32 and compatibility render tools", () => {
+    expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v32.html");
+    expect(TOOL_CONFIGS.open_reading_nest_v32._meta?.ui).toEqual({
       resourceUri: READING_NEST_URI
     });
-    expect(TOOL_CONFIGS.open_reading_nest_v31._meta?.["openai/outputTemplate"]).toBe(
+    expect(TOOL_CONFIGS.open_reading_nest_v32._meta?.["openai/outputTemplate"]).toBe(
       READING_NEST_URI
     );
     expect(TOOL_CONFIGS.open_reading_nest._meta?.["openai/outputTemplate"]).toBe(
@@ -20,6 +20,7 @@ describe("tool descriptors", () => {
     );
     for (const [name, config] of Object.entries(TOOL_CONFIGS)) {
       if (
+        name !== "open_reading_nest_v32" &&
         name !== "open_reading_nest_v31" &&
         name !== "open_reading_nest_v30" &&
         name !== "open_reading_nest_v29" &&
@@ -106,7 +107,7 @@ describe("tool descriptors", () => {
     registerReadingTools(server as never, service as never, undefined, {
       sourceEndpointBase: "https://worker.example.test/source/secret"
     });
-    const result = (await handlers.get("open_reading_nest_v31")?.()) as {
+    const result = (await handlers.get("open_reading_nest_v32")?.()) as {
       structuredContent?: Record<string, unknown>;
     };
 
@@ -117,7 +118,7 @@ describe("tool descriptors", () => {
     expect(handlers.has("open_reading_nest")).toBe(true);
     expect(handlers.has("open_reading_nest_v23")).toBe(true);
     expect(handlers.has("open_reading_nest_v22")).toBe(true);
-    expect(configs.get("open_reading_nest_v31")._meta).toMatchObject({
+    expect(configs.get("open_reading_nest_v32")._meta).toMatchObject({
       ui: { resourceUri: READING_NEST_URI },
       "ui/resourceUri": READING_NEST_URI,
       "openai/outputTemplate": READING_NEST_URI
@@ -247,7 +248,7 @@ describe("tool descriptors", () => {
   });
 
   it("exposes book management and threaded annotation tools", () => {
-    expect(Object.keys(TOOL_CONFIGS)).toHaveLength(46);
+    expect(Object.keys(TOOL_CONFIGS)).toHaveLength(47);
     expect(TOOL_CONFIGS.create_annotation.annotations).toMatchObject({
       readOnlyHint: false,
       idempotentHint: true
@@ -337,8 +338,20 @@ describe("tool descriptors", () => {
       getSessionBundle: async () => ({ session: {}, quotes: [], reactions: [], bookmarks: [] }),
       listCompanionComments: async () => ({ comments: [] }),
       listAnnotations: async () => ({ annotations: [{ id: "annotation-1" }] }),
+      listAnnotationFavorites: async () => ({ favorites: [{ id: "favorite-1" }] }),
+      listReadingMemories: async () => ({ memories: [{ id: "memory-1", updatedAt: "2026-08-11T00:00:00.000Z", revision: 1 }] }),
+      listReadingFacts: async () => ({ facts: [{ id: "fact-1", updatedAt: "2026-08-11T00:00:00.000Z", revision: 1 }] }),
+      getLayeredReadingContext: async () => ({ daily: true }),
       createAnnotation,
       replyToAnnotation,
+      setAnnotationFavorite: async (input: any) => ({
+        favorite: input.favorite,
+        ...(input.favorite
+          ? { item: { id: "favorite-compat", annotationId: input.annotationId } }
+          : {})
+      }),
+      upsertReadingMemory: async (input: any) => ({ id: "memory-compat", ...input }),
+      upsertReadingFact: async (input: any) => ({ id: "fact-compat", ...input }),
       publishCompanionComment: async () => { throw new Error("annotation reply must not enter the Dock"); },
       saveQuote: async () => { throw new Error("must not save a quote"); },
       saveReaction: async () => { throw new Error("must not save a reaction"); }
@@ -390,6 +403,39 @@ describe("tool descriptors", () => {
       source: "quick_action",
       operationId: "annotation-daddy-v25:annotation-1:reply-op-3"
     });
+    const favoriteCompat = await handlers.get("save_quote")?.({
+      sessionId: "session-1",
+      content: `__ss_annotation_favorite_v32__:${JSON.stringify({
+        annotationId: "annotation-1",
+        favorite: true
+      })}`,
+      position: { kind: "paragraph", index: 12, label: "第 12 段" },
+      operationId: "annotation-favorite-v32:favorite-op-1"
+    });
+    const memoryCompat = await handlers.get("save_quote")?.({
+      sessionId: "session-1",
+      content: `__ss_reading_memory_v32__:${JSON.stringify({
+        kind: "chapter_summary",
+        scope: "chapter",
+        chapterLabel: "第 1–12 段",
+        rangeStart: 1,
+        rangeEnd: 12,
+        content: "这一章发生了重要转折。",
+        source: "daddy_read"
+      })}`,
+      position: { kind: "paragraph", index: 12, label: "第 12 段" },
+      operationId: "reading-memory-v32:memory-op-1"
+    });
+    const factCompat = await handlers.get("save_quote")?.({
+      sessionId: "session-1",
+      content: `__ss_reading_fact_v32__:${JSON.stringify({
+        subject: "来信",
+        fact: "信被收回了抽屉。",
+        source: "daddy_read"
+      })}`,
+      position: { kind: "paragraph", index: 12, label: "第 12 段" },
+      operationId: "reading-fact-v32:fact-op-1"
+    });
 
     expect(created.structuredContent.annotation.anchor).toMatchObject({
       selectedText: "她把信折好",
@@ -402,7 +448,30 @@ describe("tool descriptors", () => {
       author: "assistant",
       text: "我也觉得，他是在给自己留最后一点体面。"
     });
+    expect(favoriteCompat.structuredContent).toMatchObject({
+      saved: true,
+      favorite: true,
+      item: { id: "favorite-compat", annotationId: "annotation-1" }
+    });
+    expect(memoryCompat.structuredContent.memory).toMatchObject({
+      id: "memory-compat",
+      kind: "chapter_summary",
+      operationId: "reading-memory-v32:memory-op-1"
+    });
+    expect(factCompat.structuredContent.fact).toMatchObject({
+      id: "fact-compat",
+      subject: "来信",
+      operationId: "reading-fact-v32:fact-op-1"
+    });
     expect(listed.structuredContent.annotations).toEqual([{ id: "annotation-1" }]);
+    expect(listed.structuredContent.favorites).toEqual([{ id: "favorite-1" }]);
+    expect(listed.structuredContent.memories).toEqual([
+      { id: "memory-1", updatedAt: "2026-08-11T00:00:00.000Z", revision: 1 }
+    ]);
+    expect(listed.structuredContent.facts).toEqual([
+      { id: "fact-1", updatedAt: "2026-08-11T00:00:00.000Z", revision: 1 }
+    ]);
+    expect(listed.structuredContent.layeredContext).toEqual({ daily: true });
     expect(unchanged.structuredContent).toMatchObject({
       version: listed.structuredContent.version,
       unchanged: true,

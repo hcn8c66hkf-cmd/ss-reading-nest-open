@@ -5,6 +5,7 @@ export function ReaderHeader(props: {
   themeMode?: "light" | "dark";
   onBack: () => void;
   onFullscreen: () => void;
+  onCollapse: () => void;
   onToggleTheme?: () => void;
   onSettings: () => void;
   onMore: () => void;
@@ -32,6 +33,14 @@ export function ReaderHeader(props: {
         </button>
         <button className="icon-button" onClick={props.onSettings} aria-label="缓存设置">⌁</button>
         <button className="icon-button" onClick={props.onMore} aria-label="更多操作">⋯</button>
+        <button
+          className="icon-button reader-collapse-button"
+          onClick={props.onCollapse}
+          aria-label="收起小窝卡片"
+          title="收起小窝卡片"
+        >
+          ×
+        </button>
       </div>
     </header>
   );

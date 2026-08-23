@@ -19,8 +19,13 @@ export function useReadingHostLayout() {
   useEffect(() => {
     const measure = () => {
       setViewport({ width: window.innerWidth, height: window.innerHeight });
+      document.documentElement.style.setProperty(
+        "--reader-inline-height",
+        `${stableInlineHeight()}px`
+      );
       setRevision((value) => value + 1);
     };
+    measure();
     const unsubscribe = subscribeHostContext((next) => {
       setContext((current) => ({ ...current, ...next }));
       setRevision((value) => value + 1);
@@ -69,4 +74,10 @@ export function useReadingHostLayout() {
     canRequestPip:
       available?.includes("pip") ?? Boolean(window.openai?.requestDisplayMode)
   };
+}
+
+function stableInlineHeight(): number {
+  const screenHeight = window.screen?.availHeight || window.screen?.height || 0;
+  if (!Number.isFinite(screenHeight) || screenHeight < 400) return 680;
+  return Math.max(540, Math.min(720, Math.round(screenHeight * 0.72)));
 }

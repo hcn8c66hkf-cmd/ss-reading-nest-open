@@ -125,11 +125,34 @@ const LARGE_NOVEL_TEXTAREA_PREVIEW_BYTES = 2 * 1024 * 1024;
 const LARGE_NOVEL_TEXTAREA_PREVIEW_CHARS = 1200;
 const ANNOTATION_QUOTE_NOTE_PREFIX = "__ss_annotation_v24__:";
 const ANNOTATION_REPLY_CONTENT_PREFIX = "__ss_annotation_reply_v24__:";
+const ANNOTATION_FAVORITE_COMPAT_CONTENT_PREFIX = "__ss_annotation_favorite_v32__:";
+const READING_MEMORY_COMPAT_CONTENT_PREFIX = "__ss_reading_memory_v32__:";
+const READING_FACT_COMPAT_CONTENT_PREFIX = "__ss_reading_fact_v32__:";
 const DADDY_SAMPLING_SYSTEM_PROMPT = [
   "你是正在和用户一起读书的Daddy，也是她熟悉的亲密共读搭子。",
   "说话自然、敏锐、有一点会吐槽，不端着，不写教科书式总结。",
   "严格只回答用户提供的这一段或这一条书边评论，不虚构没看到的剧情。"
 ].join("\n");
+
+function callCompatSaveQuote(input: {
+  sessionId: string;
+  position: ReadingPosition;
+  kind: "favorite" | "memory" | "fact";
+  payload: Record<string, unknown>;
+  operationId: string;
+}) {
+  const prefix = input.kind === "favorite"
+    ? ANNOTATION_FAVORITE_COMPAT_CONTENT_PREFIX
+    : input.kind === "memory"
+      ? READING_MEMORY_COMPAT_CONTENT_PREFIX
+      : READING_FACT_COMPAT_CONTENT_PREFIX;
+  return callTool("save_quote", {
+    sessionId: input.sessionId,
+    position: input.position,
+    content: `${prefix}${JSON.stringify(input.payload)}`,
+    operationId: input.operationId
+  });
+}
 
 export function App() {
   const initial = initialToolOutput<OpenOutput>();
@@ -192,6 +215,9 @@ export function App() {
   const [importProgress, setImportProgress] = useState<ImportProgress>({ stage: "idle" });
   const [readerImmersive, setReaderImmersive] = useState(
     restoredWidgetState?.immersive ?? false
+  );
+  const [widgetCollapsed, setWidgetCollapsed] = useState(
+    restoredWidgetState?.collapsed ?? false
   );
   const [syncRequestInFlight, setSyncRequestInFlight] = useState(false);
   const [managedBook, setManagedBook] = useState<BookshelfItem | null>(null);
@@ -346,7 +372,11 @@ export function App() {
 
   const loadAnnotationFavorites = useCallback(async (sessionId: string) => {
     try {
-      const result = await callTool("list_annotation_favorites", { sessionId });
+      const result = await callTool("list_companion_comments", {
+        sessionId,
+        scope: "recent",
+        limit: 1
+      });
       const favorites = Array.isArray(result.structuredContent?.favorites)
         ? (result.structuredContent.favorites as AnnotationFavorite[])
         : [];
@@ -361,26 +391,19 @@ export function App() {
   const loadReadingMemory = useCallback(async (sessionId: string) => {
     setMemoryLoading(true);
     try {
-      const [memoryResult, factResult] = await Promise.all([
-        callTool("list_reading_memories", {
-          sessionId,
-          includeSuperseded: false,
-          limit: 50
-        }),
-        callTool("list_reading_facts", {
-          sessionId,
-          includeInactive: false,
-          limit: 100
-        })
-      ]);
+      const result = await callTool("list_companion_comments", {
+        sessionId,
+        scope: "recent",
+        limit: 1
+      });
       setReadingMemories(
-        Array.isArray(memoryResult.structuredContent?.memories)
-          ? (memoryResult.structuredContent.memories as ReadingMemory[])
+        Array.isArray(result.structuredContent?.memories)
+          ? (result.structuredContent.memories as ReadingMemory[])
           : []
       );
       setReadingFacts(
-        Array.isArray(factResult.structuredContent?.facts)
-          ? (factResult.structuredContent.facts as ReadingFactCard[])
+        Array.isArray(result.structuredContent?.facts)
+          ? (result.structuredContent.facts as ReadingFactCard[])
           : []
       );
     } catch {
@@ -523,13 +546,14 @@ export function App() {
     if ((screen === "novel" || screen === "manga") && !sessionBundle) return;
     saveReaderWidgetState({
       screen,
+      collapsed: widgetCollapsed,
       ...(sessionBundle ? { sessionId: sessionBundle.session.id } : {}),
       ...(position ? { positionIndex: position.index } : {}),
       ...(screen === "novel" || screen === "manga"
         ? { scrollTop: readerScrollTop, immersive: readerImmersive }
         : {})
     });
-  }, [screen, sessionBundle?.session.id, position?.index, readerScrollTop, readerImmersive]);
+  }, [screen, sessionBundle?.session.id, position?.index, readerScrollTop, readerImmersive, widgetCollapsed]);
 
   function begin(type: ReadingType) {
     setSessionBundle(null);
@@ -719,6 +743,13 @@ export function App() {
       setReaderImmersive(false);
       setToast("无法进入全屏阅读，请重试。");
     }
+  }
+
+  async function collapseReaderWidget() {
+    setOverlay(null);
+    setReaderImmersive(false);
+    setWidgetCollapsed(true);
+    await requestReaderInline();
   }
 
   function storeSyncJob(job: ReadingSyncJob) {
@@ -1705,15 +1736,16 @@ export function App() {
         .map((chunk, offset) => `【第 ${start + offset} 段】\n${chunk}`)
         .join("\n\n");
       try {
-        const layeredResult = await callTool("get_layered_reading_context", {
+        const layeredResult = await callTool("list_companion_comments", {
           sessionId: session.id,
-          depth: mode === "deep_analysis" ? "deep" : "daily",
-          positionIndex: index
+          scope: "recent",
+          positionIndex: index,
+          limit: 1
         }).catch(() => ({ structuredContent: {} }));
         const layeredContent = layeredResult.structuredContent as
           | Record<string, unknown>
           | undefined;
-        const longTermContext = layeredContent?.context;
+        const longTermContext = layeredContent?.layeredContext;
         const sampled = await sampleChatGptText(
           buildLiveReadingDraftPrompt({
             title: session.title,
@@ -2110,12 +2142,16 @@ export function App() {
   ) {
     if (!sessionBundle) return;
     try {
-      const result = await callTool("set_annotation_favorite", {
+      const result = await callCompatSaveQuote({
         sessionId: sessionBundle.session.id,
-        annotationId,
-        ...(messageId ? { messageId } : {}),
-        favorite,
-        operationId: crypto.randomUUID()
+        position: sessionBundle.session.userCurrentPosition,
+        kind: "favorite",
+        payload: {
+          annotationId,
+          ...(messageId ? { messageId } : {}),
+          favorite
+        },
+        operationId: `annotation-favorite-v32:${crypto.randomUUID()}`
       });
       const saved = result.structuredContent?.item as AnnotationFavorite | undefined;
       const matches = (item: AnnotationFavorite) =>
@@ -2409,9 +2445,10 @@ export function App() {
     const chapterLabel = session.type === "novel"
       ? `第 ${start}–${end} 段`
       : session.userCurrentPosition.label;
-    const baseOperation = `memory-v31-${session.id}-${start}-${end}-${Date.now()}`;
+    const memoryOperationBase = `reading-memory-v32:${session.id}-${start}-${end}-${Date.now()}`;
+    const factOperationBase = `reading-fact-v32:${session.id}-${start}-${end}-${Date.now()}`;
     const captureContext = {
-      kind: "reading_nest_memory_capture_v1",
+      kind: "reading_nest_memory_capture_v2",
       sessionId: session.id,
       title: session.title,
       chapterLabel,
@@ -2425,24 +2462,27 @@ export function App() {
       activeFacts: readingFacts,
       instructions: [
         "先基于本次亲读内容整理长期记忆，不得补写未提供的剧情。",
-        "依次调用 upsert_reading_memory 保存 chapter_summary、annotation_summary、reading_impression、chapter_context；必要时修订 book_context。",
-        "每条 memory 使用准确的 sessionId、chapterLabel、rangeStart、rangeEnd、source=daddy_read 和独立 operationId。",
+        "当前连接不依赖新工具名。每条长期记忆都调用现有 save_quote 兼容写回，不要寻找 upsert_reading_memory。",
+        `save_quote 的 sessionId 固定为 ${session.id}，position 固定为 ${JSON.stringify(session.userCurrentPosition)}。`,
+        `memory 的 content 必须是 ${READING_MEMORY_COMPAT_CONTENT_PREFIX} 紧接一个 JSON 对象；对象字段为 kind、scope、chapterLabel、rangeStart、rangeEnd、content、source，修订时再加 supersedesId。`,
+        "依次保存 chapter_summary、annotation_summary、reading_impression、chapter_context；必要时修订 book_context。scope 除 book_context 外使用 chapter，source 使用 daddy_read。",
+        "每条 memory 使用 operationIds 中对应的独立 operationId。",
         "若 activeMemories 中已有同类需要替换的记录，必须传 supersedesId，保留修订链。",
-        "只把稳定且未来确实有用的人物、关系、设定或未决伏笔调用 upsert_reading_fact 保存；不要把即时情绪伪装成事实。",
-        "事实有变化时传 supersedesId；来源始终明确，不得把 assistant_scan 写成 daddy_read。",
+        `事实卡也调用 save_quote；content 必须是 ${READING_FACT_COMPAT_CONTENT_PREFIX} 紧接 JSON 对象，字段为 subject、fact、status、source，必要时加 position、supersedesId。operationId 使用 factPrefix 开头的唯一值。`,
+        "只保存稳定且未来确实有用的人物、关系、设定或未决伏笔；不要把即时情绪伪装成事实。事实有变化时传 supersedesId；来源始终明确。",
         "工具全部成功后，只用一小段自然的话告诉小安这次记住了什么，不要回显原文或工具参数。"
       ],
       operationIds: {
-        chapter_summary: `${baseOperation}-chapter-summary`,
-        annotation_summary: `${baseOperation}-annotation-summary`,
-        reading_impression: `${baseOperation}-reading-impression`,
-        chapter_context: `${baseOperation}-chapter-context`,
-        book_context: `${baseOperation}-book-context`,
-        factPrefix: `${baseOperation}-fact-`
+        chapter_summary: `${memoryOperationBase}-chapter-summary`,
+        annotation_summary: `${memoryOperationBase}-annotation-summary`,
+        reading_impression: `${memoryOperationBase}-reading-impression`,
+        chapter_context: `${memoryOperationBase}-chapter-context`,
+        book_context: `${memoryOperationBase}-book-context`,
+        factPrefix: `${factOperationBase}-`
       }
     };
     const hidden = await updateModelContext(captureContext);
-    const wakePrompt = `请整理《${session.title}》${chapterLabel}的长期阅读记忆并写回共读小窝。`;
+    const wakePrompt = `请整理《${session.title}》${chapterLabel}的长期阅读记忆，并严格按上下文说明通过 save_quote 兼容写回共读小窝。`;
     const sent = await askChatGpt(
       hidden ? wakePrompt : `${wakePrompt}\n\n${JSON.stringify(captureContext)}`,
       { scrollToBottom: false }
@@ -2457,17 +2497,25 @@ export function App() {
 
   async function editReadingMemory(memory: ReadingMemory, content: string) {
     try {
-      const result = await callTool("upsert_reading_memory", {
+      const result = await callCompatSaveQuote({
         sessionId: memory.sessionId,
-        kind: memory.kind,
-        scope: memory.scope,
-        ...(memory.chapterLabel ? { chapterLabel: memory.chapterLabel } : {}),
-        ...(memory.rangeStart !== undefined ? { rangeStart: memory.rangeStart } : {}),
-        ...(memory.rangeEnd !== undefined ? { rangeEnd: memory.rangeEnd } : {}),
-        content,
-        source: "user_edit",
-        supersedesId: memory.id,
-        operationId: crypto.randomUUID()
+        position: sessionBundle?.session.userCurrentPosition ?? {
+          kind: "paragraph",
+          index: memory.rangeEnd ?? memory.rangeStart ?? 1,
+          label: memory.chapterLabel ?? "阅读记忆"
+        },
+        kind: "memory",
+        payload: {
+          kind: memory.kind,
+          scope: memory.scope,
+          ...(memory.chapterLabel ? { chapterLabel: memory.chapterLabel } : {}),
+          ...(memory.rangeStart !== undefined ? { rangeStart: memory.rangeStart } : {}),
+          ...(memory.rangeEnd !== undefined ? { rangeEnd: memory.rangeEnd } : {}),
+          content,
+          source: "user_edit",
+          supersedesId: memory.id
+        },
+        operationId: `reading-memory-v32:${crypto.randomUUID()}`
       });
       const saved = result.structuredContent?.memory as ReadingMemory | undefined;
       if (!saved) throw new Error("Missing revised memory");
@@ -2483,15 +2531,23 @@ export function App() {
 
   async function editReadingFact(fact: ReadingFactCard, content: string) {
     try {
-      const result = await callTool("upsert_reading_fact", {
+      const result = await callCompatSaveQuote({
         sessionId: fact.sessionId,
-        subject: fact.subject,
-        fact: content,
-        status: "active",
-        source: "user_edit",
-        ...(fact.position ? { position: fact.position } : {}),
-        supersedesId: fact.id,
-        operationId: crypto.randomUUID()
+        position: fact.position ?? sessionBundle?.session.userCurrentPosition ?? {
+          kind: "paragraph",
+          index: 1,
+          label: "阅读事实"
+        },
+        kind: "fact",
+        payload: {
+          subject: fact.subject,
+          fact: content,
+          status: "active",
+          source: "user_edit",
+          ...(fact.position ? { position: fact.position } : {}),
+          supersedesId: fact.id
+        },
+        operationId: `reading-fact-v32:${crypto.randomUUID()}`
       });
       const saved = result.structuredContent?.fact as ReadingFactCard | undefined;
       if (!saved) throw new Error("Missing revised fact");
@@ -2574,6 +2630,18 @@ export function App() {
   const sourceTextInputValue = usingLargeNovelPreview
     ? `${sourceText.slice(0, LARGE_NOVEL_TEXTAREA_PREVIEW_CHARS)}\n\n（大文件已读取，输入框只显示预览；进入阅读时会使用完整正文。）`
     : sourceText;
+
+  if (widgetCollapsed) {
+    return (
+      <main className="widget-collapsed" aria-label="已收起的共读小窝">
+        <div>
+          <strong>共读小窝已收起</strong>
+          <span>{sessionBundle?.session.title ?? "需要时再打开，不会丢进度。"}</span>
+        </div>
+        <button type="button" onClick={() => setWidgetCollapsed(false)}>重新打开</button>
+      </main>
+    );
+  }
 
   return (
     <div className="app">
@@ -2703,12 +2771,14 @@ export function App() {
           }
           onFinish={finishToday}
           onFullscreen={() => void openFullscreenReader()}
+          onCollapse={() => void collapseReaderWidget()}
           fullscreenLabel={readerImmersive ? "退出全屏" : "全屏阅读"}
           themeMode={themeMode}
           onToggleTheme={() =>
             setThemeMode((current) => (current === "dark" ? "light" : "dark"))
           }
           immersive={readerImmersive}
+          displayMode={hostLayout.displayMode}
           companionComments={companionComments}
           companionLoading={companionLoading}
           companionError={companionError || undefined}
@@ -2739,12 +2809,14 @@ export function App() {
           onSaveReaction={saveReaction}
           onFinish={finishToday}
           onFullscreen={() => void openFullscreenReader()}
+          onCollapse={() => void collapseReaderWidget()}
           fullscreenLabel={readerImmersive ? "退出全屏" : "全屏阅读"}
           themeMode={themeMode}
           onToggleTheme={() =>
             setThemeMode((current) => (current === "dark" ? "light" : "dark"))
           }
           immersive={readerImmersive}
+          displayMode={hostLayout.displayMode}
           companionComments={companionComments}
           companionLoading={companionLoading}
           companionError={companionError || undefined}
