@@ -32,7 +32,7 @@ try {
     renderTool._meta?.["openai/outputTemplate"] ??
     renderTool._meta?.["ui/resourceUri"] ??
     renderTool._meta?.ui?.resourceUri;
-  if (resourceUri !== "ui://ss-reading-nest/app-v32.html") {
+  if (resourceUri !== "ui://ss-reading-nest/app-v33.html") {
     throw new Error(`Render tool published an invalid UI resource URI: ${String(resourceUri)}`);
   }
 
