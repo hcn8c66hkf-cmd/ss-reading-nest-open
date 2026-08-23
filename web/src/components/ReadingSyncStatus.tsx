@@ -14,6 +14,9 @@ export function ReadingSyncStatus({
   const hasGap = pendingStart <= user.index;
 
   if (session.liveReadingEnabled && liveReadingState) {
+    const failedLabel = liveReadingState.failedIndex
+      ? `第 ${liveReadingState.failedIndex} ${user.kind === "page" ? "页" : "段"}`
+      : null;
     const activeLabel = liveReadingState?.activeIndex
       ? `第 ${liveReadingState.activeIndex} ${user.kind === "page" ? "页" : "段"}`
       : null;
@@ -22,12 +25,19 @@ export function ReadingSyncStatus({
         <span>你在：{user.label}</span>
         <span>Daddy已留短评到：{assistant?.label ?? "还没有"}</span>
         <span>
-          {activeLabel
+          {failedLabel
+            ? `Daddy没能收到${failedLabel}。`
+            : activeLabel
             ? `Daddy正在读：${activeLabel}${liveReadingState?.queuedCount ? ` · 后面排队 ${liveReadingState.queuedCount} 段` : ""}`
             : assistant?.index === user.index
               ? "本段已读完 ✓"
               : "正在把本段排给Daddy……"}
         </span>
+        {failedLabel ? (
+          <button type="button" onClick={liveReadingState.retryFailed}>
+            重新请Daddy读这段
+          </button>
+        ) : null}
       </aside>
     );
   }

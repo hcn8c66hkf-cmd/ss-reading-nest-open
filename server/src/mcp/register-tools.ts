@@ -39,7 +39,7 @@ import { ReadingService } from "../services/reading-service.js";
 import type { CloudSourceService } from "../services/cloud-source-service.js";
 import { toolResult } from "./tool-result.js";
 
-export const READING_NEST_URI = "ui://ss-reading-nest/app-v26.html";
+export const READING_NEST_URI = "ui://ss-reading-nest/app-v27.html";
 
 const ANNOTATION_QUOTE_OPERATION_PREFIX = "annotation-v24:";
 const ANNOTATION_QUOTE_NOTE_PREFIX = "__ss_annotation_v24__:";
@@ -59,10 +59,23 @@ const mutation = {
 };
 
 export const TOOL_CONFIGS = {
-  open_reading_nest_v26: {
+  open_reading_nest_v27: {
     title: "打开 S×S 小窝共读",
     description:
-      "Use this primary v26 tool when the user wants to open the reading nest or continue recent reading.",
+      "Use this primary v27 tool when the user wants to open the reading nest or continue recent reading.",
+    inputSchema: openReadingNestInputSchema,
+    annotations: readOnly,
+    _meta: {
+      ui: { resourceUri: READING_NEST_URI },
+      "openai/outputTemplate": READING_NEST_URI,
+      "openai/toolInvocation/invoking": "正在点亮小窝…",
+      "openai/toolInvocation/invoked": "小窝已经准备好"
+    }
+  },
+  open_reading_nest_v26: {
+    title: "打开 S×S 小窝共读（v26 兼容入口）",
+    description:
+      "Legacy compatibility entry. Prefer open_reading_nest_v27 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -75,7 +88,7 @@ export const TOOL_CONFIGS = {
   open_reading_nest_v25: {
     title: "打开 S×S 小窝共读（v25 兼容入口）",
     description:
-      "Legacy compatibility entry. Prefer open_reading_nest_v26 whenever it is available.",
+      "Legacy compatibility entry. Prefer open_reading_nest_v27 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -88,7 +101,7 @@ export const TOOL_CONFIGS = {
   open_reading_nest_v24: {
     title: "打开 S×S 小窝共读（v24 兼容入口）",
     description:
-      "Legacy compatibility entry. Prefer open_reading_nest_v26 whenever it is available.",
+      "Legacy compatibility entry. Prefer open_reading_nest_v27 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -101,7 +114,7 @@ export const TOOL_CONFIGS = {
   open_reading_nest_v23: {
     title: "打开 S×S 小窝共读（v23 兼容入口）",
     description:
-      "Legacy compatibility entry. Prefer open_reading_nest_v26 whenever it is available.",
+      "Legacy compatibility entry. Prefer open_reading_nest_v27 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -114,7 +127,7 @@ export const TOOL_CONFIGS = {
   open_reading_nest_v22: {
     title: "打开 S×S 小窝共读（v22 兼容入口）",
     description:
-      "Legacy compatibility entry. Prefer open_reading_nest_v26 whenever it is available.",
+      "Legacy compatibility entry. Prefer open_reading_nest_v27 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -127,7 +140,7 @@ export const TOOL_CONFIGS = {
   open_reading_nest: {
     title: "打开 S×S 小窝共读（旧入口）",
     description:
-      "Legacy compatibility entry. Prefer open_reading_nest_v26 whenever it is available.",
+      "Legacy compatibility entry. Prefer open_reading_nest_v27 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -399,6 +412,16 @@ function decodeDaddyAnnotationReplyOperation(operationId: string): string | null
   return annotationId;
 }
 
+function collectionVersion(items: unknown[]): string {
+  const value = JSON.stringify(items);
+  let hash = 2_166_136_261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16_777_619);
+  }
+  return `v1-${items.length}-${(hash >>> 0).toString(36)}`;
+}
+
 export function registerReadingTools(
   server: McpServer,
   service: ReadingService,
@@ -423,6 +446,12 @@ export function registerReadingTools(
     );
   };
 
+  registerAppTool(
+    server,
+    "open_reading_nest_v27",
+    TOOL_CONFIGS.open_reading_nest_v27,
+    openReadingNest
+  );
   registerAppTool(
     server,
     "open_reading_nest_v26",
@@ -635,7 +664,7 @@ export function registerReadingTools(
   server.registerTool(
     "list_companion_comments",
     TOOL_CONFIGS.list_companion_comments,
-    async (input) => {
+    async ({ knownVersion, ...input }) => {
       const result = await service.listCompanionComments(input);
       const annotationResult = input.positionIndex
         ? await service.listAnnotations({
@@ -643,9 +672,29 @@ export function registerReadingTools(
             positionIndex: input.positionIndex
           })
         : undefined;
+      const version = collectionVersion([
+        ...result.comments.map((comment) => ({
+          id: comment.id,
+          updatedAt: comment.updatedAt ?? comment.createdAt,
+          inRecent: comment.inRecent,
+          inHistory: comment.inHistory
+        })),
+        ...(annotationResult?.annotations ?? []).map((annotation) => ({
+          id: annotation.id,
+          updatedAt: annotation.updatedAt,
+          lastMessageId: annotation.messages?.at(-1)?.id ?? ""
+        }))
+      ]);
+      const unchanged = knownVersion === version;
       return toolResult(
-        { ...result, ...(annotationResult ?? {}) },
-        "已读取这本书的Daddy陪读短评。"
+        {
+          version,
+          unchanged,
+          ...(unchanged
+            ? { comments: [], ...(annotationResult ? { annotations: [] } : {}) }
+            : { ...result, ...(annotationResult ?? {}) })
+        },
+        unchanged ? "Daddy陪读短评没有更新。" : "已读取这本书的Daddy陪读短评。"
       );
     }
   );
