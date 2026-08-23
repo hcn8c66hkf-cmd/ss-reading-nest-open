@@ -20,7 +20,7 @@ export interface CloudSourceUploadResult {
   diagnostics: CloudUploadDiagnostics;
 }
 
-const RESOURCE_VERSION = "app-v27";
+const RESOURCE_VERSION = "app-v28";
 const APP_VERSION = "0.3.0";
 const MAX_BRIDGE_NOVEL_UPLOAD_BYTES = 2 * 1024 * 1024;
 

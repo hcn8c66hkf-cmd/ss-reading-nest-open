@@ -60,6 +60,7 @@ import {
   buildLiveReadingPrompt,
   buildReadingCommentPrompt
 } from "./features/reading-comments/prompt-policy.js";
+import { buildDaddyAnnotationReplyFallbackPrompt } from "./features/annotations/reply-fallback.js";
 import {
   cancelSyncJob,
   getActiveBatch,
@@ -2056,7 +2057,7 @@ export function App() {
           annotationId: annotation.id,
           author: "assistant",
           text: trimDaddyText(sampled, 500),
-          operationId: `annotation-daddy-v26:${annotation.id}:${crypto.randomUUID()}`
+          operationId: `annotation-daddy-v28:${annotation.id}:${crypto.randomUUID()}`
         });
         const saved = result.structuredContent?.annotation as ReadingAnnotation | undefined;
         if (!saved) throw new Error("Missing Daddy annotation reply");
@@ -2068,16 +2069,12 @@ export function App() {
       }
 
       const sent = await askChatGpt(
-        [
-          prompt,
-          "当前页面宿主不能把生成结果直接交回小窝。请调用 reply_to_annotation 写入你的最终回复后，再在聊天区回复相同内容。",
-          `reply_to_annotation 固定参数：${JSON.stringify({
-            sessionId: sessionBundle.session.id,
-            annotationId: annotation.id,
-            author: "assistant",
-            operationId: `annotation-daddy-fallback-v26:${annotation.id}:${crypto.randomUUID()}`
-          })}；text=你的最终回复全文。`
-        ].join("\n\n"),
+        buildDaddyAnnotationReplyFallbackPrompt({
+          conversationPrompt: prompt,
+          sessionId: sessionBundle.session.id,
+          position: annotation.position,
+          operationId: `annotation-daddy-v25:${encodeURIComponent(annotation.id)}:${crypto.randomUUID()}`
+        }),
         { scrollToBottom: false }
       );
       if (!sent) throw new Error("Host did not accept Daddy reply request");
