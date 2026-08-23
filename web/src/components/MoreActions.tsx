@@ -24,6 +24,7 @@ export function MoreActions(props: {
   onQuickAction: (mode: ReadingCommentMode, length: CommentLength) => void;
   onBookmark: () => void;
   onDiary: () => void;
+  onMemory: () => void;
   onComplete: () => void;
   onClose: () => void;
 }) {
@@ -42,6 +43,7 @@ export function MoreActions(props: {
         />
         <button className="sheet-action" onClick={props.onBookmark}>保存书签</button>
         <button className="sheet-action" onClick={props.onDiary}>写小窝日记</button>
+        <button className="sheet-action" onClick={props.onMemory}>长期阅读记忆</button>
         <button className="sheet-action quiet-danger" onClick={props.onComplete}>完成这部作品</button>
         <button className="text-button" onClick={props.onClose}>取消</button>
       </section>

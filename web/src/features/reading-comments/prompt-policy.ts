@@ -105,6 +105,7 @@ export function buildLiveReadingModelContext(input: {
   position: ReadingPosition;
   text: string;
   operationId: string;
+  longTermContext?: unknown;
 }): Record<string, unknown> {
   return {
     kind: "reading_nest_live_reading_v1",
@@ -112,6 +113,7 @@ export function buildLiveReadingModelContext(input: {
     title: input.title,
     position: input.position,
     currentText: input.text,
+    ...(input.longTermContext ? { longTermContext: input.longTermContext } : {}),
     responsePolicy: {
       mode: "reaction_only",
       length: "short",
@@ -145,14 +147,18 @@ export function buildLiveReadingDraftPrompt(input: {
   title: string;
   position: ReadingPosition;
   text: string;
+  longTermContext?: unknown;
 }): string {
   return [
     `【实时陪读：${input.position.label}】《${input.title}》`,
     `本段原文：\n${input.text}`,
+    input.longTermContext
+      ? `可用的轻量长期前情（只作辅助，不得覆盖本段原文）：\n${JSON.stringify(input.longTermContext)}`
+      : "",
     "请写 1–3 句、最多 160 字的弹幕式短评。",
     "只做即时反应、吐槽、嗑点或伏笔提醒；不总结全文，不复述剧情，不写完整书评。",
     "只返回最终短评正文，不要标题、引号、参数、工具调用说明或保存说明。"
-  ].join("\n\n");
+  ].filter(Boolean).join("\n\n");
 }
 
 function publishInstructions(input: {

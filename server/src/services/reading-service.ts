@@ -12,6 +12,11 @@ import type {
   Quote,
   Reaction,
   ReadingAnnotation,
+  AnnotationFavorite,
+  ReadingMemory,
+  ReadingMemoryKind,
+  ReadingMemorySource,
+  ReadingFactCard,
   AnnotationAuthor,
   TextAnchor,
   ReadingCommentMode,
@@ -358,6 +363,257 @@ export class ReadingService {
     };
   }
 
+  async setAnnotationFavorite(input: {
+    sessionId: string;
+    annotationId: string;
+    messageId?: string;
+    favorite: boolean;
+    operationId: string;
+  }): Promise<{ favorite: boolean; item?: AnnotationFavorite }> {
+    return this.repository.mutate((database) => {
+      this.requireSession(database.sessions, input.sessionId);
+      const annotation = database.annotations.find(
+        (item) => item.id === input.annotationId && item.sessionId === input.sessionId
+      );
+      if (!annotation) throw new AppError("INVALID_OPERATION", "找不到要收藏的批注。");
+      const message = input.messageId
+        ? annotation.messages.find((item) => item.id === input.messageId)
+        : undefined;
+      if (input.messageId && !message) {
+        throw new AppError("INVALID_OPERATION", "找不到要收藏的批注回复。");
+      }
+      const matches = (item: AnnotationFavorite) =>
+        item.sessionId === input.sessionId &&
+        item.annotationId === input.annotationId &&
+        item.messageId === input.messageId;
+      const existing = database.annotationFavorites.find(matches);
+      if (!input.favorite) {
+        database.annotationFavorites = database.annotationFavorites.filter(
+          (item) => !matches(item)
+        );
+        return { favorite: false };
+      }
+      if (existing) return { favorite: true, item: structuredClone(existing) };
+      const item: AnnotationFavorite = {
+        id: this.deps.id(),
+        sessionId: input.sessionId,
+        annotationId: input.annotationId,
+        ...(message ? { messageId: message.id } : {}),
+        position: structuredClone(annotation.position),
+        excerpt: annotation.anchor.selectedText,
+        ...(message ? { author: message.author, text: message.text } : {}),
+        operationId: input.operationId,
+        createdAt: this.deps.now().toISOString()
+      };
+      database.annotationFavorites.push(item);
+      return { favorite: true, item: structuredClone(item) };
+    });
+  }
+
+  async listAnnotationFavorites(sessionId: string): Promise<{
+    favorites: AnnotationFavorite[];
+  }> {
+    const database = await this.repository.read();
+    this.requireSession(database.sessions, sessionId);
+    return {
+      favorites: database.annotationFavorites
+        .filter((item) => item.sessionId === sessionId)
+        .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+        .map((item) => structuredClone(item))
+    };
+  }
+
+  async upsertReadingMemory(input: {
+    sessionId: string;
+    kind: ReadingMemoryKind;
+    scope: "book" | "chapter";
+    chapterLabel?: string;
+    rangeStart?: number;
+    rangeEnd?: number;
+    content: string;
+    source: ReadingMemorySource;
+    supersedesId?: string;
+    operationId: string;
+  }): Promise<ReadingMemory> {
+    return this.repository.mutate((database) => {
+      this.requireSession(database.sessions, input.sessionId);
+      const duplicate = database.readingMemories.find(
+        (item) => item.sessionId === input.sessionId && item.operationId === input.operationId
+      );
+      if (duplicate) return structuredClone(duplicate);
+      const previous = input.supersedesId
+        ? database.readingMemories.find(
+            (item) => item.id === input.supersedesId && item.sessionId === input.sessionId
+          )
+        : undefined;
+      if (input.supersedesId && !previous) {
+        throw new AppError("INVALID_OPERATION", "找不到要修订的阅读记忆。");
+      }
+      if (previous && previous.kind !== input.kind) {
+        throw new AppError("INVALID_OPERATION", "修订记忆的类型必须保持一致。");
+      }
+      const now = this.deps.now().toISOString();
+      if (previous) {
+        previous.status = "superseded";
+        previous.updatedAt = now;
+      }
+      const memory: ReadingMemory = {
+        id: this.deps.id(),
+        sessionId: input.sessionId,
+        kind: input.kind,
+        scope: input.scope,
+        ...(input.chapterLabel ? { chapterLabel: input.chapterLabel } : {}),
+        ...(input.rangeStart !== undefined ? { rangeStart: input.rangeStart } : {}),
+        ...(input.rangeEnd !== undefined ? { rangeEnd: input.rangeEnd } : {}),
+        content: input.content.trim(),
+        source: input.source,
+        status: "active",
+        revision: (previous?.revision ?? 0) + 1,
+        ...(previous ? { supersedesId: previous.id } : {}),
+        operationId: input.operationId,
+        createdAt: now,
+        updatedAt: now
+      };
+      database.readingMemories.push(memory);
+      return structuredClone(memory);
+    });
+  }
+
+  async listReadingMemories(input: {
+    sessionId: string;
+    kind?: ReadingMemoryKind;
+    scope?: "book" | "chapter";
+    includeSuperseded?: boolean;
+    limit?: number;
+  }): Promise<{ memories: ReadingMemory[] }> {
+    const database = await this.repository.read();
+    this.requireSession(database.sessions, input.sessionId);
+    return {
+      memories: database.readingMemories
+        .filter(
+          (item) =>
+            item.sessionId === input.sessionId &&
+            (input.includeSuperseded || item.status === "active") &&
+            (!input.kind || item.kind === input.kind) &&
+            (!input.scope || item.scope === input.scope)
+        )
+        .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+        .slice(0, input.limit ?? 50)
+        .map((item) => structuredClone(item))
+    };
+  }
+
+  async upsertReadingFact(input: {
+    sessionId: string;
+    subject: string;
+    fact: string;
+    status?: "active" | "invalidated";
+    source: ReadingMemorySource;
+    position?: ReadingPosition;
+    supersedesId?: string;
+    operationId: string;
+  }): Promise<ReadingFactCard> {
+    return this.repository.mutate((database) => {
+      this.requireSession(database.sessions, input.sessionId);
+      const duplicate = database.readingFactCards.find(
+        (item) => item.sessionId === input.sessionId && item.operationId === input.operationId
+      );
+      if (duplicate) return structuredClone(duplicate);
+      const previous = input.supersedesId
+        ? database.readingFactCards.find(
+            (item) => item.id === input.supersedesId && item.sessionId === input.sessionId
+          )
+        : undefined;
+      if (input.supersedesId && !previous) {
+        throw new AppError("INVALID_OPERATION", "找不到要修订的事实卡。");
+      }
+      const now = this.deps.now().toISOString();
+      if (previous) {
+        previous.status = "superseded";
+        previous.updatedAt = now;
+      }
+      const card: ReadingFactCard = {
+        id: this.deps.id(),
+        sessionId: input.sessionId,
+        subject: input.subject.trim(),
+        fact: input.fact.trim(),
+        status: input.status ?? "active",
+        source: input.source,
+        ...(input.position ? { position: structuredClone(input.position) } : {}),
+        revision: (previous?.revision ?? 0) + 1,
+        ...(previous ? { supersedesId: previous.id } : {}),
+        operationId: input.operationId,
+        createdAt: now,
+        updatedAt: now
+      };
+      database.readingFactCards.push(card);
+      return structuredClone(card);
+    });
+  }
+
+  async listReadingFacts(input: {
+    sessionId: string;
+    includeInactive?: boolean;
+    limit?: number;
+  }): Promise<{ facts: ReadingFactCard[] }> {
+    const database = await this.repository.read();
+    this.requireSession(database.sessions, input.sessionId);
+    return {
+      facts: database.readingFactCards
+        .filter(
+          (item) =>
+            item.sessionId === input.sessionId &&
+            (input.includeInactive || item.status === "active")
+        )
+        .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+        .slice(0, input.limit ?? 100)
+        .map((item) => structuredClone(item))
+    };
+  }
+
+  async getLayeredReadingContext(input: {
+    sessionId: string;
+    depth: "daily" | "deep";
+    positionIndex?: number;
+  }) {
+    const database = await this.repository.read();
+    const session = this.requireSession(database.sessions, input.sessionId);
+    const activeMemories = database.readingMemories
+      .filter((item) => item.sessionId === input.sessionId && item.status === "active")
+      .filter(
+        (item) =>
+          input.positionIndex === undefined ||
+          item.rangeStart === undefined ||
+          item.rangeEnd === undefined ||
+          (item.rangeStart <= input.positionIndex && item.rangeEnd >= input.positionIndex)
+      )
+      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+    const memories = input.depth === "deep"
+      ? activeMemories
+      : [
+          activeMemories.find((item) => item.kind === "book_context"),
+          activeMemories.find((item) => item.kind === "chapter_context"),
+          activeMemories.find((item) => item.kind === "reading_impression")
+        ].filter((item): item is ReadingMemory => Boolean(item));
+    const facts = database.readingFactCards
+      .filter((item) => item.sessionId === input.sessionId && item.status === "active")
+      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+      .slice(0, input.depth === "deep" ? 100 : 20);
+    return {
+      sessionId: session.id,
+      title: session.title,
+      depth: input.depth,
+      positionIndex: input.positionIndex,
+      memories: memories.map((item) => structuredClone(item)),
+      facts: facts.map((item) => structuredClone(item)),
+      sourcePolicy: {
+        daddy_read: "Daddy亲读或共同讨论后形成",
+        assistant_scan: "辅助模型扫读形成，不代表Daddy亲读",
+        user_edit: "小安人工修订"
+      }
+    };
+  }
+
   async clearCompanionComments(
     sessionId: string,
     scope: "recent" | "history" | "all"
@@ -611,6 +867,15 @@ export class ReadingService {
         (item) => item.sessionId !== sessionId
       );
       database.annotations = database.annotations.filter(
+        (item) => item.sessionId !== sessionId
+      );
+      database.annotationFavorites = database.annotationFavorites.filter(
+        (item) => item.sessionId !== sessionId
+      );
+      database.readingMemories = database.readingMemories.filter(
+        (item) => item.sessionId !== sessionId
+      );
+      database.readingFactCards = database.readingFactCards.filter(
         (item) => item.sessionId !== sessionId
       );
       return {

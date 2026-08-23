@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
+  AnnotationFavorite,
   CommentLength,
   CompanionComment,
   MangaLocalCache,
   NovelLocalCache,
   ReadingCommentMode,
   ReadingAnnotation,
+  ReadingFactCard,
+  ReadingMemory,
   ReadingPosition,
   ReadingSession,
   ReadingType,
@@ -35,6 +38,7 @@ import { CacheSettings } from "./components/CacheSettings.js";
 import { BookManagementSheet } from "./components/BookManagementSheet.js";
 import { DiaryPreview } from "./components/DiaryPreview.js";
 import { MoreActions } from "./components/MoreActions.js";
+import { ReadingMemorySheet } from "./components/ReadingMemorySheet.js";
 import { SyncChoiceSheet } from "./components/SyncChoiceSheet.js";
 import { SyncProgressSheet } from "./components/SyncProgressSheet.js";
 import type { PendingCompanionCommentDraft } from "./components/CompanionDock.js";
@@ -81,7 +85,7 @@ import { NovelReader } from "./pages/NovelReader.js";
 import { IndexedDbReadingCache } from "./storage/indexeddb-cache.js";
 
 type Screen = "home" | "setup" | "novel" | "manga";
-type Overlay = "cache" | "more" | "diary" | "management" | null;
+type Overlay = "cache" | "more" | "diary" | "management" | "memory" | null;
 type ThemeMode = "light" | "dark";
 type ImportProgress = {
   stage:
@@ -169,9 +173,14 @@ export function App() {
   const [companionLoading, setCompanionLoading] = useState(false);
   const [companionError, setCompanionError] = useState("");
   const [annotations, setAnnotations] = useState<ReadingAnnotation[]>([]);
+  const [annotationFavorites, setAnnotationFavorites] = useState<AnnotationFavorite[]>([]);
+  const [managedFavorites, setManagedFavorites] = useState<AnnotationFavorite[]>([]);
   const [annotationsLoading, setAnnotationsLoading] = useState(false);
   const [annotationsError, setAnnotationsError] = useState("");
   const [annotationSaving, setAnnotationSaving] = useState(false);
+  const [readingMemories, setReadingMemories] = useState<ReadingMemory[]>([]);
+  const [readingFacts, setReadingFacts] = useState<ReadingFactCard[]>([]);
+  const [memoryLoading, setMemoryLoading] = useState(false);
   const [pendingDaddyAnnotationIds, setPendingDaddyAnnotationIds] = useState<Set<string>>(
     () => new Set()
   );
@@ -335,6 +344,52 @@ export function App() {
     []
   );
 
+  const loadAnnotationFavorites = useCallback(async (sessionId: string) => {
+    try {
+      const result = await callTool("list_annotation_favorites", { sessionId });
+      const favorites = Array.isArray(result.structuredContent?.favorites)
+        ? (result.structuredContent.favorites as AnnotationFavorite[])
+        : [];
+      setAnnotationFavorites(favorites);
+      return favorites;
+    } catch {
+      setAnnotationFavorites([]);
+      return [];
+    }
+  }, []);
+
+  const loadReadingMemory = useCallback(async (sessionId: string) => {
+    setMemoryLoading(true);
+    try {
+      const [memoryResult, factResult] = await Promise.all([
+        callTool("list_reading_memories", {
+          sessionId,
+          includeSuperseded: false,
+          limit: 50
+        }),
+        callTool("list_reading_facts", {
+          sessionId,
+          includeInactive: false,
+          limit: 100
+        })
+      ]);
+      setReadingMemories(
+        Array.isArray(memoryResult.structuredContent?.memories)
+          ? (memoryResult.structuredContent.memories as ReadingMemory[])
+          : []
+      );
+      setReadingFacts(
+        Array.isArray(factResult.structuredContent?.facts)
+          ? (factResult.structuredContent.facts as ReadingFactCard[])
+          : []
+      );
+    } catch {
+      setToast("长期阅读记忆暂时没有读取成功。");
+    } finally {
+      setMemoryLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     document.documentElement.dataset.theme = themeMode;
     try {
@@ -380,6 +435,15 @@ export function App() {
     }, 4_000);
     return () => window.clearInterval(timer);
   }, [loadAnnotations, screen, sessionBundle?.session.id, sessionBundle?.session.userCurrentPosition.index]);
+
+  useEffect(() => {
+    const sessionId = sessionBundle?.session.id;
+    if (screen !== "novel" || !sessionId) {
+      setAnnotationFavorites([]);
+      return;
+    }
+    void loadAnnotationFavorites(sessionId);
+  }, [loadAnnotationFavorites, screen, sessionBundle?.session.id]);
 
   useEffect(() => {
     if (!readerImmersive) return;
@@ -621,9 +685,14 @@ export function App() {
   async function openBookManagement(item: BookshelfItem) {
     setManagedBook(item);
     setHistoryComments([]);
+    setManagedFavorites([]);
     setHistoryCursor(undefined);
     setOverlay("management");
-    await loadMoreCommentHistory(item.session.id, undefined, true);
+    const [, favorites] = await Promise.all([
+      loadMoreCommentHistory(item.session.id, undefined, true),
+      loadAnnotationFavorites(item.session.id)
+    ]);
+    setManagedFavorites(favorites);
   }
 
   async function openFullscreenReader() {
@@ -1636,11 +1705,21 @@ export function App() {
         .map((chunk, offset) => `【第 ${start + offset} 段】\n${chunk}`)
         .join("\n\n");
       try {
+        const layeredResult = await callTool("get_layered_reading_context", {
+          sessionId: session.id,
+          depth: mode === "deep_analysis" ? "deep" : "daily",
+          positionIndex: index
+        }).catch(() => ({ structuredContent: {} }));
+        const layeredContent = layeredResult.structuredContent as
+          | Record<string, unknown>
+          | undefined;
+        const longTermContext = layeredContent?.context;
         const sampled = await sampleChatGptText(
           buildLiveReadingDraftPrompt({
             title: session.title,
             position: targetPosition,
-            text
+            text,
+            ...(longTermContext ? { longTermContext } : {})
           }),
           {
             systemPrompt: DADDY_SAMPLING_SYSTEM_PROMPT,
@@ -1688,7 +1767,8 @@ export function App() {
             title: session.title,
             position: targetPosition,
             text,
-            operationId
+            operationId,
+            ...(longTermContext ? { longTermContext } : {})
           }),
           wakePrompt: buildLiveReadingWakePrompt(targetPosition),
           compatibilityPrompt: buildLiveReadingPrompt({
@@ -2023,6 +2103,37 @@ export function App() {
     }
   }
 
+  async function toggleAnnotationFavorite(
+    annotationId: string,
+    messageId: string | undefined,
+    favorite: boolean
+  ) {
+    if (!sessionBundle) return;
+    try {
+      const result = await callTool("set_annotation_favorite", {
+        sessionId: sessionBundle.session.id,
+        annotationId,
+        ...(messageId ? { messageId } : {}),
+        favorite,
+        operationId: crypto.randomUUID()
+      });
+      const saved = result.structuredContent?.item as AnnotationFavorite | undefined;
+      const matches = (item: AnnotationFavorite) =>
+        item.annotationId === annotationId && item.messageId === messageId;
+      const apply = (current: AnnotationFavorite[]) =>
+        favorite && saved
+          ? [saved, ...current.filter((item) => !matches(item))]
+          : current.filter((item) => !matches(item));
+      setAnnotationFavorites(apply);
+      if (managedBook?.session.id === sessionBundle.session.id) {
+        setManagedFavorites(apply);
+      }
+      setToast(favorite ? "已经收藏到这本书里。" : "已经取消收藏。");
+    } catch {
+      setToast("收藏状态没有保存成功，请重试。");
+    }
+  }
+
   async function askDaddyToReply(annotation: ReadingAnnotation): Promise<boolean> {
     if (!sessionBundle) return false;
     setPendingDaddyAnnotationIds((current) => new Set(current).add(annotation.id));
@@ -2247,6 +2358,153 @@ export function App() {
     setOverlay("diary");
   }
 
+  async function openReadingMemory() {
+    if (!sessionBundle) return;
+    setOverlay("memory");
+    await loadReadingMemory(sessionBundle.session.id);
+  }
+
+  async function requestReadingMemoryCapture() {
+    if (!sessionBundle) return;
+    const session = sessionBundle.session;
+    const end = session.userCurrentPosition.index;
+    const previousSummary = readingMemories
+      .filter((item) => item.kind === "chapter_summary" && item.rangeEnd !== undefined)
+      .sort((left, right) => (right.rangeEnd ?? 0) - (left.rangeEnd ?? 0))[0];
+    const start = Math.max(1, Math.min(end, (previousSummary?.rangeEnd ?? Math.max(0, end - 10)) + 1));
+    const rangeText = session.type === "novel"
+      ? chunks
+          .slice(start - 1, end)
+          .map((chunk, offset) => `【第 ${start + offset} 段】\n${chunk}`)
+          .join("\n\n")
+      : `漫画${session.userCurrentPosition.label}；请结合已经同步的页面描述与共读记录整理。`;
+    const [annotationResult, historyResult] = await Promise.all([
+      callTool("list_annotations_v23", { sessionId: session.id }).catch(
+        () => ({ structuredContent: {} })
+      ),
+      callTool("list_companion_comments", {
+        sessionId: session.id,
+        scope: "history",
+        limit: 100
+      }).catch(() => ({ structuredContent: {} }))
+    ]);
+    const annotationContent = annotationResult.structuredContent as
+      | Record<string, unknown>
+      | undefined;
+    const historyContent = historyResult.structuredContent as
+      | Record<string, unknown>
+      | undefined;
+    const allAnnotations = Array.isArray(annotationContent?.annotations)
+      ? (annotationContent.annotations as ReadingAnnotation[])
+      : annotations;
+    const historicalComments = Array.isArray(historyContent?.comments)
+      ? (historyContent.comments as CompanionComment[])
+      : companionComments;
+    const rangeAnnotations = allAnnotations.filter(
+      (item) => item.position.index >= start && item.position.index <= end
+    );
+    const rangeComments = historicalComments.filter(
+      (item) => item.position.index >= start && item.position.index <= end
+    );
+    const chapterLabel = session.type === "novel"
+      ? `第 ${start}–${end} 段`
+      : session.userCurrentPosition.label;
+    const baseOperation = `memory-v31-${session.id}-${start}-${end}-${Date.now()}`;
+    const captureContext = {
+      kind: "reading_nest_memory_capture_v1",
+      sessionId: session.id,
+      title: session.title,
+      chapterLabel,
+      rangeStart: start,
+      rangeEnd: end,
+      source: "daddy_read",
+      text: rangeText,
+      annotations: rangeAnnotations,
+      companionComments: rangeComments,
+      activeMemories: readingMemories,
+      activeFacts: readingFacts,
+      instructions: [
+        "先基于本次亲读内容整理长期记忆，不得补写未提供的剧情。",
+        "依次调用 upsert_reading_memory 保存 chapter_summary、annotation_summary、reading_impression、chapter_context；必要时修订 book_context。",
+        "每条 memory 使用准确的 sessionId、chapterLabel、rangeStart、rangeEnd、source=daddy_read 和独立 operationId。",
+        "若 activeMemories 中已有同类需要替换的记录，必须传 supersedesId，保留修订链。",
+        "只把稳定且未来确实有用的人物、关系、设定或未决伏笔调用 upsert_reading_fact 保存；不要把即时情绪伪装成事实。",
+        "事实有变化时传 supersedesId；来源始终明确，不得把 assistant_scan 写成 daddy_read。",
+        "工具全部成功后，只用一小段自然的话告诉小安这次记住了什么，不要回显原文或工具参数。"
+      ],
+      operationIds: {
+        chapter_summary: `${baseOperation}-chapter-summary`,
+        annotation_summary: `${baseOperation}-annotation-summary`,
+        reading_impression: `${baseOperation}-reading-impression`,
+        chapter_context: `${baseOperation}-chapter-context`,
+        book_context: `${baseOperation}-book-context`,
+        factPrefix: `${baseOperation}-fact-`
+      }
+    };
+    const hidden = await updateModelContext(captureContext);
+    const wakePrompt = `请整理《${session.title}》${chapterLabel}的长期阅读记忆并写回共读小窝。`;
+    const sent = await askChatGpt(
+      hidden ? wakePrompt : `${wakePrompt}\n\n${JSON.stringify(captureContext)}`,
+      { scrollToBottom: false }
+    );
+    if (!sent) {
+      setToast("这次没能叫到Daddy整理记忆，请再试一次。");
+      return;
+    }
+    setOverlay(null);
+    setToast("已经把这一段交给Daddy整理；写回后再打开就能看见。");
+  }
+
+  async function editReadingMemory(memory: ReadingMemory, content: string) {
+    try {
+      const result = await callTool("upsert_reading_memory", {
+        sessionId: memory.sessionId,
+        kind: memory.kind,
+        scope: memory.scope,
+        ...(memory.chapterLabel ? { chapterLabel: memory.chapterLabel } : {}),
+        ...(memory.rangeStart !== undefined ? { rangeStart: memory.rangeStart } : {}),
+        ...(memory.rangeEnd !== undefined ? { rangeEnd: memory.rangeEnd } : {}),
+        content,
+        source: "user_edit",
+        supersedesId: memory.id,
+        operationId: crypto.randomUUID()
+      });
+      const saved = result.structuredContent?.memory as ReadingMemory | undefined;
+      if (!saved) throw new Error("Missing revised memory");
+      setReadingMemories((current) => [
+        saved,
+        ...current.filter((item) => item.id !== memory.id && item.id !== saved.id)
+      ]);
+      setToast("记忆卡已经按小安的版本修订，旧版也保留着。");
+    } catch {
+      setToast("记忆卡没有修订成功，请重试。");
+    }
+  }
+
+  async function editReadingFact(fact: ReadingFactCard, content: string) {
+    try {
+      const result = await callTool("upsert_reading_fact", {
+        sessionId: fact.sessionId,
+        subject: fact.subject,
+        fact: content,
+        status: "active",
+        source: "user_edit",
+        ...(fact.position ? { position: fact.position } : {}),
+        supersedesId: fact.id,
+        operationId: crypto.randomUUID()
+      });
+      const saved = result.structuredContent?.fact as ReadingFactCard | undefined;
+      if (!saved) throw new Error("Missing revised fact");
+      setReadingFacts((current) => [
+        saved,
+        ...current.filter((item) => item.id !== fact.id && item.id !== saved.id)
+      ]);
+      setToast("事实卡已经修订，旧版没有被悄悄覆盖。");
+    } catch {
+      setToast("事实卡没有修订成功，请重试。");
+    }
+  }
+
   async function completeWork() {
     if (!sessionBundle) return;
     const result = await callTool("complete_reading_session", {
@@ -2430,6 +2688,7 @@ export function App() {
           onLook={requestNovelSync}
           onSaveQuote={saveQuote}
           annotations={annotations}
+          annotationFavorites={annotationFavorites}
           annotationsLoading={annotationsLoading}
           annotationsError={annotationsError || undefined}
           annotationSaving={annotationSaving}
@@ -2438,6 +2697,9 @@ export function App() {
           onCreateAnnotation={createReadingAnnotation}
           onReplyAnnotation={(annotationId, text) =>
             void replyToReadingAnnotation(annotationId, text)
+          }
+          onToggleAnnotationFavorite={(annotationId, messageId, favorite) =>
+            void toggleAnnotationFavorite(annotationId, messageId, favorite)
           }
           onFinish={finishToday}
           onFullscreen={() => void openFullscreenReader()}
@@ -2511,15 +2773,29 @@ export function App() {
           onQuickAction={(mode, length) => void runReadingQuickAction(mode, length)}
           onBookmark={saveBookmark}
           onDiary={openDiary}
+          onMemory={() => void openReadingMemory()}
           onComplete={completeWork}
           onClose={() => setOverlay(null)}
         />
       ) : null}
       {overlay === "diary" && diaryContext ? <DiaryPreview context={diaryContext} onWrite={() => askChatGpt("请根据刚刚整理的小窝日记素材，写一篇温暖、可复制到 Notion 的今日共读日记。")} onClose={() => setOverlay(null)} /> : null}
+      {overlay === "memory" && sessionBundle ? (
+        <ReadingMemorySheet
+          memories={readingMemories}
+          facts={readingFacts}
+          loading={memoryLoading}
+          onRefresh={() => void loadReadingMemory(sessionBundle.session.id)}
+          onCapture={() => void requestReadingMemoryCapture()}
+          onEditMemory={(memory, content) => void editReadingMemory(memory, content)}
+          onEditFact={(fact, content) => void editReadingFact(fact, content)}
+          onClose={() => setOverlay(null)}
+        />
+      ) : null}
       {overlay === "management" && managedBook ? (
         <BookManagementSheet
           bundle={managedBook}
           comments={historyComments}
+          favorites={managedFavorites}
           historyHasMore={Boolean(historyCursor)}
           historyLoading={historyLoading}
           onLoadMoreHistory={() => void loadMoreCommentHistory()}

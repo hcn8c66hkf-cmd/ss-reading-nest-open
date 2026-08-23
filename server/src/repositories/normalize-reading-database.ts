@@ -7,19 +7,77 @@ import {
   type ReadingDatabase,
   type ReadingSession,
   type ReadingAnnotation,
+  type AnnotationFavorite,
+  type ReadingMemory,
+  type ReadingFactCard,
   type SourceManifest
 } from "@ss/shared";
 
 export function normalizeReadingDatabase(input: unknown): ReadingDatabase {
   const database = migrateReadingDatabase(input);
   return {
-    schemaVersion: 5,
+    schemaVersion: 6,
     sessions: database.sessions.map(copySession),
     quotes: database.quotes.map(copyQuote),
     reactions: database.reactions.map(copyReaction),
     bookmarks: database.bookmarks.map(copyBookmark),
     companionComments: database.companionComments.map(copyCompanionComment),
-    annotations: database.annotations.map(copyAnnotation)
+    annotations: database.annotations.map(copyAnnotation),
+    annotationFavorites: database.annotationFavorites.map(copyAnnotationFavorite),
+    readingMemories: database.readingMemories.map(copyReadingMemory),
+    readingFactCards: database.readingFactCards.map(copyReadingFactCard)
+  };
+}
+
+function copyAnnotationFavorite(favorite: AnnotationFavorite): AnnotationFavorite {
+  return {
+    id: favorite.id,
+    sessionId: favorite.sessionId,
+    annotationId: favorite.annotationId,
+    ...(favorite.messageId ? { messageId: favorite.messageId } : {}),
+    position: structuredClone(favorite.position),
+    excerpt: favorite.excerpt,
+    ...(favorite.author ? { author: favorite.author } : {}),
+    ...(favorite.text ? { text: favorite.text } : {}),
+    operationId: favorite.operationId,
+    createdAt: favorite.createdAt
+  };
+}
+
+function copyReadingMemory(memory: ReadingMemory): ReadingMemory {
+  return {
+    id: memory.id,
+    sessionId: memory.sessionId,
+    kind: memory.kind,
+    scope: memory.scope,
+    ...(memory.chapterLabel ? { chapterLabel: memory.chapterLabel } : {}),
+    ...(memory.rangeStart !== undefined ? { rangeStart: memory.rangeStart } : {}),
+    ...(memory.rangeEnd !== undefined ? { rangeEnd: memory.rangeEnd } : {}),
+    content: memory.content,
+    source: memory.source,
+    status: memory.status,
+    revision: memory.revision,
+    ...(memory.supersedesId ? { supersedesId: memory.supersedesId } : {}),
+    operationId: memory.operationId,
+    createdAt: memory.createdAt,
+    updatedAt: memory.updatedAt
+  };
+}
+
+function copyReadingFactCard(card: ReadingFactCard): ReadingFactCard {
+  return {
+    id: card.id,
+    sessionId: card.sessionId,
+    subject: card.subject,
+    fact: card.fact,
+    status: card.status,
+    source: card.source,
+    ...(card.position ? { position: structuredClone(card.position) } : {}),
+    revision: card.revision,
+    ...(card.supersedesId ? { supersedesId: card.supersedesId } : {}),
+    operationId: card.operationId,
+    createdAt: card.createdAt,
+    updatedAt: card.updatedAt
   };
 }
 

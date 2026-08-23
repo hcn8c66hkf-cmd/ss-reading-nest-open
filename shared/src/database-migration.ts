@@ -10,6 +10,9 @@ import {
   type SourceManifest,
   type CompanionComment,
   type ReadingAnnotation,
+  type AnnotationFavorite,
+  type ReadingMemory,
+  type ReadingFactCard,
   type SessionPreferences,
   type SessionStatus
 } from "./models.js";
@@ -67,8 +70,27 @@ interface RepairableV5Database extends Omit<RepairableV4Database, "schemaVersion
   annotations?: ReadingAnnotation[];
 }
 
-type NormalizedV4Database = Omit<ReadingDatabase, "schemaVersion" | "annotations"> & {
+interface RepairableV6Database extends Omit<RepairableV5Database, "schemaVersion"> {
+  schemaVersion: 6;
+  annotationFavorites?: AnnotationFavorite[];
+  readingMemories?: ReadingMemory[];
+  readingFactCards?: ReadingFactCard[];
+}
+
+type NormalizedV4Database = Omit<
+  ReadingDatabase,
+  | "schemaVersion"
+  | "annotations"
+  | "annotationFavorites"
+  | "readingMemories"
+  | "readingFactCards"
+> & {
   schemaVersion: 4;
+};
+
+type NormalizedV5Database = Omit<NormalizedV4Database, "schemaVersion"> & {
+  schemaVersion: 5;
+  annotations: ReadingAnnotation[];
 };
 
 type RepairableSourceManifest = Omit<SourceManifest, "cloudSync"> & {
@@ -83,11 +105,12 @@ const DISABLED_R2_CLOUD_SYNC: SourceManifest["cloudSync"] = {
 export function migrateReadingDatabase(input: unknown): ReadingDatabase {
   assertDatabaseCollections(input);
   const version = (input as { schemaVersion?: unknown }).schemaVersion;
-  if (version === 1) return migrateV4ToV5(migrateV3ToV4(migrateV2ToV3(migrateV1ToV2(input as V1Database))));
-  if (version === 2) return migrateV4ToV5(migrateV3ToV4(migrateV2ToV3(input as V2Database)));
-  if (version === 3) return migrateV4ToV5(migrateV3ToV4(normalizeV3(input as RepairableV3Database)));
-  if (version === 4) return migrateV4ToV5(normalizeV4(input as RepairableV4Database));
-  if (version === 5) return normalizeV5(input as RepairableV5Database);
+  if (version === 1) return migrateV5ToV6(migrateV4ToV5(migrateV3ToV4(migrateV2ToV3(migrateV1ToV2(input as V1Database)))));
+  if (version === 2) return migrateV5ToV6(migrateV4ToV5(migrateV3ToV4(migrateV2ToV3(input as V2Database))));
+  if (version === 3) return migrateV5ToV6(migrateV4ToV5(migrateV3ToV4(normalizeV3(input as RepairableV3Database))));
+  if (version === 4) return migrateV5ToV6(migrateV4ToV5(normalizeV4(input as RepairableV4Database)));
+  if (version === 5) return migrateV5ToV6(normalizeV5(input as RepairableV5Database));
+  if (version === 6) return normalizeV6(input as RepairableV6Database);
   throw new Error("Unsupported schemaVersion");
 }
 
@@ -163,11 +186,11 @@ function normalizeV4(database: RepairableV4Database): NormalizedV4Database {
   };
 }
 
-function migrateV4ToV5(database: RepairableV4Database): ReadingDatabase {
+function migrateV4ToV5(database: RepairableV4Database): NormalizedV5Database {
   return normalizeV5({ ...database, schemaVersion: 5, annotations: [] });
 }
 
-function normalizeV5(database: RepairableV5Database): ReadingDatabase {
+function normalizeV5(database: RepairableV5Database): NormalizedV5Database {
   const normalized = normalizeV4({ ...database, schemaVersion: 4 });
   return {
     ...normalized,
@@ -176,12 +199,34 @@ function normalizeV5(database: RepairableV5Database): ReadingDatabase {
   };
 }
 
+function migrateV5ToV6(database: RepairableV5Database): ReadingDatabase {
+  return normalizeV6({
+    ...database,
+    schemaVersion: 6,
+    annotationFavorites: [],
+    readingMemories: [],
+    readingFactCards: []
+  });
+}
+
+function normalizeV6(database: RepairableV6Database): ReadingDatabase {
+  const normalized = normalizeV5({ ...database, schemaVersion: 5 });
+  return {
+    ...normalized,
+    schemaVersion: 6,
+    annotationFavorites: structuredClone(database.annotationFavorites ?? []),
+    readingMemories: structuredClone(database.readingMemories ?? []),
+    readingFactCards: structuredClone(database.readingFactCards ?? [])
+  };
+}
+
 function assertDatabaseCollections(input: unknown): asserts input is
   | V1Database
   | V2Database
   | RepairableV3Database
   | RepairableV4Database
-  | RepairableV5Database {
+  | RepairableV5Database
+  | RepairableV6Database {
   if (!input || typeof input !== "object") throw new Error("Unsupported data shape");
   const value = input as Record<string, unknown>;
   if (

@@ -7,12 +7,12 @@ import {
 } from "./register-tools.js";
 
 describe("tool descriptors", () => {
-  it("binds the current UI resource to the v30 and compatibility render tools", () => {
-    expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v30.html");
-    expect(TOOL_CONFIGS.open_reading_nest_v30._meta?.ui).toEqual({
+  it("binds the current UI resource to the v31 and compatibility render tools", () => {
+    expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v31.html");
+    expect(TOOL_CONFIGS.open_reading_nest_v31._meta?.ui).toEqual({
       resourceUri: READING_NEST_URI
     });
-    expect(TOOL_CONFIGS.open_reading_nest_v30._meta?.["openai/outputTemplate"]).toBe(
+    expect(TOOL_CONFIGS.open_reading_nest_v31._meta?.["openai/outputTemplate"]).toBe(
       READING_NEST_URI
     );
     expect(TOOL_CONFIGS.open_reading_nest._meta?.["openai/outputTemplate"]).toBe(
@@ -20,6 +20,7 @@ describe("tool descriptors", () => {
     );
     for (const [name, config] of Object.entries(TOOL_CONFIGS)) {
       if (
+        name !== "open_reading_nest_v31" &&
         name !== "open_reading_nest_v30" &&
         name !== "open_reading_nest_v29" &&
         name !== "open_reading_nest_v28" &&
@@ -33,7 +34,9 @@ describe("tool descriptors", () => {
         name !== "upload_cloud_source" &&
         name !== "create_annotation_v23" &&
         name !== "reply_to_annotation_v23" &&
-        name !== "list_annotations_v23"
+        name !== "list_annotations_v23" &&
+        name !== "set_annotation_favorite" &&
+        name !== "list_annotation_favorites"
       ) {
         const meta = "_meta" in config ? (config._meta as Record<string, unknown>) : undefined;
         expect(meta?.ui).toBeUndefined();
@@ -45,7 +48,9 @@ describe("tool descriptors", () => {
     for (const name of [
       "create_annotation_v23",
       "reply_to_annotation_v23",
-      "list_annotations_v23"
+      "list_annotations_v23",
+      "set_annotation_favorite",
+      "list_annotation_favorites"
     ] as const) {
       expect(TOOL_CONFIGS[name]._meta.ui).toEqual({ visibility: ["app"] });
     }
@@ -101,7 +106,7 @@ describe("tool descriptors", () => {
     registerReadingTools(server as never, service as never, undefined, {
       sourceEndpointBase: "https://worker.example.test/source/secret"
     });
-    const result = (await handlers.get("open_reading_nest_v30")?.()) as {
+    const result = (await handlers.get("open_reading_nest_v31")?.()) as {
       structuredContent?: Record<string, unknown>;
     };
 
@@ -112,7 +117,7 @@ describe("tool descriptors", () => {
     expect(handlers.has("open_reading_nest")).toBe(true);
     expect(handlers.has("open_reading_nest_v23")).toBe(true);
     expect(handlers.has("open_reading_nest_v22")).toBe(true);
-    expect(configs.get("open_reading_nest_v30")._meta).toMatchObject({
+    expect(configs.get("open_reading_nest_v31")._meta).toMatchObject({
       ui: { resourceUri: READING_NEST_URI },
       "ui/resourceUri": READING_NEST_URI,
       "openai/outputTemplate": READING_NEST_URI
@@ -242,7 +247,7 @@ describe("tool descriptors", () => {
   });
 
   it("exposes book management and threaded annotation tools", () => {
-    expect(Object.keys(TOOL_CONFIGS)).toHaveLength(38);
+    expect(Object.keys(TOOL_CONFIGS)).toHaveLength(46);
     expect(TOOL_CONFIGS.create_annotation.annotations).toMatchObject({
       readOnlyHint: false,
       idempotentHint: true

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type {
   CompanionComment,
+  AnnotationFavorite,
   ReadingAnnotation,
   ReadingSession,
   TextAnchor
@@ -28,6 +29,7 @@ export function NovelReader(props: {
   ) => void;
   onSaveQuote: (content: string) => void;
   annotations?: ReadingAnnotation[];
+  annotationFavorites?: AnnotationFavorite[];
   annotationsLoading?: boolean;
   annotationsError?: string;
   annotationSaving?: boolean;
@@ -35,6 +37,11 @@ export function NovelReader(props: {
   liveReadingState?: LiveReadingQueueState;
   onCreateAnnotation?: (anchor: TextAnchor, comment?: string) => Promise<boolean> | boolean;
   onReplyAnnotation?: (annotationId: string, text: string) => void;
+  onToggleAnnotationFavorite?: (
+    annotationId: string,
+    messageId: string | undefined,
+    favorite: boolean
+  ) => void;
   onFinish: () => void;
   onBack: () => void;
   onFullscreen: () => void;
@@ -163,9 +170,11 @@ export function NovelReader(props: {
             error={props.annotationsError}
             saving={props.annotationSaving ?? false}
             pendingDaddyIds={props.pendingDaddyAnnotationIds}
+            favorites={props.annotationFavorites}
             onReply={(annotationId, text) =>
               props.onReplyAnnotation?.(annotationId, text)
             }
+            onToggleFavorite={props.onToggleAnnotationFavorite}
           />
           <div className="page-buttons">
             <button onClick={previous} disabled={index === 0}>上一段</button>
