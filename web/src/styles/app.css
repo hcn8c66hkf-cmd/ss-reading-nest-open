@@ -1,19 +1,46 @@
 * { box-sizing: border-box; }
-html, body, #root { min-height: 100%; margin: 0; }
+html, body, #root {
+  width: 100%;
+  height: var(--reader-inline-height, 680px);
+  min-height: 0;
+  max-height: var(--reader-inline-height, 680px);
+  margin: 0;
+  overflow: hidden;
+}
+html[data-widget-collapsed="true"],
+html[data-widget-collapsed="true"] body,
+html[data-widget-collapsed="true"] #root {
+  height: 76px;
+  max-height: 76px;
+}
+html[data-display-mode="fullscreen"],
+html[data-display-mode="fullscreen"] body,
+html[data-display-mode="fullscreen"] #root {
+  height: 100vh;
+  height: 100dvh;
+  max-height: none;
+}
 body { background: var(--cream); }
 button, input, textarea { font: inherit; }
 button { min-height: 44px; cursor: pointer; color: inherit; }
 button:disabled { cursor: default; opacity: .42; }
-.app { min-height: 0; background: var(--cream); }
+.app {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--cream);
+}
 
 .boot-diagnostics {
   width: min(100%, 720px);
-  min-height: 460px;
+  height: 100%;
+  min-height: 0;
   margin: 0 auto;
   padding: max(24px, var(--safe-top)) max(20px, var(--safe-right)) calc(28px + var(--safe-bottom)) max(20px, var(--safe-left));
   background: var(--cream);
   color: var(--ink);
   line-height: 1.55;
+  overflow-y: auto;
 }
 .boot-diagnostics strong {
   display: block;
@@ -60,9 +87,11 @@ button:disabled { cursor: default; opacity: .42; }
 
 .home-shell, .setup-shell {
   width: min(100%, 760px);
-  min-height: 620px;
+  height: 100%;
+  min-height: 0;
   margin: 0 auto;
   padding: max(24px, var(--safe-top)) max(20px, var(--safe-right)) calc(28px + var(--safe-bottom)) max(20px, var(--safe-left));
+  overflow-y: auto;
 }
 .home-hero { padding: 20px 4px 26px; }
 .nest-mark {
@@ -345,7 +374,7 @@ input:focus, textarea:focus { border-color: var(--peach-strong); box-shadow: 0 0
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr) auto;
   width: min(100%, 900px);
-  height: var(--reader-inline-height, 680px);
+  height: 100%;
   margin: 0 auto;
   background: var(--paper);
   overflow: hidden;
@@ -355,7 +384,7 @@ input:focus, textarea:focus { border-color: var(--peach-strong); box-shadow: 0 0
   width: 100%;
   max-width: none;
   min-height: 0;
-  height: var(--reader-inline-height, 680px);
+  height: 100%;
   margin: 0;
 }
 .reader-shell.reader-immersive.reader-host-fullscreen {
@@ -375,7 +404,8 @@ input:focus, textarea:focus { border-color: var(--peach-strong); box-shadow: 0 0
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  min-height: 72px;
+  height: 76px;
+  min-height: 0;
   padding: 12px 14px;
   border: 1px solid var(--line);
   border-radius: 18px;
@@ -899,6 +929,50 @@ input:focus, textarea:focus { border-color: var(--peach-strong); box-shadow: 0 0
   background: var(--surface);
 }
 .memory-edit button[type="submit"] { background: var(--wood); color: var(--paper); }
+.skill-forge-sheet { display: grid; gap: 14px; }
+.skill-forge-sheet > .action-primary { width: 100%; }
+.skill-verdict {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 17px;
+  background: color-mix(in srgb, var(--cream) 52%, var(--surface));
+}
+.skill-verdict.forge_skill { background: color-mix(in srgb, var(--sage) 58%, var(--surface)); }
+.skill-verdict.knowledge_only { background: color-mix(in srgb, var(--peach) 42%, var(--surface)); }
+.skill-verdict header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.skill-verdict header div { display: grid; gap: 3px; }
+.skill-verdict header span, .skill-verdict small, .skill-verdict-detail { color: var(--muted); font-size: 10px; }
+.skill-verdict header strong { font-size: 15px; }
+.skill-verdict p { margin: 0; font-size: 12px; line-height: 1.65; white-space: pre-wrap; }
+.skill-verdict section h3 { margin: 0 0 6px; font-size: 12px; }
+.skill-verdict ol, .skill-verdict ul { margin: 0; padding-left: 20px; font-size: 11px; line-height: 1.65; }
+.skill-verdict details { font-size: 11px; }
+.skill-verdict pre {
+  max-height: 240px;
+  overflow: auto;
+  padding: 10px;
+  border-radius: 10px;
+  background: var(--surface);
+  font-size: 10px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+.skill-verdict footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.skill-verdict footer code { color: var(--muted); font-size: 9px; }
+.skill-verdict footer button {
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 10px;
+}
+.skill-history ul { display: grid; gap: 6px; padding: 8px 0 0; list-style: none; }
+.skill-history li { display: grid; gap: 2px; padding: 9px; border: 1px solid var(--line); border-radius: 10px; }
+.skill-history li span, .skill-history li small { color: var(--muted); font-size: 9px; }
+.skill-history li strong { font-size: 11px; }
 .danger-zone { background: color-mix(in srgb, var(--peach) 35%, var(--surface)); }
 .delete-confirmation { display: grid; gap: 9px; }
 .delete-confirmation p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.55; }

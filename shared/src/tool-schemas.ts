@@ -50,6 +50,11 @@ export const readingMemorySourceSchema = z.enum([
   "assistant_scan",
   "user_edit"
 ]);
+export const skillForgeVerdictSchema = z.enum([
+  "forge_skill",
+  "knowledge_only",
+  "insufficient_coverage"
+]);
 export const readingPositionSchema = z.object({
   kind: z.enum(["paragraph", "page"]),
   index: z.number().int().min(1),
@@ -414,6 +419,66 @@ export const listReadingFactsInputSchema = z
     sessionId: sessionIdSchema,
     includeInactive: z.boolean().optional().default(false),
     limit: z.number().int().min(1).max(300).optional().default(100)
+  })
+  .strict();
+export const upsertSkillCandidateInputSchema = z
+  .object({
+    sessionId: sessionIdSchema,
+    scope: z.enum(["chapter", "book"]),
+    chapterLabel: z.string().trim().min(1).max(200),
+    rangeStart: z.number().int().min(1),
+    rangeEnd: z.number().int().min(1),
+    totalUnits: z.number().int().min(1).optional(),
+    verdict: skillForgeVerdictSchema,
+    title: z.string().trim().min(1).max(200),
+    rationale: z.string().trim().min(1).max(2_000),
+    skillName: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).max(64).optional(),
+    description: z.string().trim().min(1).max(1_024).optional(),
+    triggerExamples: z.array(z.string().trim().min(1).max(300)).max(12).default([]),
+    workflow: z.array(z.string().trim().min(1).max(500)).max(20).default([]),
+    boundaries: z.array(z.string().trim().min(1).max(500)).max(20).default([]),
+    sourceNotes: z.array(z.string().trim().min(1).max(500)).max(20).default([]),
+    skillMarkdown: z.string().trim().max(20_000).optional(),
+    analysisFingerprint: z.string().regex(/^snapshot-v1-[a-f0-9]{8}$/),
+    status: z.enum(["draft", "approved", "rejected"]).default("draft"),
+    operationId: z.string().min(1).max(200)
+  })
+  .strict()
+  .superRefine((input, context) => {
+    if (input.rangeEnd < input.rangeStart) {
+      context.addIssue({
+        code: "custom",
+        path: ["rangeEnd"],
+        message: "rangeEnd must not be smaller than rangeStart"
+      });
+    }
+    if (
+      input.scope === "book" &&
+      input.totalUnits !== undefined &&
+      input.rangeEnd < input.totalUnits
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["scope"],
+        message: "Book skill candidates require complete source coverage"
+      });
+    }
+    if (
+      input.verdict === "forge_skill" &&
+      (!input.skillName || !input.description || !input.skillMarkdown)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["skillMarkdown"],
+        message: "Forgeable candidates require name, description, and SKILL.md"
+      });
+    }
+  });
+export const listSkillCandidatesInputSchema = z
+  .object({
+    sessionId: sessionIdSchema,
+    status: z.enum(["draft", "approved", "rejected"]).optional(),
+    limit: z.number().int().min(1).max(50).optional().default(20)
   })
   .strict();
 export const getLayeredReadingContextInputSchema = z

@@ -7,7 +7,8 @@ const bridge = {
   getHostCapabilities: vi.fn().mockReturnValue({ sampling: {} }),
   createSamplingMessage: vi.fn(),
   updateModelContext: vi.fn().mockResolvedValue({}),
-  requestDisplayMode: vi.fn().mockResolvedValue({ mode: "fullscreen" })
+  requestDisplayMode: vi.fn().mockResolvedValue({ mode: "fullscreen" }),
+  sendSizeChanged: vi.fn().mockResolvedValue(undefined)
 };
 
 vi.mock("@modelcontextprotocol/ext-apps", () => ({
@@ -19,6 +20,7 @@ vi.mock("@modelcontextprotocol/ext-apps", () => ({
     createSamplingMessage = bridge.createSamplingMessage;
     updateModelContext = bridge.updateModelContext;
     requestDisplayMode = bridge.requestDisplayMode;
+    sendSizeChanged = bridge.sendSizeChanged;
   }
 }));
 
@@ -155,5 +157,13 @@ describe("host bridge", () => {
       positionIndex: 2,
       scrollTop: 120
     });
+  });
+
+  it("disables SDK auto-resize and reports one bounded frame height explicitly", async () => {
+    const { setReadingFrameHeight } = await import("./host.js");
+
+    await expect(setReadingFrameHeight(683.6)).resolves.toBe(true);
+
+    expect(bridge.sendSizeChanged).toHaveBeenCalledWith({ height: 684 });
   });
 });

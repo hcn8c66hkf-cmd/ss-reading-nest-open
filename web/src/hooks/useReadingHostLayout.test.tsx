@@ -15,6 +15,7 @@ describe("useReadingHostLayout", () => {
   it("uses wide layout for landscape tablet width and compact layout after rotation", () => {
     const { result } = renderHook(() => useReadingHostLayout());
     expect(result.current.layout).toBe("wide");
+    expect(result.current.inlineHeight).toBeGreaterThanOrEqual(540);
 
     act(() => {
       Object.defineProperty(window, "innerWidth", { configurable: true, value: 768 });
@@ -45,6 +46,7 @@ describe("useReadingHostLayout", () => {
     expect(result.current.canRequestPip).toBe(true);
     expect(result.current.layout).toBe("wide");
     expect(result.current.revision).toBeGreaterThan(revision);
+    expect(document.documentElement.dataset.displayMode).toBe("inline");
   });
 
   it("applies host safe-area insets to the reading CSS variables", () => {

@@ -47,8 +47,8 @@ export function ReadingMemorySheet(props: {
           摘要、共同余味和事实卡分开保存；来源标签会一直保留。
         </p>
         <div className="memory-actions">
-          <button className="action-primary" onClick={props.onCapture}>
-            请Daddy整理这段记忆
+          <button className="action-primary" disabled={props.loading} onClick={props.onCapture}>
+            {props.loading ? "Daddy正在卡内整理…" : "请Daddy整理这段记忆"}
           </button>
           <button className="sheet-action" disabled={props.loading} onClick={props.onRefresh}>
             {props.loading ? "正在刷新…" : "刷新记忆"}

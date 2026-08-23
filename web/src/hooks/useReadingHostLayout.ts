@@ -15,13 +15,16 @@ export function useReadingHostLayout() {
     height: window.innerHeight
   }));
   const [revision, setRevision] = useState(0);
+  const [inlineHeight, setInlineHeight] = useState(() => stableInlineHeight());
 
   useEffect(() => {
     const measure = () => {
       setViewport({ width: window.innerWidth, height: window.innerHeight });
+      const nextInlineHeight = stableInlineHeight();
+      setInlineHeight(nextInlineHeight);
       document.documentElement.style.setProperty(
         "--reader-inline-height",
-        `${stableInlineHeight()}px`
+        `${nextInlineHeight}px`
       );
       setRevision((value) => value + 1);
     };
@@ -55,6 +58,10 @@ export function useReadingHostLayout() {
     };
   }, [context.safeAreaInsets]);
 
+  useEffect(() => {
+    document.documentElement.dataset.displayMode = context.displayMode ?? "inline";
+  }, [context.displayMode]);
+
   const width =
     context.containerDimensions?.width ??
     context.containerDimensions?.maxWidth ??
@@ -70,6 +77,7 @@ export function useReadingHostLayout() {
   return {
     layout,
     revision,
+    inlineHeight,
     displayMode: context.displayMode ?? "inline",
     canRequestPip:
       available?.includes("pip") ?? Boolean(window.openai?.requestDisplayMode)

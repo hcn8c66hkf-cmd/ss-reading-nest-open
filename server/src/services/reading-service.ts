@@ -17,6 +17,8 @@ import type {
   ReadingMemoryKind,
   ReadingMemorySource,
   ReadingFactCard,
+  SkillCandidate,
+  SkillForgeVerdict,
   AnnotationAuthor,
   TextAnchor,
   ReadingCommentMode,
@@ -571,6 +573,90 @@ export class ReadingService {
     };
   }
 
+  async upsertSkillCandidate(input: {
+    sessionId: string;
+    scope: "chapter" | "book";
+    chapterLabel: string;
+    rangeStart: number;
+    rangeEnd: number;
+    totalUnits?: number;
+    verdict: SkillForgeVerdict;
+    title: string;
+    rationale: string;
+    skillName?: string;
+    description?: string;
+    triggerExamples: string[];
+    workflow: string[];
+    boundaries: string[];
+    sourceNotes: string[];
+    skillMarkdown?: string;
+    analysisFingerprint: string;
+    status: "draft" | "approved" | "rejected";
+    operationId: string;
+  }): Promise<SkillCandidate> {
+    return this.repository.mutate((database) => {
+      this.requireSession(database.sessions, input.sessionId);
+      const duplicate = database.skillCandidates.find(
+        (item) => item.sessionId === input.sessionId && item.operationId === input.operationId
+      );
+      if (duplicate) return structuredClone(duplicate);
+      const cached = database.skillCandidates.find(
+        (item) =>
+          item.sessionId === input.sessionId &&
+          item.analysisFingerprint === input.analysisFingerprint
+      );
+      if (cached) return structuredClone(cached);
+      const now = this.deps.now().toISOString();
+      const candidate: SkillCandidate = {
+        id: this.deps.id(),
+        sessionId: input.sessionId,
+        scope: input.scope,
+        chapterLabel: input.chapterLabel.trim(),
+        rangeStart: input.rangeStart,
+        rangeEnd: input.rangeEnd,
+        ...(input.totalUnits !== undefined ? { totalUnits: input.totalUnits } : {}),
+        verdict: input.verdict,
+        title: input.title.trim(),
+        rationale: input.rationale.trim(),
+        ...(input.skillName ? { skillName: input.skillName } : {}),
+        ...(input.description ? { description: input.description.trim() } : {}),
+        triggerExamples: structuredClone(input.triggerExamples),
+        workflow: structuredClone(input.workflow),
+        boundaries: structuredClone(input.boundaries),
+        sourceNotes: structuredClone(input.sourceNotes),
+        ...(input.skillMarkdown ? { skillMarkdown: input.skillMarkdown.trim() } : {}),
+        analysisFingerprint: input.analysisFingerprint,
+        generatorVersion: "p3-v1",
+        status: input.status,
+        operationId: input.operationId,
+        createdAt: now,
+        updatedAt: now
+      };
+      database.skillCandidates.push(candidate);
+      return structuredClone(candidate);
+    });
+  }
+
+  async listSkillCandidates(input: {
+    sessionId: string;
+    status?: "draft" | "approved" | "rejected";
+    limit?: number;
+  }): Promise<{ skillCandidates: SkillCandidate[] }> {
+    const database = await this.repository.read();
+    this.requireSession(database.sessions, input.sessionId);
+    return {
+      skillCandidates: database.skillCandidates
+        .filter(
+          (item) =>
+            item.sessionId === input.sessionId &&
+            (!input.status || item.status === input.status)
+        )
+        .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+        .slice(0, input.limit ?? 20)
+        .map((item) => structuredClone(item))
+    };
+  }
+
   async getLayeredReadingContext(input: {
     sessionId: string;
     depth: "daily" | "deep";
@@ -876,6 +962,9 @@ export class ReadingService {
         (item) => item.sessionId !== sessionId
       );
       database.readingFactCards = database.readingFactCards.filter(
+        (item) => item.sessionId !== sessionId
+      );
+      database.skillCandidates = database.skillCandidates.filter(
         (item) => item.sessionId !== sessionId
       );
       return {

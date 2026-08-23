@@ -5,7 +5,7 @@ import { ReadingService } from "./reading-service.js";
 
 class MemoryRepository implements ReadingRepository {
   database: ReadingDatabase = {
-    schemaVersion: 6,
+    schemaVersion: 7,
     sessions: [],
     quotes: [],
     reactions: [],
@@ -14,7 +14,8 @@ class MemoryRepository implements ReadingRepository {
     annotations: [],
     annotationFavorites: [],
     readingMemories: [],
-    readingFactCards: []
+    readingFactCards: [],
+    skillCandidates: []
   };
 
   async read() {
@@ -177,5 +178,45 @@ describe("ReadingService favorites and long-term memory", () => {
     expect(daily.facts).toEqual([
       expect.objectContaining({ id: revisedFact.id, source: "user_edit", status: "active" })
     ]);
+  });
+
+  it("caches P3 skill candidates by stable snapshot fingerprint", async () => {
+    const { repository, service } = setup();
+    const session = await service.startSession("方法书", "novel");
+    const input = {
+      sessionId: session.id,
+      scope: "chapter" as const,
+      chapterLabel: "第 1–20 段",
+      rangeStart: 1,
+      rangeEnd: 20,
+      totalUnits: 80,
+      verdict: "forge_skill" as const,
+      title: "复盘提问法",
+      rationale: "形成了稳定、可重复执行的复盘步骤。",
+      skillName: "reflection-prompts",
+      description: "Use when the user asks to turn reading notes into reflection prompts.",
+      triggerExamples: ["把这章变成复盘问题"],
+      workflow: ["识别关键转折", "生成递进问题"],
+      boundaries: ["未读内容不得补写"],
+      sourceNotes: ["只覆盖第 1–20 段"],
+      skillMarkdown: "---\nname: reflection-prompts\ndescription: test\n---\n",
+      analysisFingerprint: "snapshot-v1-deadbeef",
+      status: "draft" as const,
+      operationId: "skill-candidate-v33:first"
+    };
+    const first = await service.upsertSkillCandidate(input);
+    const cached = await service.upsertSkillCandidate({
+      ...input,
+      operationId: "skill-candidate-v33:second"
+    });
+
+    expect(cached.id).toBe(first.id);
+    expect(repository.database.skillCandidates).toHaveLength(1);
+    expect((await service.listSkillCandidates({ sessionId: session.id })).skillCandidates[0])
+      .toMatchObject({
+        verdict: "forge_skill",
+        analysisFingerprint: "snapshot-v1-deadbeef",
+        generatorVersion: "p3-v1"
+      });
   });
 });

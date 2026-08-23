@@ -7,12 +7,12 @@ import {
 } from "./register-tools.js";
 
 describe("tool descriptors", () => {
-  it("binds the current UI resource to the v32 and compatibility render tools", () => {
-    expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v32.html");
-    expect(TOOL_CONFIGS.open_reading_nest_v32._meta?.ui).toEqual({
+  it("binds the current UI resource to the v33 and compatibility render tools", () => {
+    expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v33.html");
+    expect(TOOL_CONFIGS.open_reading_nest_v33._meta?.ui).toEqual({
       resourceUri: READING_NEST_URI
     });
-    expect(TOOL_CONFIGS.open_reading_nest_v32._meta?.["openai/outputTemplate"]).toBe(
+    expect(TOOL_CONFIGS.open_reading_nest_v33._meta?.["openai/outputTemplate"]).toBe(
       READING_NEST_URI
     );
     expect(TOOL_CONFIGS.open_reading_nest._meta?.["openai/outputTemplate"]).toBe(
@@ -20,6 +20,7 @@ describe("tool descriptors", () => {
     );
     for (const [name, config] of Object.entries(TOOL_CONFIGS)) {
       if (
+        name !== "open_reading_nest_v33" &&
         name !== "open_reading_nest_v32" &&
         name !== "open_reading_nest_v31" &&
         name !== "open_reading_nest_v30" &&
@@ -107,7 +108,7 @@ describe("tool descriptors", () => {
     registerReadingTools(server as never, service as never, undefined, {
       sourceEndpointBase: "https://worker.example.test/source/secret"
     });
-    const result = (await handlers.get("open_reading_nest_v32")?.()) as {
+    const result = (await handlers.get("open_reading_nest_v33")?.()) as {
       structuredContent?: Record<string, unknown>;
     };
 
@@ -118,7 +119,7 @@ describe("tool descriptors", () => {
     expect(handlers.has("open_reading_nest")).toBe(true);
     expect(handlers.has("open_reading_nest_v23")).toBe(true);
     expect(handlers.has("open_reading_nest_v22")).toBe(true);
-    expect(configs.get("open_reading_nest_v32")._meta).toMatchObject({
+    expect(configs.get("open_reading_nest_v33")._meta).toMatchObject({
       ui: { resourceUri: READING_NEST_URI },
       "ui/resourceUri": READING_NEST_URI,
       "openai/outputTemplate": READING_NEST_URI
@@ -248,7 +249,7 @@ describe("tool descriptors", () => {
   });
 
   it("exposes book management and threaded annotation tools", () => {
-    expect(Object.keys(TOOL_CONFIGS)).toHaveLength(47);
+    expect(Object.keys(TOOL_CONFIGS)).toHaveLength(50);
     expect(TOOL_CONFIGS.create_annotation.annotations).toMatchObject({
       readOnlyHint: false,
       idempotentHint: true
@@ -341,6 +342,7 @@ describe("tool descriptors", () => {
       listAnnotationFavorites: async () => ({ favorites: [{ id: "favorite-1" }] }),
       listReadingMemories: async () => ({ memories: [{ id: "memory-1", updatedAt: "2026-08-11T00:00:00.000Z", revision: 1 }] }),
       listReadingFacts: async () => ({ facts: [{ id: "fact-1", updatedAt: "2026-08-11T00:00:00.000Z", revision: 1 }] }),
+      listSkillCandidates: async () => ({ skillCandidates: [] }),
       getLayeredReadingContext: async () => ({ daily: true }),
       createAnnotation,
       replyToAnnotation,
@@ -352,6 +354,7 @@ describe("tool descriptors", () => {
       }),
       upsertReadingMemory: async (input: any) => ({ id: "memory-compat", ...input }),
       upsertReadingFact: async (input: any) => ({ id: "fact-compat", ...input }),
+      upsertSkillCandidate: async (input: any) => ({ id: "skill-compat", ...input }),
       publishCompanionComment: async () => { throw new Error("annotation reply must not enter the Dock"); },
       saveQuote: async () => { throw new Error("must not save a quote"); },
       saveReaction: async () => { throw new Error("must not save a reaction"); }
@@ -436,6 +439,27 @@ describe("tool descriptors", () => {
       position: { kind: "paragraph", index: 12, label: "第 12 段" },
       operationId: "reading-fact-v32:fact-op-1"
     });
+    const skillCompat = await handlers.get("save_quote")?.({
+      sessionId: "session-1",
+      content: `__ss_skill_candidate_v33__:${JSON.stringify({
+        scope: "chapter",
+        chapterLabel: "第 1–12 段",
+        rangeStart: 1,
+        rangeEnd: 12,
+        totalUnits: 80,
+        verdict: "knowledge_only",
+        title: "只留知识卡",
+        rationale: "还没有稳定工作流。",
+        triggerExamples: [],
+        workflow: [],
+        boundaries: ["不可冒充全书结论"],
+        sourceNotes: ["覆盖第 1–12 段"],
+        analysisFingerprint: "snapshot-v1-deadbeef",
+        status: "draft"
+      })}`,
+      position: { kind: "paragraph", index: 12, label: "第 12 段" },
+      operationId: "skill-candidate-v33:snapshot-v1-deadbeef"
+    });
 
     expect(created.structuredContent.annotation.anchor).toMatchObject({
       selectedText: "她把信折好",
@@ -462,6 +486,11 @@ describe("tool descriptors", () => {
       id: "fact-compat",
       subject: "来信",
       operationId: "reading-fact-v32:fact-op-1"
+    });
+    expect(skillCompat.structuredContent.skillCandidate).toMatchObject({
+      id: "skill-compat",
+      verdict: "knowledge_only",
+      analysisFingerprint: "snapshot-v1-deadbeef"
     });
     expect(listed.structuredContent.annotations).toEqual([{ id: "annotation-1" }]);
     expect(listed.structuredContent.favorites).toEqual([{ id: "favorite-1" }]);
