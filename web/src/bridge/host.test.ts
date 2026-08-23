@@ -71,6 +71,33 @@ describe("host bridge", () => {
     });
   });
 
+  it("prefers the ChatGPT compatibility message path when the mobile host exposes it", async () => {
+    const sendFollowUpMessage = vi.fn().mockResolvedValue(undefined);
+    if (window.openai) window.openai.sendFollowUpMessage = sendFollowUpMessage;
+    const { askChatGpt } = await import("./host.js");
+
+    await expect(askChatGpt("请读手机上的这一段", { scrollToBottom: false })).resolves.toBe(true);
+
+    expect(sendFollowUpMessage).toHaveBeenCalledWith({
+      prompt: "请读手机上的这一段",
+      scrollToBottom: false
+    });
+    expect(bridge.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the shared Apps bridge when the compatibility path rejects", async () => {
+    const sendFollowUpMessage = vi.fn().mockRejectedValue(new Error("mobile alias rejected"));
+    if (window.openai) window.openai.sendFollowUpMessage = sendFollowUpMessage;
+    const { askChatGpt } = await import("./host.js");
+
+    await expect(askChatGpt("换一条路送达")).resolves.toBe(true);
+
+    expect(bridge.sendMessage).toHaveBeenCalledWith({
+      role: "user",
+      content: [{ type: "text", text: "换一条路送达" }]
+    });
+  });
+
   it("samples Daddy text through the host model connection", async () => {
     bridge.createSamplingMessage.mockResolvedValueOnce({
       role: "assistant",

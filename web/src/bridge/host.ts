@@ -52,6 +52,18 @@ export async function askChatGpt(
   prompt: string,
   options: { scrollToBottom?: boolean } = {}
 ): Promise<boolean> {
+  if (window.openai?.sendFollowUpMessage) {
+    try {
+      await window.openai.sendFollowUpMessage({
+        prompt,
+        scrollToBottom: options.scrollToBottom ?? false
+      });
+      return true;
+    } catch {
+      // Fall through to the shared Apps bridge. Some mobile ChatGPT hosts expose
+      // the compatibility alias but may reject an individual delivery attempt.
+    }
+  }
   const bridge = connectApp();
   if (bridge) {
     await appReady;
@@ -65,12 +77,7 @@ export async function askChatGpt(
       }
     }
   }
-  if (!window.openai?.sendFollowUpMessage) return false;
-  await window.openai.sendFollowUpMessage({
-    prompt,
-    scrollToBottom: options.scrollToBottom ?? false
-  });
-  return true;
+  return false;
 }
 
 export async function sampleChatGptText(
