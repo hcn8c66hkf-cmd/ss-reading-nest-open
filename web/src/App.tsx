@@ -191,6 +191,8 @@ export function App() {
   const [readerScrollTop, setReaderScrollTop] = useState(restoredWidgetState?.scrollTop ?? 0);
   const restoreAttempted = useRef(false);
   const syncJobRef = useRef<ReadingSyncJob | null>(null);
+  const companionVersionRef = useRef<string | null>(null);
+  const annotationVersionRef = useRef<string | null>(null);
   const hostLayout = useReadingHostLayout();
   const manualCompanionDraft = useMemo<PendingCompanionCommentDraft | null>(() => {
     if (!sessionBundle) return null;
@@ -212,8 +214,17 @@ export function App() {
       const result = await callTool("list_companion_comments", {
         sessionId,
         scope: "recent",
-        limit: 20
+        limit: 20,
+        ...(background && companionVersionRef.current
+          ? { knownVersion: companionVersionRef.current }
+          : {})
       });
+      const version = result.structuredContent?.version;
+      if (typeof version === "string") companionVersionRef.current = version;
+      if (result.structuredContent?.unchanged === true) {
+        setCompanionError("");
+        return;
+      }
       const comments = Array.isArray(result.structuredContent?.comments)
         ? (result.structuredContent.comments as CompanionComment[])
         : [];
@@ -276,8 +287,17 @@ export function App() {
           sessionId,
           scope: "recent",
           positionIndex,
-          limit: 1
+          limit: 1,
+          ...(background && annotationVersionRef.current
+            ? { knownVersion: annotationVersionRef.current }
+            : {})
         });
+        const version = result.structuredContent?.version;
+        if (typeof version === "string") annotationVersionRef.current = version;
+        if (result.structuredContent?.unchanged === true) {
+          setAnnotationsError("");
+          return;
+        }
         const next = Array.isArray(result.structuredContent?.annotations)
           ? (result.structuredContent.annotations as ReadingAnnotation[])
           : [];
@@ -331,6 +351,7 @@ export function App() {
     }
     setCompanionComments([]);
     setPendingCommentDraft(null);
+    companionVersionRef.current = null;
     void loadCompanionComments(sessionId);
     const timer = window.setInterval(() => {
       void loadCompanionComments(sessionId, true);
@@ -347,6 +368,7 @@ export function App() {
       setPendingDaddyAnnotationIds(new Set());
       return;
     }
+    annotationVersionRef.current = null;
     void loadAnnotations(sessionId, positionIndex);
     const timer = window.setInterval(() => {
       void loadAnnotations(sessionId, positionIndex, true);

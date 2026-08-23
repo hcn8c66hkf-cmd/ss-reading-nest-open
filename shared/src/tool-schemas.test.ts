@@ -551,9 +551,10 @@ describe("companion comment schemas", () => {
         scope: "history",
         positionIndex: 12,
         limit: 50,
-        cursor: "cursor-1"
-      }).limit
-    ).toBe(50);
+        cursor: "cursor-1",
+        knownVersion: "v1-50-abc"
+      })
+    ).toMatchObject({ limit: 50, knownVersion: "v1-50-abc" });
     expect(
       clearCompanionCommentsInputSchema.parse({
         sessionId: "session-1",

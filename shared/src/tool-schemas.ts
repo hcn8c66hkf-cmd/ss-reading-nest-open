@@ -273,7 +273,8 @@ export const listCompanionCommentsInputSchema = z
     scope: z.enum(["recent", "history"]),
     positionIndex: z.number().int().min(1).optional(),
     limit: z.number().int().min(1).max(100).optional(),
-    cursor: z.string().min(1).max(500).optional()
+    cursor: z.string().min(1).max(500).optional(),
+    knownVersion: z.string().min(1).max(100).optional()
   })
   .strict();
 export const clearCompanionCommentsInputSchema = z

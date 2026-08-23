@@ -24,15 +24,15 @@ describe("useLiveReading", () => {
 
     await waitFor(() => expect(onQueuedPosition).toHaveBeenCalledWith(2));
     rerender({ user: 4, assistant: 1 });
-    expect(result.current).toEqual({ activeIndex: 2, queuedCount: 2 });
+    expect(result.current).toMatchObject({ activeIndex: 2, queuedCount: 2, failedIndex: null });
 
     rerender({ user: 4, assistant: 2 });
     await waitFor(() => expect(onQueuedPosition).toHaveBeenCalledWith(3));
-    expect(result.current).toEqual({ activeIndex: 3, queuedCount: 1 });
+    expect(result.current).toMatchObject({ activeIndex: 3, queuedCount: 1, failedIndex: null });
 
     rerender({ user: 4, assistant: 3 });
     await waitFor(() => expect(onQueuedPosition).toHaveBeenCalledWith(4));
-    expect(result.current).toEqual({ activeIndex: 4, queuedCount: 0 });
+    expect(result.current).toMatchObject({ activeIndex: 4, queuedCount: 0, failedIndex: null });
   });
 
   it("does not repeat a paragraph after its short comment confirms completion", async () => {
@@ -97,5 +97,38 @@ describe("useLiveReading", () => {
       await Promise.resolve();
     });
     expect(onQueuedPosition).toHaveBeenCalledTimes(2);
+  });
+
+  it("surfaces a failed paragraph after one retry and lets the user retry it", async () => {
+    vi.useFakeTimers();
+    const onQueuedPosition = vi.fn().mockResolvedValue(true);
+    const { result } = renderHook(() =>
+      useLiveReading({
+        enabled: true,
+        sessionKey: "session-1",
+        userPositionIndex: 3,
+        assistantPositionIndex: 2,
+        sourceVerified: true,
+        retryMs: 1_000,
+        onQueuedPosition
+      })
+    );
+
+    await act(async () => Promise.resolve());
+    await act(async () => {
+      vi.advanceTimersByTime(1_000);
+      await Promise.resolve();
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(1_000);
+      await Promise.resolve();
+    });
+    expect(onQueuedPosition).toHaveBeenCalledTimes(2);
+    expect(result.current.failedIndex).toBe(3);
+
+    act(() => result.current.retryFailed());
+    await act(async () => Promise.resolve());
+    expect(onQueuedPosition).toHaveBeenCalledTimes(3);
+    expect(result.current.failedIndex).toBeNull();
   });
 });
