@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildBatchChatMessage,
   buildBatchUserNote,
+  buildCurrentOnlyWakePrompt,
   buildFormalReadingPrompt,
   buildCurrentOnlyPrompt,
   buildRecentOnlyPrompt
@@ -106,6 +107,20 @@ describe("reading-sync messages", () => {
     expect(recent).toContain("operationId=recent-op-1");
     expect(current).toContain("source=current_context");
     expect(recent).toContain("source=quick_action");
+  });
+
+  it("keeps current-only wake prompts free of source text and tool parameters", () => {
+    const normal = buildCurrentOnlyWakePrompt({ position: 8 });
+    const selected = buildCurrentOnlyWakePrompt({
+      position: 8,
+      selectedText: "这句不能回显"
+    });
+
+    expect(normal).toBe("请只看共读小窝的第 8 段，按当前陪读偏好回应。");
+    expect(selected).toBe("请回应我在第 8 段选中的句子，并写回书边批注。");
+    expect(normal).not.toContain("publish_companion_comment");
+    expect(selected).not.toContain("这句不能回显");
+    expect(selected).not.toContain("create_annotation");
   });
 
   it("does not request companion publish for any formal route when auto-save is off", () => {

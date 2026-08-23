@@ -39,7 +39,7 @@ import { ReadingService } from "../services/reading-service.js";
 import type { CloudSourceService } from "../services/cloud-source-service.js";
 import { toolResult } from "./tool-result.js";
 
-export const READING_NEST_URI = "ui://ss-reading-nest/app-v29.html";
+export const READING_NEST_URI = "ui://ss-reading-nest/app-v30.html";
 
 const ANNOTATION_QUOTE_OPERATION_PREFIX = "annotation-v24:";
 const ANNOTATION_QUOTE_NOTE_PREFIX = "__ss_annotation_v24__:";
@@ -59,10 +59,23 @@ const mutation = {
 };
 
 export const TOOL_CONFIGS = {
-  open_reading_nest_v29: {
+  open_reading_nest_v30: {
     title: "打开 S×S 小窝共读",
     description:
-      "Use this primary v29 tool when the user wants to open the reading nest or continue recent reading.",
+      "Use this primary v30 tool when the user wants to open the reading nest or continue recent reading.",
+    inputSchema: openReadingNestInputSchema,
+    annotations: readOnly,
+    _meta: {
+      ui: { resourceUri: READING_NEST_URI },
+      "openai/outputTemplate": READING_NEST_URI,
+      "openai/toolInvocation/invoking": "正在点亮小窝…",
+      "openai/toolInvocation/invoked": "小窝已经准备好"
+    }
+  },
+  open_reading_nest_v29: {
+    title: "打开 S×S 小窝共读（v29 兼容入口）",
+    description:
+      "Legacy compatibility entry. Prefer open_reading_nest_v30 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -75,7 +88,7 @@ export const TOOL_CONFIGS = {
   open_reading_nest_v28: {
     title: "打开 S×S 小窝共读（v28 兼容入口）",
     description:
-      "Legacy compatibility entry. Prefer open_reading_nest_v29 whenever it is available.",
+      "Legacy compatibility entry. Prefer open_reading_nest_v30 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -88,7 +101,7 @@ export const TOOL_CONFIGS = {
   open_reading_nest_v27: {
     title: "打开 S×S 小窝共读（v27 兼容入口）",
     description:
-      "Legacy compatibility entry. Prefer open_reading_nest_v29 whenever it is available.",
+      "Legacy compatibility entry. Prefer open_reading_nest_v30 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -101,7 +114,7 @@ export const TOOL_CONFIGS = {
   open_reading_nest_v26: {
     title: "打开 S×S 小窝共读（v26 兼容入口）",
     description:
-      "Legacy compatibility entry. Prefer open_reading_nest_v29 whenever it is available.",
+      "Legacy compatibility entry. Prefer open_reading_nest_v30 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -114,7 +127,7 @@ export const TOOL_CONFIGS = {
   open_reading_nest_v25: {
     title: "打开 S×S 小窝共读（v25 兼容入口）",
     description:
-      "Legacy compatibility entry. Prefer open_reading_nest_v29 whenever it is available.",
+      "Legacy compatibility entry. Prefer open_reading_nest_v30 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -127,7 +140,7 @@ export const TOOL_CONFIGS = {
   open_reading_nest_v24: {
     title: "打开 S×S 小窝共读（v24 兼容入口）",
     description:
-      "Legacy compatibility entry. Prefer open_reading_nest_v29 whenever it is available.",
+      "Legacy compatibility entry. Prefer open_reading_nest_v30 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -140,7 +153,7 @@ export const TOOL_CONFIGS = {
   open_reading_nest_v23: {
     title: "打开 S×S 小窝共读（v23 兼容入口）",
     description:
-      "Legacy compatibility entry. Prefer open_reading_nest_v29 whenever it is available.",
+      "Legacy compatibility entry. Prefer open_reading_nest_v30 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -153,7 +166,7 @@ export const TOOL_CONFIGS = {
   open_reading_nest_v22: {
     title: "打开 S×S 小窝共读（v22 兼容入口）",
     description:
-      "Legacy compatibility entry. Prefer open_reading_nest_v29 whenever it is available.",
+      "Legacy compatibility entry. Prefer open_reading_nest_v30 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -166,7 +179,7 @@ export const TOOL_CONFIGS = {
   open_reading_nest: {
     title: "打开 S×S 小窝共读（旧入口）",
     description:
-      "Legacy compatibility entry. Prefer open_reading_nest_v29 whenever it is available.",
+      "Legacy compatibility entry. Prefer open_reading_nest_v30 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -472,6 +485,12 @@ export function registerReadingTools(
     );
   };
 
+  registerAppTool(
+    server,
+    "open_reading_nest_v30",
+    TOOL_CONFIGS.open_reading_nest_v30,
+    openReadingNest
+  );
   registerAppTool(
     server,
     "open_reading_nest_v29",

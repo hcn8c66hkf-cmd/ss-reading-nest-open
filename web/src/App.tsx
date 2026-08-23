@@ -30,6 +30,7 @@ import {
   updateModelContext
 } from "./bridge/host.js";
 import { syncCurrentContext } from "./bridge/sync-current-context.js";
+import { sendLiveReadingFallback } from "./bridge/send-live-reading-fallback.js";
 import { CacheSettings } from "./components/CacheSettings.js";
 import { BookManagementSheet } from "./components/BookManagementSheet.js";
 import { DiaryPreview } from "./components/DiaryPreview.js";
@@ -51,13 +52,16 @@ import { buildSyncBatches } from "./features/reading-sync/build-batches.js";
 import {
   buildBatchChatMessage,
   buildBatchUserNote,
+  buildCurrentOnlyWakePrompt,
   buildCurrentOnlyPrompt,
   buildFormalReadingPrompt,
   buildRecentOnlyPrompt
 } from "./features/reading-sync/build-messages.js";
 import {
   buildLiveReadingDraftPrompt,
+  buildLiveReadingModelContext,
   buildLiveReadingPrompt,
+  buildLiveReadingWakePrompt,
   buildReadingCommentPrompt
 } from "./features/reading-comments/prompt-policy.js";
 import { buildDaddyAnnotationReplyFallbackPrompt } from "./features/annotations/reply-fallback.js";
@@ -1249,8 +1253,14 @@ export function App() {
         selectedText ? `我选中的句子：${selectedText}` : ""
       ].filter(Boolean).join("\n");
       const mode = await syncCurrentContext({
-        context,
-        successPrompt: policyPrompt,
+        context: {
+          ...context,
+          responsePolicy: policyPrompt
+        },
+        successPrompt: buildCurrentOnlyWakePrompt({
+          position: sessionBundle.session.userCurrentPosition.index,
+          ...(selectedText ? { selectedText } : {})
+        }),
         fallbackPrompt,
         updateModelContext,
         sendMessage: async (prompt, options) => {
@@ -1672,9 +1682,17 @@ export function App() {
           return true;
         }
 
-        const sent = await askChatGpt(
-          buildLiveReadingPrompt({
-            sessionId: sessionBundle.session.id,
+        const fallbackMode = await sendLiveReadingFallback({
+          context: buildLiveReadingModelContext({
+            sessionId: session.id,
+            title: session.title,
+            position: targetPosition,
+            text,
+            operationId
+          }),
+          wakePrompt: buildLiveReadingWakePrompt(targetPosition),
+          compatibilityPrompt: buildLiveReadingPrompt({
+            sessionId: session.id,
             title: session.title,
             position: targetPosition,
             text,
@@ -1684,9 +1702,12 @@ export function App() {
             requestedMode: mode,
             requestedLength: length
           }),
-          { scrollToBottom: false }
-        );
-        if (!sent) throw new Error("Host did not accept follow-up message");
+          updateModelContext,
+          sendMessage: askChatGpt
+        });
+        if (fallbackMode === "failed") {
+          throw new Error("Host did not accept follow-up message");
+        }
         return true;
       } catch {
         setToast("这次实时跟读没有发送成功。");
