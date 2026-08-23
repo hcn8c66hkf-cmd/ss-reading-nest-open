@@ -4,16 +4,11 @@ body { background: var(--cream); }
 button, input, textarea { font: inherit; }
 button { min-height: 44px; cursor: pointer; color: inherit; }
 button:disabled { cursor: default; opacity: .42; }
-.app {
-  min-height: 100vh;
-  min-height: 100dvh;
-  background: var(--cream);
-}
+.app { min-height: 0; background: var(--cream); }
 
 .boot-diagnostics {
   width: min(100%, 720px);
-  min-height: 100vh;
-  min-height: 100dvh;
+  min-height: 460px;
   margin: 0 auto;
   padding: max(24px, var(--safe-top)) max(20px, var(--safe-right)) calc(28px + var(--safe-bottom)) max(20px, var(--safe-left));
   background: var(--cream);
@@ -65,8 +60,7 @@ button:disabled { cursor: default; opacity: .42; }
 
 .home-shell, .setup-shell {
   width: min(100%, 760px);
-  min-height: 100vh;
-  min-height: 100dvh;
+  min-height: 620px;
   margin: 0 auto;
   padding: max(24px, var(--safe-top)) max(20px, var(--safe-right)) calc(28px + var(--safe-bottom)) max(20px, var(--safe-left));
 }
@@ -351,8 +345,7 @@ input:focus, textarea:focus { border-color: var(--peach-strong); box-shadow: 0 0
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr) auto;
   width: min(100%, 900px);
-  height: 100vh;
-  height: 100dvh;
+  height: var(--reader-inline-height, 680px);
   margin: 0 auto;
   background: var(--paper);
   overflow: hidden;
@@ -361,17 +354,54 @@ input:focus, textarea:focus { border-color: var(--peach-strong); box-shadow: 0 0
 .reader-shell.reader-immersive {
   width: 100%;
   max-width: none;
+  min-height: 0;
+  height: var(--reader-inline-height, 680px);
+  margin: 0;
+}
+.reader-shell.reader-immersive.reader-host-fullscreen {
   min-height: 100vh;
   min-height: 100dvh;
   height: 100vh;
   height: 100dvh;
-  margin: 0;
 }
 .reader-shell.reader-immersive .reader-workspace {
   min-height: 0;
 }
 .reader-shell.reader-immersive .reader-scroll {
   padding-bottom: calc(36px + var(--safe-bottom));
+}
+.widget-collapsed {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 72px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--cream) 72%, var(--surface));
+  color: var(--ink);
+}
+.widget-collapsed strong,
+.widget-collapsed span { display: block; }
+.widget-collapsed span {
+  max-width: min(60vw, 520px);
+  margin-top: 2px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.widget-collapsed button {
+  flex: 0 0 auto;
+  min-height: 38px;
+  padding: 8px 13px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--sage);
+  font-size: 12px;
+  font-weight: 800;
 }
 .reader-workspace {
   position: relative;
@@ -426,6 +456,7 @@ input:focus, textarea:focus { border-color: var(--peach-strong); box-shadow: 0 0
   font-weight: 750;
   white-space: nowrap;
 }
+.reader-collapse-button { font-size: 20px; }
 .reader-scroll {
   min-height: 0;
   overflow-y: auto;
@@ -946,6 +977,8 @@ input:focus, textarea:focus { border-color: var(--peach-strong); box-shadow: 0 0
 }
 .companion-comment-list {
   display: grid;
+  grid-auto-rows: max-content;
+  align-content: start;
   gap: 7px;
   min-height: 0;
   padding: 0 10px 8px;
@@ -955,6 +988,10 @@ input:focus, textarea:focus { border-color: var(--peach-strong); box-shadow: 0 0
 .companion-comment {
   display: block;
   width: 100%;
+  min-width: 0;
+  min-height: 0;
+  height: auto;
+  overflow: hidden;
   padding: 9px 10px;
   border: 1px solid var(--line);
   border-radius: 13px;
@@ -969,12 +1006,16 @@ input:focus, textarea:focus { border-color: var(--peach-strong); box-shadow: 0 0
   overflow: hidden;
   font-size: 12px;
   line-height: 1.5;
+  max-height: 4.5em;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
 }
 .companion-comment p.full-text {
   display: block;
-  overflow: visible;
+  max-height: 9em;
+  overflow-y: auto;
   -webkit-line-clamp: unset;
 }
 .companion-comment.live-comment {

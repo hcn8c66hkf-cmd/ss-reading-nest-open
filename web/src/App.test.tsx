@@ -2129,6 +2129,22 @@ describe("App", () => {
       );
     });
 
+    fireEvent.click(screen.getByRole("button", { name: "收起小窝卡片" }));
+    expect(await screen.findByText("共读小窝已收起")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(setWidgetState).toHaveBeenLastCalledWith(
+        expect.objectContaining({ screen: "novel", sessionId, collapsed: true })
+      );
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "重新打开" }));
+    expect(await screen.findByText("第三段。")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(setWidgetState).toHaveBeenLastCalledWith(
+        expect.objectContaining({ screen: "novel", sessionId, collapsed: false })
+      );
+    });
+
     await deviceCache.remove(sessionId);
   });
 

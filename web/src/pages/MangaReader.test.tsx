@@ -38,6 +38,7 @@ describe("MangaReader v0.2 positions", () => {
         onFinish={vi.fn()}
         onBack={vi.fn()}
         onFullscreen={vi.fn()}
+        onCollapse={vi.fn()}
         onSettings={vi.fn()}
         onMore={vi.fn()}
         companionComments={[]}
@@ -89,6 +90,7 @@ describe("MangaReader v0.2 positions", () => {
       onFinish: vi.fn(),
       onBack: vi.fn(),
       onFullscreen: vi.fn(),
+      onCollapse: vi.fn(),
       onSettings: vi.fn(),
       onMore: vi.fn(),
       companionComments: [],
