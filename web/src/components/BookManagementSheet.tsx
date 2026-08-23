@@ -1,15 +1,17 @@
 import { useState } from "react";
 import type {
+  AnnotationFavorite,
   CompanionComment,
   SessionBundle,
   SessionStatus
 } from "@ss/shared";
 
-type RecordTab = "bookmarks" | "quotes" | "reactions" | "comments";
+type RecordTab = "bookmarks" | "quotes" | "reactions" | "comments" | "favorites";
 
 export function BookManagementSheet(props: {
   bundle: SessionBundle;
   comments: CompanionComment[];
+  favorites: AnnotationFavorite[];
   historyHasMore: boolean;
   historyLoading: boolean;
   onLoadMoreHistory: () => void;
@@ -72,6 +74,7 @@ export function BookManagementSheet(props: {
             <button aria-pressed={tab === "quotes"} onClick={() => setTab("quotes")}>摘录</button>
             <button aria-pressed={tab === "reactions"} onClick={() => setTab("reactions")}>用户反应</button>
             <button aria-pressed={tab === "comments"} onClick={() => setTab("comments")}>Daddy评论</button>
+            <button aria-pressed={tab === "favorites"} onClick={() => setTab("favorites")}>收藏</button>
           </div>
           <div className="record-list">
             {tab === "bookmarks"
@@ -88,6 +91,13 @@ export function BookManagementSheet(props: {
                   item.mode === "deep_analysis"
                     ? "已生成长评，可回聊天区查看。"
                     : item.text
+                )
+              : null}
+            {tab === "favorites"
+              ? recordItems(props.favorites, (item) =>
+                  item.text
+                    ? `“${item.excerpt}”\n${item.author === "assistant" ? "Daddy" : "你"}：${item.text}`
+                    : `“${item.excerpt}”`
                 )
               : null}
           </div>
@@ -125,7 +135,7 @@ export function BookManagementSheet(props: {
                 <input type="checkbox" checked disabled />
                 删除这本书的云端阅读记录
               </label>
-              <p>会从书架移除这本书，并删除进度、偏好、短评、书签、摘录和反应。</p>
+              <p>会从书架移除这本书，并删除进度、偏好、短评、批注收藏、长期记忆、书签、摘录和反应。</p>
               <label className="remember-row">
                 <input
                   type="checkbox"

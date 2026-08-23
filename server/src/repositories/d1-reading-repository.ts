@@ -27,13 +27,16 @@ type StateRow = {
 };
 
 const emptyDatabase = (): ReadingDatabase => ({
-  schemaVersion: 5,
+  schemaVersion: 6,
   sessions: [],
   quotes: [],
   reactions: [],
   bookmarks: [],
   companionComments: [],
-  annotations: []
+  annotations: [],
+  annotationFavorites: [],
+  readingMemories: [],
+  readingFactCards: []
 });
 
 export class D1ReadingRepository implements ReadingRepository {

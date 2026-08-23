@@ -36,6 +36,7 @@ const forbidden = [
 ];
 
 const expectedTools = [
+  "open_reading_nest_v31",
   "open_reading_nest_v30",
   "open_reading_nest_v29",
   "open_reading_nest_v28",
@@ -43,6 +44,8 @@ const expectedTools = [
   "open_reading_nest_v26",
   "open_reading_nest_v25",
   "open_reading_nest_v24",
+  "open_reading_nest_v23",
+  "open_reading_nest_v22",
   "open_reading_nest",
   "start_reading_session",
   "update_reading_position",
@@ -56,9 +59,19 @@ const expectedTools = [
   "publish_companion_comment",
   "list_companion_comments",
   "clear_companion_comments",
+  "create_annotation",
   "create_annotation_v23",
+  "reply_to_annotation",
   "reply_to_annotation_v23",
+  "list_annotations",
   "list_annotations_v23",
+  "set_annotation_favorite",
+  "list_annotation_favorites",
+  "upsert_reading_memory",
+  "list_reading_memories",
+  "upsert_reading_fact",
+  "list_reading_facts",
+  "get_layered_reading_context",
   "rename_reading_session",
   "set_reading_session_status",
   "delete_reading_session",
@@ -108,7 +121,7 @@ try {
   for (const name of expectedTools) assert(toolNames.includes(name), `missing tool ${name}`);
   assert(!toolNames.includes("restore_cloud_source"), "assistant-visible restore_cloud_source must not exist");
 
-  const openNest = await callTool("open_reading_nest_v30", {});
+  const openNest = await callTool("open_reading_nest_v31", {});
   assert(
     openNest.structuredContent?.sourceEndpointBase === sourceBase,
     "open_reading_nest did not return the component source endpoint"

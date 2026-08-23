@@ -9,15 +9,22 @@ import {
   uploadCloudSourceInputSchema,
   listCompanionCommentsInputSchema,
   listAnnotationsInputSchema,
+  listAnnotationFavoritesInputSchema,
+  listReadingFactsInputSchema,
+  listReadingMemoriesInputSchema,
+  getLayeredReadingContextInputSchema,
   publishCompanionCommentInputSchema,
   renameReadingSessionInputSchema,
   replyToAnnotationInputSchema,
+  setAnnotationFavoriteInputSchema,
   sendCurrentContextInputSchema,
   setReadingSessionStatusInputSchema,
   setSourceManifestInputSchema,
   setLiveReadingModeInputSchema,
   updateSessionPreferencesInputSchema,
-  updateReadingPositionInputSchema
+  updateReadingPositionInputSchema,
+  upsertReadingFactInputSchema,
+  upsertReadingMemoryInputSchema
 } from "./tool-schemas.js";
 
 describe("sendCurrentContextInputSchema", () => {
@@ -141,6 +148,61 @@ describe("threaded annotation schema contracts", () => {
         sourceText: "整本书"
       })
     ).toThrow();
+  });
+});
+
+describe("favorite and long-term reading memory schemas", () => {
+  it("accepts an exact reply favorite and strict list request", () => {
+    expect(setAnnotationFavoriteInputSchema.parse({
+      sessionId: "session-1",
+      annotationId: "annotation-1",
+      messageId: "message-1",
+      favorite: true,
+      operationId: "favorite-op-1"
+    }).messageId).toBe("message-1");
+    expect(listAnnotationFavoritesInputSchema.parse({ sessionId: "session-1" }))
+      .toEqual({ sessionId: "session-1" });
+  });
+
+  it("accepts sourced memory revisions and rejects invalid ranges", () => {
+    const memory = upsertReadingMemoryInputSchema.parse({
+      sessionId: "session-1",
+      kind: "chapter_summary",
+      scope: "chapter",
+      chapterLabel: "第 1–10 段",
+      rangeStart: 1,
+      rangeEnd: 10,
+      content: "这十段的摘要。",
+      source: "daddy_read",
+      operationId: "memory-op-1"
+    });
+    expect(memory.source).toBe("daddy_read");
+    expect(() => upsertReadingMemoryInputSchema.parse({
+      ...memory,
+      rangeStart: 10,
+      rangeEnd: 1
+    })).toThrow();
+    expect(listReadingMemoriesInputSchema.parse({
+      sessionId: "session-1",
+      includeSuperseded: true
+    }).includeSuperseded).toBe(true);
+  });
+
+  it("accepts editable facts and daily/deep layered context", () => {
+    expect(upsertReadingFactInputSchema.parse({
+      sessionId: "session-1",
+      subject: "纪旻",
+      fact: "仍在隐瞒身份。",
+      source: "user_edit",
+      operationId: "fact-op-1"
+    }).source).toBe("user_edit");
+    expect(listReadingFactsInputSchema.parse({ sessionId: "session-1" }).sessionId)
+      .toBe("session-1");
+    expect(getLayeredReadingContextInputSchema.parse({
+      sessionId: "session-1",
+      depth: "deep",
+      positionIndex: 59
+    }).depth).toBe("deep");
   });
 });
 

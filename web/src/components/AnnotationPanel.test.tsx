@@ -65,4 +65,37 @@ describe("AnnotationPanel", () => {
 
     expect(screen.getByText("Daddy正在回这条……")).toBeInTheDocument();
   });
+
+  it("favorites one exact reply without conflating the thread", () => {
+    const onToggleFavorite = vi.fn();
+    render(
+      <AnnotationPanel
+        annotations={[annotation]}
+        loading={false}
+        saving={false}
+        favorites={[{
+          id: "favorite-1",
+          sessionId: "session-1",
+          annotationId: "annotation-1",
+          messageId: "message-2",
+          position: annotation.position,
+          excerpt: annotation.anchor.selectedText,
+          author: "assistant",
+          text: annotation.messages[1]!.text,
+          operationId: "favorite-op-1",
+          createdAt: "2026-08-06T00:02:00.000Z"
+        }]}
+        onReply={vi.fn()}
+        onToggleFavorite={onToggleFavorite}
+      />
+    );
+
+    expect(screen.getByRole("button", { name: "取消收藏这条回复" })).toHaveTextContent("已收藏");
+    fireEvent.click(screen.getAllByRole("button", { name: "收藏这条回复" })[0]!);
+    expect(onToggleFavorite).toHaveBeenCalledWith(
+      "annotation-1",
+      "message-1",
+      true
+    );
+  });
 });

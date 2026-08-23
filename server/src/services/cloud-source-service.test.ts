@@ -365,7 +365,7 @@ function setup() {
 
 class MemoryReadingRepository implements ReadingRepository {
   private database: ReadingDatabase = {
-    schemaVersion: 4,
+    schemaVersion: 6,
     sessions: [
       {
         id: "session-1",
@@ -385,7 +385,11 @@ class MemoryReadingRepository implements ReadingRepository {
     quotes: [],
     reactions: [],
     bookmarks: [],
-    companionComments: []
+    companionComments: [],
+    annotations: [],
+    annotationFavorites: [],
+    readingMemories: [],
+    readingFactCards: []
   };
 
   async read(): Promise<ReadingDatabase> {

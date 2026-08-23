@@ -188,14 +188,74 @@ export interface ReadingAnnotation {
   updatedAt: string;
 }
 
+export interface AnnotationFavorite {
+  id: string;
+  sessionId: string;
+  annotationId: string;
+  messageId?: string;
+  position: ReadingPosition;
+  excerpt: string;
+  author?: AnnotationAuthor;
+  text?: string;
+  operationId: string;
+  createdAt: string;
+}
+
+export type ReadingMemoryKind =
+  | "chapter_summary"
+  | "annotation_summary"
+  | "reading_impression"
+  | "book_context"
+  | "chapter_context";
+export type ReadingMemorySource = "daddy_read" | "assistant_scan" | "user_edit";
+export type ReadingMemoryStatus = "active" | "superseded";
+
+export interface ReadingMemory {
+  id: string;
+  sessionId: string;
+  kind: ReadingMemoryKind;
+  scope: "book" | "chapter";
+  chapterLabel?: string;
+  rangeStart?: number;
+  rangeEnd?: number;
+  content: string;
+  source: ReadingMemorySource;
+  status: ReadingMemoryStatus;
+  revision: number;
+  supersedesId?: string;
+  operationId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type ReadingFactStatus = "active" | "superseded" | "invalidated";
+
+export interface ReadingFactCard {
+  id: string;
+  sessionId: string;
+  subject: string;
+  fact: string;
+  status: ReadingFactStatus;
+  source: ReadingMemorySource;
+  position?: ReadingPosition;
+  revision: number;
+  supersedesId?: string;
+  operationId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface ReadingDatabase {
-  schemaVersion: 5;
+  schemaVersion: 6;
   sessions: ReadingSession[];
   quotes: Quote[];
   reactions: Reaction[];
   bookmarks: Bookmark[];
   companionComments: CompanionComment[];
   annotations: ReadingAnnotation[];
+  annotationFavorites: AnnotationFavorite[];
+  readingMemories: ReadingMemory[];
+  readingFactCards: ReadingFactCard[];
 }
 
 export type ReadingSyncMode =

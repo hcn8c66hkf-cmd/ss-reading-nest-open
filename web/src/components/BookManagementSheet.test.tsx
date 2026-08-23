@@ -31,6 +31,7 @@ describe("BookManagementSheet", () => {
       <BookManagementSheet
         bundle={bundle}
         comments={[{ id: "c", sessionId: "book-a", position: { kind: "paragraph", index: 5, label: "第 5 段" }, mode: "light_chat", length: "normal", text: "历史短评", source: "current_context", inRecent: false, inHistory: true, createdAt: "2026-06-23T00:00:00.000Z" }]}
+        favorites={[{ id: "f", sessionId: "book-a", annotationId: "a", messageId: "m", position: { kind: "paragraph", index: 5, label: "第 5 段" }, excerpt: "划线原句", author: "assistant", text: "收藏回复", operationId: "favorite-op", createdAt: "2026-06-23T00:00:00.000Z" }]}
         historyHasMore
         historyLoading={false}
         onLoadMoreHistory={vi.fn()}
@@ -57,6 +58,8 @@ describe("BookManagementSheet", () => {
     fireEvent.click(screen.getByRole("button", { name: "Daddy评论" }));
     expect(screen.getByText("历史短评")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "加载更多评论" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "收藏" }));
+    expect(screen.getByText(/收藏回复/)).toBeInTheDocument();
   });
 
   it("clears recent/history separately and requires two delete confirmations", () => {
@@ -66,6 +69,7 @@ describe("BookManagementSheet", () => {
       <BookManagementSheet
         bundle={bundle}
         comments={[]}
+        favorites={[]}
         historyHasMore={false}
         historyLoading={false}
         onLoadMoreHistory={vi.fn()}

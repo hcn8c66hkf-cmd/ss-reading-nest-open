@@ -38,6 +38,18 @@ export const companionCommentSourceSchema = z.enum([
   "manual_save"
 ]);
 export const annotationAuthorSchema = z.enum(["user", "assistant"]);
+export const readingMemoryKindSchema = z.enum([
+  "chapter_summary",
+  "annotation_summary",
+  "reading_impression",
+  "book_context",
+  "chapter_context"
+]);
+export const readingMemorySourceSchema = z.enum([
+  "daddy_read",
+  "assistant_scan",
+  "user_edit"
+]);
 export const readingPositionSchema = z.object({
   kind: z.enum(["paragraph", "page"]),
   index: z.number().int().min(1),
@@ -327,6 +339,87 @@ export const replyToAnnotationInputSchema = z
 export const listAnnotationsInputSchema = z
   .object({
     sessionId: sessionIdSchema,
+    positionIndex: z.number().int().min(1).optional()
+  })
+  .strict();
+export const setAnnotationFavoriteInputSchema = z
+  .object({
+    sessionId: sessionIdSchema,
+    annotationId: z.string().min(1),
+    messageId: z.string().min(1).optional(),
+    favorite: z.boolean(),
+    operationId: z.string().min(1).max(200)
+  })
+  .strict();
+export const listAnnotationFavoritesInputSchema = z
+  .object({ sessionId: sessionIdSchema })
+  .strict();
+export const upsertReadingMemoryInputSchema = z
+  .object({
+    sessionId: sessionIdSchema,
+    kind: readingMemoryKindSchema,
+    scope: z.enum(["book", "chapter"]),
+    chapterLabel: z.string().trim().min(1).max(200).optional(),
+    rangeStart: z.number().int().min(1).optional(),
+    rangeEnd: z.number().int().min(1).optional(),
+    content: z.string().trim().min(1).max(8_000),
+    source: readingMemorySourceSchema,
+    supersedesId: z.string().min(1).optional(),
+    operationId: z.string().min(1).max(200)
+  })
+  .strict()
+  .superRefine((input, context) => {
+    if (input.scope === "chapter" && !input.chapterLabel) {
+      context.addIssue({
+        code: "custom",
+        path: ["chapterLabel"],
+        message: "Chapter-scoped memory requires chapterLabel"
+      });
+    }
+    if (
+      input.rangeStart !== undefined &&
+      input.rangeEnd !== undefined &&
+      input.rangeEnd < input.rangeStart
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["rangeEnd"],
+        message: "rangeEnd must not be smaller than rangeStart"
+      });
+    }
+  });
+export const listReadingMemoriesInputSchema = z
+  .object({
+    sessionId: sessionIdSchema,
+    kind: readingMemoryKindSchema.optional(),
+    scope: z.enum(["book", "chapter"]).optional(),
+    includeSuperseded: z.boolean().optional().default(false),
+    limit: z.number().int().min(1).max(200).optional().default(50)
+  })
+  .strict();
+export const upsertReadingFactInputSchema = z
+  .object({
+    sessionId: sessionIdSchema,
+    subject: z.string().trim().min(1).max(200),
+    fact: z.string().trim().min(1).max(2_000),
+    status: z.enum(["active", "invalidated"]).optional().default("active"),
+    source: readingMemorySourceSchema,
+    position: readingPositionSchema.optional(),
+    supersedesId: z.string().min(1).optional(),
+    operationId: z.string().min(1).max(200)
+  })
+  .strict();
+export const listReadingFactsInputSchema = z
+  .object({
+    sessionId: sessionIdSchema,
+    includeInactive: z.boolean().optional().default(false),
+    limit: z.number().int().min(1).max(300).optional().default(100)
+  })
+  .strict();
+export const getLayeredReadingContextInputSchema = z
+  .object({
+    sessionId: sessionIdSchema,
+    depth: z.enum(["daily", "deep"]),
     positionIndex: z.number().int().min(1).optional()
   })
   .strict();

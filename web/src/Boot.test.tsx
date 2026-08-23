@@ -56,7 +56,7 @@ describe("Boot", () => {
     );
 
     expect(await screen.findByText("failed")).toBeInTheDocument();
-    expect(screen.getByText("app-v21")).toBeInTheDocument();
+    expect(screen.getByText("app-v31")).toBeInTheDocument();
     expect(screen.getAllByText("present")).toHaveLength(3);
     expect(screen.getByText("1")).toBeInTheDocument();
     const diagnosticText = screen.getByRole("alert").textContent ?? "";

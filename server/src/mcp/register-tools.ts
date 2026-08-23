@@ -11,6 +11,13 @@ import {
   openReadingNestInputSchema,
   listCompanionCommentsInputSchema,
   listAnnotationsInputSchema,
+  setAnnotationFavoriteInputSchema,
+  listAnnotationFavoritesInputSchema,
+  upsertReadingMemoryInputSchema,
+  listReadingMemoriesInputSchema,
+  upsertReadingFactInputSchema,
+  listReadingFactsInputSchema,
+  getLayeredReadingContextInputSchema,
   publishCompanionCommentInputSchema,
   renameReadingSessionInputSchema,
   replyToAnnotationInputSchema,
@@ -39,7 +46,7 @@ import { ReadingService } from "../services/reading-service.js";
 import type { CloudSourceService } from "../services/cloud-source-service.js";
 import { toolResult } from "./tool-result.js";
 
-export const READING_NEST_URI = "ui://ss-reading-nest/app-v30.html";
+export const READING_NEST_URI = "ui://ss-reading-nest/app-v31.html";
 
 const ANNOTATION_QUOTE_OPERATION_PREFIX = "annotation-v24:";
 const ANNOTATION_QUOTE_NOTE_PREFIX = "__ss_annotation_v24__:";
@@ -59,10 +66,23 @@ const mutation = {
 };
 
 export const TOOL_CONFIGS = {
-  open_reading_nest_v30: {
+  open_reading_nest_v31: {
     title: "打开 S×S 小窝共读",
     description:
-      "Use this primary v30 tool when the user wants to open the reading nest or continue recent reading.",
+      "Use this primary v31 tool when the user wants to open the reading nest or continue recent reading.",
+    inputSchema: openReadingNestInputSchema,
+    annotations: readOnly,
+    _meta: {
+      ui: { resourceUri: READING_NEST_URI },
+      "openai/outputTemplate": READING_NEST_URI,
+      "openai/toolInvocation/invoking": "正在点亮小窝…",
+      "openai/toolInvocation/invoked": "小窝已经准备好"
+    }
+  },
+  open_reading_nest_v30: {
+    title: "打开 S×S 小窝共读（v30 兼容入口）",
+    description:
+      "Legacy compatibility entry. Prefer open_reading_nest_v31 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -75,7 +95,7 @@ export const TOOL_CONFIGS = {
   open_reading_nest_v29: {
     title: "打开 S×S 小窝共读（v29 兼容入口）",
     description:
-      "Legacy compatibility entry. Prefer open_reading_nest_v30 whenever it is available.",
+      "Legacy compatibility entry. Prefer open_reading_nest_v31 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -88,7 +108,7 @@ export const TOOL_CONFIGS = {
   open_reading_nest_v28: {
     title: "打开 S×S 小窝共读（v28 兼容入口）",
     description:
-      "Legacy compatibility entry. Prefer open_reading_nest_v30 whenever it is available.",
+      "Legacy compatibility entry. Prefer open_reading_nest_v31 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -101,7 +121,7 @@ export const TOOL_CONFIGS = {
   open_reading_nest_v27: {
     title: "打开 S×S 小窝共读（v27 兼容入口）",
     description:
-      "Legacy compatibility entry. Prefer open_reading_nest_v30 whenever it is available.",
+      "Legacy compatibility entry. Prefer open_reading_nest_v31 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -114,7 +134,7 @@ export const TOOL_CONFIGS = {
   open_reading_nest_v26: {
     title: "打开 S×S 小窝共读（v26 兼容入口）",
     description:
-      "Legacy compatibility entry. Prefer open_reading_nest_v30 whenever it is available.",
+      "Legacy compatibility entry. Prefer open_reading_nest_v31 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -127,7 +147,7 @@ export const TOOL_CONFIGS = {
   open_reading_nest_v25: {
     title: "打开 S×S 小窝共读（v25 兼容入口）",
     description:
-      "Legacy compatibility entry. Prefer open_reading_nest_v30 whenever it is available.",
+      "Legacy compatibility entry. Prefer open_reading_nest_v31 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -140,7 +160,7 @@ export const TOOL_CONFIGS = {
   open_reading_nest_v24: {
     title: "打开 S×S 小窝共读（v24 兼容入口）",
     description:
-      "Legacy compatibility entry. Prefer open_reading_nest_v30 whenever it is available.",
+      "Legacy compatibility entry. Prefer open_reading_nest_v31 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -153,7 +173,7 @@ export const TOOL_CONFIGS = {
   open_reading_nest_v23: {
     title: "打开 S×S 小窝共读（v23 兼容入口）",
     description:
-      "Legacy compatibility entry. Prefer open_reading_nest_v30 whenever it is available.",
+      "Legacy compatibility entry. Prefer open_reading_nest_v31 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -166,7 +186,7 @@ export const TOOL_CONFIGS = {
   open_reading_nest_v22: {
     title: "打开 S×S 小窝共读（v22 兼容入口）",
     description:
-      "Legacy compatibility entry. Prefer open_reading_nest_v30 whenever it is available.",
+      "Legacy compatibility entry. Prefer open_reading_nest_v31 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -179,7 +199,7 @@ export const TOOL_CONFIGS = {
   open_reading_nest: {
     title: "打开 S×S 小窝共读（旧入口）",
     description:
-      "Legacy compatibility entry. Prefer open_reading_nest_v30 whenever it is available.",
+      "Legacy compatibility entry. Prefer open_reading_nest_v31 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -318,6 +338,53 @@ export const TOOL_CONFIGS = {
     inputSchema: listAnnotationsInputSchema,
     annotations: readOnly,
     _meta: { ui: { visibility: ["app"] } }
+  },
+  set_annotation_favorite: {
+    title: "收藏或取消收藏共读批注",
+    description: "Use this when the user favorites an annotation thread or one reply inside it.",
+    inputSchema: setAnnotationFavoriteInputSchema,
+    annotations: { ...mutation, idempotentHint: true },
+    _meta: { ui: { visibility: ["app"] } }
+  },
+  list_annotation_favorites: {
+    title: "读取收藏的共读批注",
+    description: "Use this when the reading widget displays favorited annotation threads and replies.",
+    inputSchema: listAnnotationFavoritesInputSchema,
+    annotations: readOnly,
+    _meta: { ui: { visibility: ["app"] } }
+  },
+  upsert_reading_memory: {
+    title: "保存或修订长期阅读记忆",
+    description:
+      "Use this to persist a chapter summary, annotation summary, shared reading impression, or editable book/chapter context. Preserve the declared source and never label assistant_scan as Daddy-read memory.",
+    inputSchema: upsertReadingMemoryInputSchema,
+    annotations: { ...mutation, idempotentHint: true }
+  },
+  list_reading_memories: {
+    title: "读取长期阅读记忆",
+    description: "Use this to retrieve active or historical reading memories for one book.",
+    inputSchema: listReadingMemoriesInputSchema,
+    annotations: readOnly
+  },
+  upsert_reading_fact: {
+    title: "保存或修订阅读事实卡",
+    description:
+      "Use this to add, revise, or invalidate a sourced fact card while preserving its revision chain.",
+    inputSchema: upsertReadingFactInputSchema,
+    annotations: { ...mutation, idempotentHint: true }
+  },
+  list_reading_facts: {
+    title: "读取阅读事实卡",
+    description: "Use this to retrieve active or historical fact cards for one book.",
+    inputSchema: listReadingFactsInputSchema,
+    annotations: readOnly
+  },
+  get_layered_reading_context: {
+    title: "读取分层共读上下文",
+    description:
+      "Use daily depth for lightweight following and deep depth only for explicit close reading. Returns structured memories and facts, never full source text.",
+    inputSchema: getLayeredReadingContextInputSchema,
+    annotations: readOnly
   },
   rename_reading_session: {
     title: "重命名书籍",
@@ -485,6 +552,12 @@ export function registerReadingTools(
     );
   };
 
+  registerAppTool(
+    server,
+    "open_reading_nest_v31",
+    TOOL_CONFIGS.open_reading_nest_v31,
+    openReadingNest
+  );
   registerAppTool(
     server,
     "open_reading_nest_v30",
@@ -833,6 +906,74 @@ export function registerReadingTools(
     }
   );
 
+  registerAppTool(
+    server,
+    "set_annotation_favorite",
+    TOOL_CONFIGS.set_annotation_favorite,
+    async (input) => {
+      const result = await service.setAnnotationFavorite(input);
+      return toolResult(
+        result,
+        result.favorite ? "这条共读批注已经收藏。" : "这条共读批注已取消收藏。"
+      );
+    }
+  );
+
+  registerAppTool(
+    server,
+    "list_annotation_favorites",
+    TOOL_CONFIGS.list_annotation_favorites,
+    async ({ sessionId }) => {
+      const result = await service.listAnnotationFavorites(sessionId);
+      return toolResult(result, "已读取收藏的共读批注。" );
+    }
+  );
+
+  server.registerTool(
+    "upsert_reading_memory",
+    TOOL_CONFIGS.upsert_reading_memory,
+    async (input) => {
+      const memory = await service.upsertReadingMemory(input);
+      return toolResult({ saved: true, memory }, "长期阅读记忆已经保存。" );
+    }
+  );
+
+  server.registerTool(
+    "list_reading_memories",
+    TOOL_CONFIGS.list_reading_memories,
+    async (input) => {
+      const result = await service.listReadingMemories(input);
+      return toolResult(result, "已读取这本书的长期阅读记忆。" );
+    }
+  );
+
+  server.registerTool(
+    "upsert_reading_fact",
+    TOOL_CONFIGS.upsert_reading_fact,
+    async (input) => {
+      const fact = await service.upsertReadingFact(input);
+      return toolResult({ saved: true, fact }, "阅读事实卡已经保存。" );
+    }
+  );
+
+  server.registerTool(
+    "list_reading_facts",
+    TOOL_CONFIGS.list_reading_facts,
+    async (input) => {
+      const result = await service.listReadingFacts(input);
+      return toolResult(result, "已读取这本书的事实卡。" );
+    }
+  );
+
+  server.registerTool(
+    "get_layered_reading_context",
+    TOOL_CONFIGS.get_layered_reading_context,
+    async (input) => {
+      const context = await service.getLayeredReadingContext(input);
+      return toolResult({ context }, "已按需要加载分层共读上下文。" );
+    }
+  );
+
   server.registerTool(
     "rename_reading_session",
     TOOL_CONFIGS.rename_reading_session,
@@ -887,7 +1028,15 @@ export function registerReadingTools(
     async (input) => {
       const { session } = await service.getSessionBundle(input.sessionId);
       const currentPosition = input.currentPosition ?? input.position!;
-      const context = buildCurrentReadingContext(session, input);
+      const longTermContext = await service.getLayeredReadingContext({
+        sessionId: input.sessionId,
+        depth: input.readingCommentMode === "deep_analysis" ? "deep" : "daily",
+        positionIndex: currentPosition.index
+      });
+      const context = {
+        ...buildCurrentReadingContext(session, input),
+        longTermContext
+      };
       return toolResult(
         { context },
         `用户正在共读《${session.title}》，位置是${currentPosition.label}。请根据本次主动同步的内容回应。`

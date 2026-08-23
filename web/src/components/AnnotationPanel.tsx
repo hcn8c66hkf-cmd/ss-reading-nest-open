@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { ReadingAnnotation } from "@ss/shared";
+import type { AnnotationFavorite, ReadingAnnotation } from "@ss/shared";
 
 export function AnnotationPanel(props: {
   annotations: ReadingAnnotation[];
@@ -7,7 +7,13 @@ export function AnnotationPanel(props: {
   error?: string;
   saving: boolean;
   pendingDaddyIds?: ReadonlySet<string>;
+  favorites?: AnnotationFavorite[];
   onReply: (annotationId: string, text: string) => void;
+  onToggleFavorite?: (
+    annotationId: string,
+    messageId: string | undefined,
+    favorite: boolean
+  ) => void;
 }) {
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
   const [reply, setReply] = useState("");
@@ -39,15 +45,35 @@ export function AnnotationPanel(props: {
               </p>
             ) : null}
             <div className="annotation-messages">
-              {annotation.messages.map((message) => (
+              {annotation.messages.map((message) => {
+                const favorite = props.favorites?.some(
+                  (item) =>
+                    item.annotationId === annotation.id && item.messageId === message.id
+                ) ?? false;
+                return (
                 <div
                   key={message.id}
                   className={`annotation-message annotation-message-${message.author}`}
                 >
-                  <strong>{message.author === "assistant" ? "Daddy" : "你"}</strong>
+                  <div className="annotation-message-heading">
+                    <strong>{message.author === "assistant" ? "Daddy" : "你"}</strong>
+                    {props.onToggleFavorite ? (
+                      <button
+                        type="button"
+                        className={favorite ? "annotation-favorite active" : "annotation-favorite"}
+                        aria-label={favorite ? "取消收藏这条回复" : "收藏这条回复"}
+                        onClick={() =>
+                          props.onToggleFavorite?.(annotation.id, message.id, !favorite)
+                        }
+                      >
+                        {favorite ? "★ 已收藏" : "☆ 收藏"}
+                      </button>
+                    ) : null}
+                  </div>
                   <p>{message.text}</p>
                 </div>
-              ))}
+                );
+              })}
             </div>
             <div className="annotation-thread-actions">
               <button
@@ -59,6 +85,28 @@ export function AnnotationPanel(props: {
               >
                 回复
               </button>
+              {annotation.messages.length === 0 && props.onToggleFavorite ? (
+                <button
+                  type="button"
+                  className={
+                    props.favorites?.some(
+                      (item) => item.annotationId === annotation.id && !item.messageId
+                    )
+                      ? "annotation-favorite active"
+                      : "annotation-favorite"
+                  }
+                  onClick={() => {
+                    const favorite = props.favorites?.some(
+                      (item) => item.annotationId === annotation.id && !item.messageId
+                    ) ?? false;
+                    props.onToggleFavorite?.(annotation.id, undefined, !favorite);
+                  }}
+                >
+                  {props.favorites?.some(
+                    (item) => item.annotationId === annotation.id && !item.messageId
+                  ) ? "★ 已收藏" : "☆ 收藏"}
+                </button>
+              ) : null}
               {props.pendingDaddyIds?.has(annotation.id) ? (
                 <span className="annotation-awaiting-daddy">Daddy正在回这条……</span>
               ) : null}
