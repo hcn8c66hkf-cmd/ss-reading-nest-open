@@ -7,12 +7,12 @@ import {
 } from "./register-tools.js";
 
 describe("tool descriptors", () => {
-  it("binds the current UI resource to the v28 and compatibility render tools", () => {
-    expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v28.html");
-    expect(TOOL_CONFIGS.open_reading_nest_v28._meta?.ui).toEqual({
+  it("binds the current UI resource to the v29 and compatibility render tools", () => {
+    expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v29.html");
+    expect(TOOL_CONFIGS.open_reading_nest_v29._meta?.ui).toEqual({
       resourceUri: READING_NEST_URI
     });
-    expect(TOOL_CONFIGS.open_reading_nest_v28._meta?.["openai/outputTemplate"]).toBe(
+    expect(TOOL_CONFIGS.open_reading_nest_v29._meta?.["openai/outputTemplate"]).toBe(
       READING_NEST_URI
     );
     expect(TOOL_CONFIGS.open_reading_nest._meta?.["openai/outputTemplate"]).toBe(
@@ -20,6 +20,7 @@ describe("tool descriptors", () => {
     );
     for (const [name, config] of Object.entries(TOOL_CONFIGS)) {
       if (
+        name !== "open_reading_nest_v29" &&
         name !== "open_reading_nest_v28" &&
         name !== "open_reading_nest_v27" &&
         name !== "open_reading_nest_v26" &&
@@ -99,7 +100,7 @@ describe("tool descriptors", () => {
     registerReadingTools(server as never, service as never, undefined, {
       sourceEndpointBase: "https://worker.example.test/source/secret"
     });
-    const result = (await handlers.get("open_reading_nest_v28")?.()) as {
+    const result = (await handlers.get("open_reading_nest_v29")?.()) as {
       structuredContent?: Record<string, unknown>;
     };
 
@@ -110,7 +111,7 @@ describe("tool descriptors", () => {
     expect(handlers.has("open_reading_nest")).toBe(true);
     expect(handlers.has("open_reading_nest_v23")).toBe(true);
     expect(handlers.has("open_reading_nest_v22")).toBe(true);
-    expect(configs.get("open_reading_nest_v28")._meta).toMatchObject({
+    expect(configs.get("open_reading_nest_v29")._meta).toMatchObject({
       ui: { resourceUri: READING_NEST_URI },
       "ui/resourceUri": READING_NEST_URI,
       "openai/outputTemplate": READING_NEST_URI

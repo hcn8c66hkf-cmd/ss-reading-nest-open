@@ -1619,43 +1619,13 @@ export function App() {
       ) {
         return true;
       }
-      const sourceContext = getSourceContext(session.sourceManifest);
       const targetPosition = makePosition("novel", index, chunks.length);
       const start = index;
       const text = chunks
         .slice(start - 1, index)
         .map((chunk, offset) => `【第 ${start + offset} 段】\n${chunk}`)
         .join("\n\n");
-      const batch = {
-        id: operationId,
-        ordinal: 1,
-        totalBatches: 1,
-        rangeStart: start,
-        rangeEnd: index,
-        characterCount: text.length,
-        text,
-        isFinal: true,
-        oversizedParagraph: false,
-        status: "pending" as const
-      };
       try {
-        await callTool("send_current_context", {
-          sessionId: session.id,
-          previousSyncedPosition: session.assistantSyncedPosition,
-          currentPosition: targetPosition,
-          contextRange: { start, end: index },
-          includedText: text,
-          ...(sourceContext ? { sourceContext } : {}),
-          mode: "live_reading",
-          batch: {
-            id: batch.id,
-            ordinal: 1,
-            total: 1,
-            rangeStart: start,
-            rangeEnd: index,
-            hasMore: false
-          }
-        });
         const sampled = await sampleChatGptText(
           buildLiveReadingDraftPrompt({
             title: session.title,
@@ -1676,7 +1646,7 @@ export function App() {
             length: "short",
             text: trimDaddyText(sampled, 200),
             source: "live_reading",
-            operationId: batch.id
+            operationId
           });
           const comment = result.structuredContent?.comment as CompanionComment | undefined;
           if (!comment) throw new Error("Missing persisted live comment");
@@ -1708,7 +1678,7 @@ export function App() {
             title: session.title,
             position: targetPosition,
             text,
-            operationId: batch.id,
+            operationId,
             autoSaveCompanionComments:
               session.sessionPreferences.autoSaveCompanionComments,
             requestedMode: mode,
