@@ -17,6 +17,8 @@ import {
   listReadingMemoriesInputSchema,
   upsertReadingFactInputSchema,
   listReadingFactsInputSchema,
+  upsertSkillCandidateInputSchema,
+  listSkillCandidatesInputSchema,
   getLayeredReadingContextInputSchema,
   publishCompanionCommentInputSchema,
   renameReadingSessionInputSchema,
@@ -46,7 +48,7 @@ import { ReadingService } from "../services/reading-service.js";
 import type { CloudSourceService } from "../services/cloud-source-service.js";
 import { toolResult } from "./tool-result.js";
 
-export const READING_NEST_URI = "ui://ss-reading-nest/app-v32.html";
+export const READING_NEST_URI = "ui://ss-reading-nest/app-v33.html";
 
 const ANNOTATION_QUOTE_OPERATION_PREFIX = "annotation-v24:";
 const ANNOTATION_QUOTE_NOTE_PREFIX = "__ss_annotation_v24__:";
@@ -56,9 +58,11 @@ const DADDY_ANNOTATION_REPLY_OPERATION_PREFIX = "annotation-daddy-v25:";
 const ANNOTATION_FAVORITE_COMPAT_OPERATION_PREFIX = "annotation-favorite-v32:";
 const READING_MEMORY_COMPAT_OPERATION_PREFIX = "reading-memory-v32:";
 const READING_FACT_COMPAT_OPERATION_PREFIX = "reading-fact-v32:";
+const SKILL_CANDIDATE_COMPAT_OPERATION_PREFIX = "skill-candidate-v33:";
 const ANNOTATION_FAVORITE_COMPAT_CONTENT_PREFIX = "__ss_annotation_favorite_v32__:";
 const READING_MEMORY_COMPAT_CONTENT_PREFIX = "__ss_reading_memory_v32__:";
 const READING_FACT_COMPAT_CONTENT_PREFIX = "__ss_reading_fact_v32__:";
+const SKILL_CANDIDATE_COMPAT_CONTENT_PREFIX = "__ss_skill_candidate_v33__:";
 
 const readOnly = {
   readOnlyHint: true,
@@ -72,10 +76,23 @@ const mutation = {
 };
 
 export const TOOL_CONFIGS = {
-  open_reading_nest_v32: {
+  open_reading_nest_v33: {
     title: "打开 S×S 小窝共读",
     description:
-      "Use this primary v32 tool when the user wants to open the reading nest or continue recent reading.",
+      "Use this primary v33 tool when the user wants to open the reading nest or continue recent reading.",
+    inputSchema: openReadingNestInputSchema,
+    annotations: readOnly,
+    _meta: {
+      ui: { resourceUri: READING_NEST_URI },
+      "openai/outputTemplate": READING_NEST_URI,
+      "openai/toolInvocation/invoking": "正在点亮小窝…",
+      "openai/toolInvocation/invoked": "小窝已经准备好"
+    }
+  },
+  open_reading_nest_v32: {
+    title: "打开 S×S 小窝共读（v32 兼容入口）",
+    description:
+      "Legacy compatibility entry. Prefer open_reading_nest_v33 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -398,6 +415,20 @@ export const TOOL_CONFIGS = {
     inputSchema: listReadingFactsInputSchema,
     annotations: readOnly
   },
+  upsert_skill_candidate: {
+    title: "保存读后 Skill 候选",
+    description:
+      "Use this to persist a reviewed P3 forge verdict and optional SKILL.md candidate. Never include full source text.",
+    inputSchema: upsertSkillCandidateInputSchema,
+    annotations: { ...mutation, idempotentHint: true }
+  },
+  list_skill_candidates: {
+    title: "读取读后 Skill 候选",
+    description:
+      "Use this to retrieve P3 forge verdicts and reviewable Skill candidates for one reading session.",
+    inputSchema: listSkillCandidatesInputSchema,
+    annotations: readOnly
+  },
   get_layered_reading_context: {
     title: "读取分层共读上下文",
     description:
@@ -587,6 +618,13 @@ export function registerReadingTools(
       "已打开 S×S 小窝共读。"
     );
   };
+
+  registerAppTool(
+    server,
+    "open_reading_nest_v33",
+    TOOL_CONFIGS.open_reading_nest_v33,
+    openReadingNest
+  );
 
   registerAppTool(
     server,
@@ -838,7 +876,15 @@ export function registerReadingTools(
     "list_companion_comments",
     TOOL_CONFIGS.list_companion_comments,
     async ({ knownVersion, ...input }) => {
-      const [result, annotationResult, favoriteResult, memoryResult, factResult, layeredContext] =
+      const [
+        result,
+        annotationResult,
+        favoriteResult,
+        memoryResult,
+        factResult,
+        skillResult,
+        layeredContext
+      ] =
         await Promise.all([
           service.listCompanionComments(input),
           input.positionIndex
@@ -857,6 +903,10 @@ export function registerReadingTools(
             sessionId: input.sessionId,
             includeInactive: false,
             limit: 100
+          }),
+          service.listSkillCandidates({
+            sessionId: input.sessionId,
+            limit: 20
           }),
           input.positionIndex
             ? service.getLayeredReadingContext({
@@ -891,6 +941,11 @@ export function registerReadingTools(
           id: item.id,
           updatedAt: item.updatedAt,
           revision: item.revision
+        })),
+        ...skillResult.skillCandidates.map((item) => ({
+          id: item.id,
+          updatedAt: item.updatedAt,
+          fingerprint: item.analysisFingerprint
         }))
       ]);
       const unchanged = knownVersion === version;
@@ -906,6 +961,7 @@ export function registerReadingTools(
                 ...favoriteResult,
                 ...memoryResult,
                 ...factResult,
+                ...skillResult,
                 ...(layeredContext ? { layeredContext } : {})
               })
         },
@@ -1051,6 +1107,24 @@ export function registerReadingTools(
   );
 
   server.registerTool(
+    "upsert_skill_candidate",
+    TOOL_CONFIGS.upsert_skill_candidate,
+    async (input) => {
+      const skillCandidate = await service.upsertSkillCandidate(input);
+      return toolResult({ saved: true, skillCandidate }, "读后炼制候选已经保存。");
+    }
+  );
+
+  server.registerTool(
+    "list_skill_candidates",
+    TOOL_CONFIGS.list_skill_candidates,
+    async (input) => {
+      const result = await service.listSkillCandidates(input);
+      return toolResult(result, "已读取这本书的读后炼制候选。" );
+    }
+  );
+
+  server.registerTool(
     "get_layered_reading_context",
     TOOL_CONFIGS.get_layered_reading_context,
     async (input) => {
@@ -1192,6 +1266,24 @@ export function registerReadingTools(
       });
       const fact = await service.upsertReadingFact(parsed);
       return toolResult({ saved: true, fact }, "阅读事实卡已经保存。" );
+    }
+    const skillCandidateCompat = decodeCompatJson(
+      input.content,
+      input.operationId,
+      SKILL_CANDIDATE_COMPAT_OPERATION_PREFIX,
+      SKILL_CANDIDATE_COMPAT_CONTENT_PREFIX
+    );
+    if (skillCandidateCompat) {
+      const parsed = upsertSkillCandidateInputSchema.parse({
+        ...skillCandidateCompat,
+        sessionId: input.sessionId,
+        operationId: input.operationId
+      });
+      const skillCandidate = await service.upsertSkillCandidate(parsed);
+      return toolResult(
+        { saved: true, skillCandidate },
+        "读后炼制候选已经保存。"
+      );
     }
     const quote = await service.saveQuote(input);
     return toolResult({ saved: true, quote }, "摘录已经放进小窝。");

@@ -33,8 +33,8 @@ const disabledCloudSync = {
   provider: "r2"
 };
 
-describe("migrateReadingDatabase v6", () => {
-  it("migrates v1 directly to v6 and preserves all records", () => {
+describe("migrateReadingDatabase v7", () => {
+  it("migrates v1 directly to v7 and preserves all records", () => {
     const migrated = migrateReadingDatabase({
       schemaVersion: 1,
       sessions: [
@@ -54,11 +54,12 @@ describe("migrateReadingDatabase v6", () => {
       bookmarks: [bookmark]
     });
 
-    expect(migrated.schemaVersion).toBe(6);
+    expect(migrated.schemaVersion).toBe(7);
     expect(migrated.annotations).toEqual([]);
     expect(migrated.annotationFavorites).toEqual([]);
     expect(migrated.readingMemories).toEqual([]);
     expect(migrated.readingFactCards).toEqual([]);
+    expect(migrated.skillCandidates).toEqual([]);
     expect(migrated.sessions[0]).toMatchObject({
       userCurrentPosition: { index: 12 },
       assistantSyncedPosition: null,
@@ -72,7 +73,7 @@ describe("migrateReadingDatabase v6", () => {
     expect(migrated.bookmarks).toEqual([bookmark]);
   });
 
-  it("migrates v2 to v6 without losing dual positions or status", () => {
+  it("migrates v2 to v7 without losing dual positions or status", () => {
     const migrated = migrateReadingDatabase({
       schemaVersion: 2,
       sessions: [
@@ -95,7 +96,7 @@ describe("migrateReadingDatabase v6", () => {
       bookmarks: [bookmark]
     });
 
-    expect(migrated.schemaVersion).toBe(6);
+    expect(migrated.schemaVersion).toBe(7);
     expect(migrated.sessions[0]).toMatchObject({
       status: "completed",
       userCurrentPosition: { index: 20 },
@@ -187,7 +188,7 @@ describe("migrateReadingDatabase v6", () => {
       companionComments: [companionComment]
     });
 
-    expect(migrated.schemaVersion).toBe(6);
+    expect(migrated.schemaVersion).toBe(7);
     expect(migrated.sessions[0].sessionPreferences).toEqual({
       readingCommentMode: "cp_talk",
       commentLength: "normal",
@@ -276,7 +277,7 @@ describe("migrateReadingDatabase v6", () => {
       companionComments: []
     });
 
-    expect(migrated.schemaVersion).toBe(6);
+    expect(migrated.schemaVersion).toBe(7);
     expect(migrated.sessions[0].sourceManifest?.cloudSync).toEqual(disabledCloudSync);
     expect(migrated.quotes).toEqual([quote]);
     expect(migrated.reactions).toEqual([reaction]);
@@ -330,7 +331,7 @@ describe("migrateReadingDatabase v6", () => {
     });
   });
 
-  it("migrates v5 annotations into v6 and initializes durable memory collections", () => {
+  it("migrates v5 annotations into v7 and initializes durable memory collections", () => {
     const annotation = {
       id: "annotation-1",
       sessionId: "s1",
@@ -353,11 +354,12 @@ describe("migrateReadingDatabase v6", () => {
     });
 
     expect(migrated).toMatchObject({
-      schemaVersion: 6,
+      schemaVersion: 7,
       annotations: [annotation],
       annotationFavorites: [],
       readingMemories: [],
-      readingFactCards: []
+      readingFactCards: [],
+      skillCandidates: []
     });
   });
 

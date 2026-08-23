@@ -12,6 +12,7 @@ import type {
   ReadingPosition,
   ReadingSession,
   ReadingType,
+  SkillCandidate,
   SessionBundle,
   SessionPreferences,
   SourceAvailability,
@@ -29,6 +30,7 @@ import {
   requestReaderInline,
   requestReaderPip,
   sampleChatGptText,
+  setReadingFrameHeight,
   saveReaderWidgetState,
   updateModelContext
 } from "./bridge/host.js";
@@ -39,6 +41,7 @@ import { BookManagementSheet } from "./components/BookManagementSheet.js";
 import { DiaryPreview } from "./components/DiaryPreview.js";
 import { MoreActions } from "./components/MoreActions.js";
 import { ReadingMemorySheet } from "./components/ReadingMemorySheet.js";
+import { SkillForgeSheet } from "./components/SkillForgeSheet.js";
 import { SyncChoiceSheet } from "./components/SyncChoiceSheet.js";
 import { SyncProgressSheet } from "./components/SyncProgressSheet.js";
 import type { PendingCompanionCommentDraft } from "./components/CompanionDock.js";
@@ -70,6 +73,16 @@ import {
 } from "./features/reading-comments/prompt-policy.js";
 import { buildDaddyAnnotationReplyFallbackPrompt } from "./features/annotations/reply-fallback.js";
 import {
+  buildReadingMemoryCapturePrompt,
+  parseReadingMemoryCaptureDraft
+} from "./features/reading-memory/capture-draft.js";
+import {
+  buildChapterSnapshot,
+  buildSkillForgePrompt,
+  parseSkillForgeDraft,
+  toPersistedSkillCandidate
+} from "./features/skill-forge/skill-forge.js";
+import {
   cancelSyncJob,
   getActiveBatch,
   markBatchConfirmed,
@@ -85,7 +98,7 @@ import { NovelReader } from "./pages/NovelReader.js";
 import { IndexedDbReadingCache } from "./storage/indexeddb-cache.js";
 
 type Screen = "home" | "setup" | "novel" | "manga";
-type Overlay = "cache" | "more" | "diary" | "management" | "memory" | null;
+type Overlay = "cache" | "more" | "diary" | "management" | "memory" | "skill-forge" | null;
 type ThemeMode = "light" | "dark";
 type ImportProgress = {
   stage:
@@ -128,6 +141,7 @@ const ANNOTATION_REPLY_CONTENT_PREFIX = "__ss_annotation_reply_v24__:";
 const ANNOTATION_FAVORITE_COMPAT_CONTENT_PREFIX = "__ss_annotation_favorite_v32__:";
 const READING_MEMORY_COMPAT_CONTENT_PREFIX = "__ss_reading_memory_v32__:";
 const READING_FACT_COMPAT_CONTENT_PREFIX = "__ss_reading_fact_v32__:";
+const SKILL_CANDIDATE_COMPAT_CONTENT_PREFIX = "__ss_skill_candidate_v33__:";
 const DADDY_SAMPLING_SYSTEM_PROMPT = [
   "你是正在和用户一起读书的Daddy，也是她熟悉的亲密共读搭子。",
   "说话自然、敏锐、有一点会吐槽，不端着，不写教科书式总结。",
@@ -137,7 +151,7 @@ const DADDY_SAMPLING_SYSTEM_PROMPT = [
 function callCompatSaveQuote(input: {
   sessionId: string;
   position: ReadingPosition;
-  kind: "favorite" | "memory" | "fact";
+  kind: "favorite" | "memory" | "fact" | "skill-candidate";
   payload: Record<string, unknown>;
   operationId: string;
 }) {
@@ -145,7 +159,9 @@ function callCompatSaveQuote(input: {
     ? ANNOTATION_FAVORITE_COMPAT_CONTENT_PREFIX
     : input.kind === "memory"
       ? READING_MEMORY_COMPAT_CONTENT_PREFIX
-      : READING_FACT_COMPAT_CONTENT_PREFIX;
+      : input.kind === "fact"
+        ? READING_FACT_COMPAT_CONTENT_PREFIX
+        : SKILL_CANDIDATE_COMPAT_CONTENT_PREFIX;
   return callTool("save_quote", {
     sessionId: input.sessionId,
     position: input.position,
@@ -204,6 +220,8 @@ export function App() {
   const [readingMemories, setReadingMemories] = useState<ReadingMemory[]>([]);
   const [readingFacts, setReadingFacts] = useState<ReadingFactCard[]>([]);
   const [memoryLoading, setMemoryLoading] = useState(false);
+  const [skillCandidates, setSkillCandidates] = useState<SkillCandidate[]>([]);
+  const [skillForgeLoading, setSkillForgeLoading] = useState(false);
   const [pendingDaddyAnnotationIds, setPendingDaddyAnnotationIds] = useState<Set<string>>(
     () => new Set()
   );
@@ -535,6 +553,12 @@ export function App() {
     const timer = window.setTimeout(() => setToast(""), 2600);
     return () => window.clearTimeout(timer);
   }, [toast]);
+
+  useEffect(() => {
+    document.documentElement.dataset.widgetCollapsed = String(widgetCollapsed);
+    if (hostLayout.displayMode !== "inline") return;
+    void setReadingFrameHeight(widgetCollapsed ? 76 : hostLayout.inlineHeight);
+  }, [hostLayout.displayMode, hostLayout.inlineHeight, widgetCollapsed]);
 
   useEffect(() => {
     return () => mangaPages.forEach((page) => URL.revokeObjectURL(page.url));
@@ -2400,8 +2424,157 @@ export function App() {
     await loadReadingMemory(sessionBundle.session.id);
   }
 
-  async function requestReadingMemoryCapture() {
+  async function openSkillForge() {
     if (!sessionBundle) return;
+    setOverlay("skill-forge");
+    setSkillForgeLoading(true);
+    try {
+      const result = await callTool("list_companion_comments", {
+        sessionId: sessionBundle.session.id,
+        scope: "recent",
+        limit: 1
+      });
+      setSkillCandidates(
+        Array.isArray(result.structuredContent?.skillCandidates)
+          ? (result.structuredContent.skillCandidates as SkillCandidate[])
+          : []
+      );
+      setReadingMemories(
+        Array.isArray(result.structuredContent?.memories)
+          ? (result.structuredContent.memories as ReadingMemory[])
+          : []
+      );
+      setReadingFacts(
+        Array.isArray(result.structuredContent?.facts)
+          ? (result.structuredContent.facts as ReadingFactCard[])
+          : []
+      );
+    } catch {
+      setToast("读后炼制记录暂时没有读取成功。");
+    } finally {
+      setSkillForgeLoading(false);
+    }
+  }
+
+  async function requestSkillForge() {
+    if (!sessionBundle || skillForgeLoading) return;
+    setSkillForgeLoading(true);
+    const session = sessionBundle.session;
+    const end = session.userCurrentPosition.index;
+    const total = session.userCurrentPosition.total ?? (
+      session.type === "novel" ? chunks.length : mangaPages.length
+    );
+    const start = 1;
+    try {
+      const [annotationResult, historyResult] = await Promise.all([
+        callTool("list_annotations_v23", { sessionId: session.id }).catch(
+          () => ({ structuredContent: {} })
+        ),
+        callTool("list_companion_comments", {
+          sessionId: session.id,
+          scope: "history",
+          limit: 100
+        }).catch(() => ({ structuredContent: {} }))
+      ]);
+      const annotationContent = annotationResult.structuredContent as
+        | Record<string, unknown>
+        | undefined;
+      const historyContent = historyResult.structuredContent as
+        | Record<string, unknown>
+        | undefined;
+      const allAnnotations = Array.isArray(annotationContent?.annotations)
+        ? (annotationContent.annotations as ReadingAnnotation[])
+        : annotations;
+      const allComments = Array.isArray(historyContent?.comments)
+        ? (historyContent.comments as CompanionComment[])
+        : companionComments;
+      const body = session.type === "novel"
+        ? chunks
+            .slice(0, end)
+            .map((chunk, index) => `【第 ${index + 1} 段】\n${chunk}`)
+            .join("\n\n")
+        : `已读至${session.userCurrentPosition.label}。当前页面描述：${pageDescription || "未填写"}`;
+      const snapshot = buildChapterSnapshot({
+        sessionId: session.id,
+        bookTitle: session.title,
+        readingType: session.type,
+        rangeStart: start,
+        rangeEnd: end,
+        ...(total > 0 ? { totalUnits: total } : {}),
+        body,
+        annotations: allAnnotations,
+        comments: allComments,
+        quotes: sessionBundle.quotes,
+        reactions: sessionBundle.reactions,
+        memories: readingMemories,
+        facts: readingFacts
+      });
+      const cached = skillCandidates.find(
+        (candidate) => candidate.analysisFingerprint === snapshot.fingerprint
+      );
+      if (cached) {
+        setSkillCandidates((current) => [
+          cached,
+          ...current.filter((item) => item.id !== cached.id)
+        ]);
+        setToast("这份快照没有变化，直接用了上次的炼制结果，没有重复耗额度。");
+        return;
+      }
+      const sampled = await sampleChatGptText(buildSkillForgePrompt(snapshot), {
+        systemPrompt: [
+          "你是严格的 Skill 架构审阅者。",
+          "判断标准是可复用、可执行、有明确触发条件；绝不为了迎合而强行炼制。",
+          "只输出能直接解析的 JSON，不调用工具。"
+        ].join("\n"),
+        maxTokens: 1_800,
+        temperature: 0.15
+      });
+      const draft = sampled ? parseSkillForgeDraft(sampled) : null;
+      if (!draft) {
+        setToast("这次没有拿到合格的炼制判定，什么都没写入。再点一次就好。");
+        return;
+      }
+      const candidatePayload = toPersistedSkillCandidate(snapshot, draft);
+      const result = await callCompatSaveQuote({
+        sessionId: session.id,
+        position: session.userCurrentPosition,
+        kind: "skill-candidate",
+        payload: candidatePayload,
+        operationId: `skill-candidate-v33:${snapshot.fingerprint}`
+      });
+      const saved = result.structuredContent?.skillCandidate as SkillCandidate | undefined;
+      if (!saved) throw new Error("Missing persisted skill candidate");
+      setSkillCandidates((current) => [
+        saved,
+        ...current.filter((item) => item.id !== saved.id)
+      ]);
+      setToast(
+        saved.verdict === "forge_skill"
+          ? "这段确实有可复用的方法，Skill 候选已经做好，等小安审阅。"
+          : saved.verdict === "knowledge_only"
+            ? "这段更适合留作知识卡，没有硬炼成 Skill。"
+            : "现在材料还不够，先继续读，Daddy没有硬编。"
+      );
+    } catch {
+      setToast("读后炼制暂时没有保存成功，没有留下半成品。");
+    } finally {
+      setSkillForgeLoading(false);
+    }
+  }
+
+  async function copySkillCandidate(candidate: SkillCandidate) {
+    if (!candidate.skillMarkdown) return;
+    try {
+      await navigator.clipboard.writeText(candidate.skillMarkdown);
+      setToast("SKILL.md 候选已经复制；安装前还会再让小安确认。");
+    } catch {
+      setToast("浏览器没给剪贴板权限，可以展开预览后手动复制。");
+    }
+  }
+
+  async function requestReadingMemoryCapture() {
+    if (!sessionBundle || memoryLoading) return;
+    setMemoryLoading(true);
     const session = sessionBundle.session;
     const end = session.userCurrentPosition.index;
     const previousSummary = readingMemories
@@ -2445,54 +2618,111 @@ export function App() {
     const chapterLabel = session.type === "novel"
       ? `第 ${start}–${end} 段`
       : session.userCurrentPosition.label;
-    const memoryOperationBase = `reading-memory-v32:${session.id}-${start}-${end}-${Date.now()}`;
-    const factOperationBase = `reading-fact-v32:${session.id}-${start}-${end}-${Date.now()}`;
-    const captureContext = {
-      kind: "reading_nest_memory_capture_v2",
-      sessionId: session.id,
-      title: session.title,
-      chapterLabel,
-      rangeStart: start,
-      rangeEnd: end,
-      source: "daddy_read",
-      text: rangeText,
-      annotations: rangeAnnotations,
-      companionComments: rangeComments,
-      activeMemories: readingMemories,
-      activeFacts: readingFacts,
-      instructions: [
-        "先基于本次亲读内容整理长期记忆，不得补写未提供的剧情。",
-        "当前连接不依赖新工具名。每条长期记忆都调用现有 save_quote 兼容写回，不要寻找 upsert_reading_memory。",
-        `save_quote 的 sessionId 固定为 ${session.id}，position 固定为 ${JSON.stringify(session.userCurrentPosition)}。`,
-        `memory 的 content 必须是 ${READING_MEMORY_COMPAT_CONTENT_PREFIX} 紧接一个 JSON 对象；对象字段为 kind、scope、chapterLabel、rangeStart、rangeEnd、content、source，修订时再加 supersedesId。`,
-        "依次保存 chapter_summary、annotation_summary、reading_impression、chapter_context；必要时修订 book_context。scope 除 book_context 外使用 chapter，source 使用 daddy_read。",
-        "每条 memory 使用 operationIds 中对应的独立 operationId。",
-        "若 activeMemories 中已有同类需要替换的记录，必须传 supersedesId，保留修订链。",
-        `事实卡也调用 save_quote；content 必须是 ${READING_FACT_COMPAT_CONTENT_PREFIX} 紧接 JSON 对象，字段为 subject、fact、status、source，必要时加 position、supersedesId。operationId 使用 factPrefix 开头的唯一值。`,
-        "只保存稳定且未来确实有用的人物、关系、设定或未决伏笔；不要把即时情绪伪装成事实。事实有变化时传 supersedesId；来源始终明确。",
-        "工具全部成功后，只用一小段自然的话告诉小安这次记住了什么，不要回显原文或工具参数。"
-      ],
-      operationIds: {
-        chapter_summary: `${memoryOperationBase}-chapter-summary`,
-        annotation_summary: `${memoryOperationBase}-annotation-summary`,
-        reading_impression: `${memoryOperationBase}-reading-impression`,
-        chapter_context: `${memoryOperationBase}-chapter-context`,
-        book_context: `${memoryOperationBase}-book-context`,
-        factPrefix: `${factOperationBase}-`
+    try {
+      const sampled = await sampleChatGptText(
+        buildReadingMemoryCapturePrompt({
+          title: session.title,
+          chapterLabel,
+          rangeStart: start,
+          rangeEnd: end,
+          text: rangeText,
+          annotations: rangeAnnotations,
+          companionComments: rangeComments,
+          activeMemories: readingMemories,
+          activeFacts: readingFacts
+        }),
+        {
+          systemPrompt: [
+            DADDY_SAMPLING_SYSTEM_PROMPT,
+            "你正在整理长期阅读记忆。输出必须是能直接解析的 JSON，不能调用工具，也不能要求用户确认。"
+          ].join("\n"),
+          maxTokens: 1_400,
+          temperature: 0.25
+        }
+      );
+      const draft = sampled ? parseReadingMemoryCaptureDraft(sampled) : null;
+      if (!draft) {
+        setToast("这次卡内整理没有拿到有效内容，没有写入任何东西。再点一次就好。");
+        return;
       }
-    };
-    const hidden = await updateModelContext(captureContext);
-    const wakePrompt = `请整理《${session.title}》${chapterLabel}的长期阅读记忆，并严格按上下文说明通过 save_quote 兼容写回共读小窝。`;
-    const sent = await askChatGpt(
-      hidden ? wakePrompt : `${wakePrompt}\n\n${JSON.stringify(captureContext)}`,
-      { scrollToBottom: false }
-    );
-    if (!sent) {
-      setToast("这次没能叫到Daddy整理记忆，请再试一次。");
-      return;
+
+      const savedMemories: ReadingMemory[] = [];
+      const savedFacts: ReadingFactCard[] = [];
+      const operationBase = `${session.id}-${start}-${end}-${crypto.randomUUID()}`;
+      for (const [index, item] of draft.memories.entries()) {
+        const previous = readingMemories.find(
+          (memory) =>
+            memory.status === "active" &&
+            memory.kind === item.kind &&
+            memory.scope === item.scope &&
+            (item.scope === "book" || memory.chapterLabel === chapterLabel)
+        );
+        const result = await callCompatSaveQuote({
+          sessionId: session.id,
+          position: session.userCurrentPosition,
+          kind: "memory",
+          payload: {
+            kind: item.kind,
+            scope: item.scope,
+            ...(item.scope === "chapter" ? { chapterLabel, rangeStart: start, rangeEnd: end } : {}),
+            content: item.content,
+            source: "daddy_read",
+            ...(previous ? { supersedesId: previous.id } : {})
+          },
+          operationId: `reading-memory-v32:${operationBase}:${item.kind}:${index}`
+        });
+        const saved = result.structuredContent?.memory as ReadingMemory | undefined;
+        if (!saved) throw new Error("Missing persisted reading memory");
+        savedMemories.push(saved);
+      }
+      for (const [index, item] of draft.facts.entries()) {
+        const previous = readingFacts.find(
+          (fact) => fact.status === "active" && fact.subject === item.subject
+        );
+        const result = await callCompatSaveQuote({
+          sessionId: session.id,
+          position: session.userCurrentPosition,
+          kind: "fact",
+          payload: {
+            subject: item.subject,
+            fact: item.fact,
+            status: "active",
+            source: "daddy_read",
+            position: session.userCurrentPosition,
+            ...(previous ? { supersedesId: previous.id } : {})
+          },
+          operationId: `reading-fact-v32:${operationBase}:${index}`
+        });
+        const saved = result.structuredContent?.fact as ReadingFactCard | undefined;
+        if (!saved) throw new Error("Missing persisted reading fact");
+        savedFacts.push(saved);
+      }
+
+      setReadingMemories((current) => [
+        ...savedMemories,
+        ...current.filter(
+          (item) =>
+            !savedMemories.some(
+              (saved) => item.id === saved.id || item.id === saved.supersedesId
+            )
+        )
+      ]);
+      setReadingFacts((current) => [
+        ...savedFacts,
+        ...current.filter(
+          (item) =>
+            !savedFacts.some(
+              (saved) => item.id === saved.id || item.id === saved.supersedesId
+            )
+        )
+      ]);
+      setToast(draft.message ?? "这一段的长期记忆已经直接收进小窝啦。");
+    } catch (error) {
+      console.warn("Failed to capture reading memory in-card", error);
+      setToast("记忆只在原卡片里保存，但这次写入失败了；没有跳去聊天，也没有新开卡片。");
+    } finally {
+      setMemoryLoading(false);
     }
-    setOverlay(null);
-    setToast("已经把这一段交给Daddy整理；写回后再打开就能看见。");
   }
 
   async function editReadingMemory(memory: ReadingMemory, content: string) {
@@ -2846,6 +3076,7 @@ export function App() {
           onBookmark={saveBookmark}
           onDiary={openDiary}
           onMemory={() => void openReadingMemory()}
+          onSkillForge={() => void openSkillForge()}
           onComplete={completeWork}
           onClose={() => setOverlay(null)}
         />
@@ -2860,6 +3091,15 @@ export function App() {
           onCapture={() => void requestReadingMemoryCapture()}
           onEditMemory={(memory, content) => void editReadingMemory(memory, content)}
           onEditFact={(fact, content) => void editReadingFact(fact, content)}
+          onClose={() => setOverlay(null)}
+        />
+      ) : null}
+      {overlay === "skill-forge" && sessionBundle ? (
+        <SkillForgeSheet
+          candidates={skillCandidates}
+          loading={skillForgeLoading}
+          onForge={() => void requestSkillForge()}
+          onCopy={(candidate) => void copySkillCandidate(candidate)}
           onClose={() => setOverlay(null)}
         />
       ) : null}

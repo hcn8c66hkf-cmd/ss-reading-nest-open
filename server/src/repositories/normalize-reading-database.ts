@@ -10,13 +10,14 @@ import {
   type AnnotationFavorite,
   type ReadingMemory,
   type ReadingFactCard,
+  type SkillCandidate,
   type SourceManifest
 } from "@ss/shared";
 
 export function normalizeReadingDatabase(input: unknown): ReadingDatabase {
   const database = migrateReadingDatabase(input);
   return {
-    schemaVersion: 6,
+    schemaVersion: 7,
     sessions: database.sessions.map(copySession),
     quotes: database.quotes.map(copyQuote),
     reactions: database.reactions.map(copyReaction),
@@ -25,8 +26,13 @@ export function normalizeReadingDatabase(input: unknown): ReadingDatabase {
     annotations: database.annotations.map(copyAnnotation),
     annotationFavorites: database.annotationFavorites.map(copyAnnotationFavorite),
     readingMemories: database.readingMemories.map(copyReadingMemory),
-    readingFactCards: database.readingFactCards.map(copyReadingFactCard)
+    readingFactCards: database.readingFactCards.map(copyReadingFactCard),
+    skillCandidates: database.skillCandidates.map(copySkillCandidate)
   };
+}
+
+function copySkillCandidate(candidate: SkillCandidate): SkillCandidate {
+  return structuredClone(candidate);
 }
 
 function copyAnnotationFavorite(favorite: AnnotationFavorite): AnnotationFavorite {

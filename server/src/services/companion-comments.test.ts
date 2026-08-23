@@ -9,7 +9,7 @@ import { ReadingService } from "./reading-service.js";
 
 class MemoryRepository implements ReadingRepository {
   database: ReadingDatabase = {
-    schemaVersion: 6,
+    schemaVersion: 7,
     sessions: [],
     quotes: [],
     reactions: [],
@@ -18,7 +18,8 @@ class MemoryRepository implements ReadingRepository {
     annotations: [],
     annotationFavorites: [],
     readingMemories: [],
-    readingFactCards: []
+    readingFactCards: [],
+    skillCandidates: []
   };
 
   async read() {

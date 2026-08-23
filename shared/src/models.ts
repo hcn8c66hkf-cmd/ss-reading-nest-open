@@ -245,8 +245,39 @@ export interface ReadingFactCard {
   updatedAt: string;
 }
 
+export type SkillForgeVerdict =
+  | "forge_skill"
+  | "knowledge_only"
+  | "insufficient_coverage";
+
+export interface SkillCandidate {
+  id: string;
+  sessionId: string;
+  scope: "chapter" | "book";
+  chapterLabel: string;
+  rangeStart: number;
+  rangeEnd: number;
+  totalUnits?: number;
+  verdict: SkillForgeVerdict;
+  title: string;
+  rationale: string;
+  skillName?: string;
+  description?: string;
+  triggerExamples: string[];
+  workflow: string[];
+  boundaries: string[];
+  sourceNotes: string[];
+  skillMarkdown?: string;
+  analysisFingerprint: string;
+  generatorVersion: "p3-v1";
+  status: "draft" | "approved" | "rejected";
+  operationId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface ReadingDatabase {
-  schemaVersion: 6;
+  schemaVersion: 7;
   sessions: ReadingSession[];
   quotes: Quote[];
   reactions: Reaction[];
@@ -256,6 +287,7 @@ export interface ReadingDatabase {
   annotationFavorites: AnnotationFavorite[];
   readingMemories: ReadingMemory[];
   readingFactCards: ReadingFactCard[];
+  skillCandidates: SkillCandidate[];
 }
 
 export type ReadingSyncMode =

@@ -223,7 +223,7 @@ function assertNoForbidden(serialized: string) {
 
 class MemoryReadingRepository implements ReadingRepository {
   private database: ReadingDatabase = {
-    schemaVersion: 6,
+    schemaVersion: 7,
     sessions: [
       {
         id: "session-1",
@@ -247,7 +247,8 @@ class MemoryReadingRepository implements ReadingRepository {
     annotations: [],
     annotationFavorites: [],
     readingMemories: [],
-    readingFactCards: []
+    readingFactCards: [],
+    skillCandidates: []
   };
 
   async read(): Promise<ReadingDatabase> {
