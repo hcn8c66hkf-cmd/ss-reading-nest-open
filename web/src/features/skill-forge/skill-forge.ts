@@ -136,8 +136,11 @@ export function buildChapterSnapshot(input: {
   };
 }
 
-export function buildSkillForgePrompt(snapshot: ChapterSnapshot): string {
-  const body = centerEllipsis(snapshot.body, 24_000);
+export function buildSkillForgePrompt(
+  snapshot: ChapterSnapshot,
+  options: { bodyLimit?: number; compact?: boolean } = {}
+): string {
+  const body = centerEllipsis(snapshot.body, options.bodyLimit ?? 24_000);
   return [
     "你在执行共读小窝 P3：判断读过的内容是否值得炼成可复用 Skill。",
     "门槛要高：只有能指导未来重复任务的稳定方法、判断框架或工作流才 forge_skill；",
@@ -146,6 +149,9 @@ export function buildSkillForgePrompt(snapshot: ChapterSnapshot): string {
     "只输出一个 JSON 对象，不要 Markdown 代码围栏。字段必须是：",
     '{"verdict":"forge_skill|knowledge_only|insufficient_coverage","title":"短标题","rationale":"具体判定理由","skillName":"仅 forge_skill，英文小写连字符","description":"仅 forge_skill；以 Use when 开头，写清触发条件","triggerExamples":["用户会怎样问"],"workflow":["可执行步骤"],"boundaries":["不能做什么或何时不触发"],"sourceNotes":["证据与覆盖边界"]}',
     "禁止长篇复制原文；禁止把人物设定、剧情事实冒充通用方法；不确定处必须写进 boundaries/sourceNotes。",
+    options.compact
+      ? "这是格式修复重试：所有字段务必简短，整个 JSON 控制在 1200 字以内，JSON 前后不要添加任何文字。"
+      : "",
     "",
     `作品：${snapshot.bookTitle}`,
     `覆盖：${snapshot.chapterLabel}${snapshot.totalUnits ? `（${snapshot.rangeEnd}/${snapshot.totalUnits}）` : ""}`,
@@ -157,13 +163,15 @@ export function buildSkillForgePrompt(snapshot: ChapterSnapshot): string {
     section("共同阅读反应", snapshot.reflections.join("\n")),
     section("已有长期记忆", snapshot.memories.join("\n")),
     section("已有事实卡", snapshot.facts.join("\n"))
-  ].join("\n");
+  ].filter(Boolean).join("\n");
 }
 
 export function parseSkillForgeDraft(raw: string): SkillForgeDraft | null {
   try {
-    const parsed = JSON.parse(stripFence(raw)) as Record<string, unknown>;
-    const verdict = parsed.verdict;
+    const json = extractFirstJsonObject(stripFence(raw));
+    if (!json) return null;
+    const parsed = JSON.parse(json) as Record<string, unknown>;
+    const verdict = normalizeVerdict(parsed.verdict);
     if (
       verdict !== "forge_skill" &&
       verdict !== "knowledge_only" &&
@@ -283,6 +291,52 @@ function stripFence(value: string): string {
     .replace(/^```(?:json)?\s*/i, "")
     .replace(/\s*```$/, "")
     .trim();
+}
+
+function extractFirstJsonObject(value: string): string | null {
+  let start = -1;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let index = 0; index < value.length; index += 1) {
+    const character = value[index]!;
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (character === "\\") {
+        escaped = true;
+      } else if (character === '"') {
+        inString = false;
+      }
+      continue;
+    }
+    if (character === '"') {
+      inString = true;
+      continue;
+    }
+    if (character === "{") {
+      if (depth === 0) start = index;
+      depth += 1;
+      continue;
+    }
+    if (character === "}" && depth > 0) {
+      depth -= 1;
+      if (depth === 0 && start >= 0) return value.slice(start, index + 1);
+    }
+  }
+  return null;
+}
+
+function normalizeVerdict(value: unknown): SkillForgeVerdict | null {
+  if (
+    value === "forge_skill" ||
+    value === "knowledge_only" ||
+    value === "insufficient_coverage"
+  ) return value;
+  if (value === "值得炼成 Skill" || value === "值得炼成Skill") return "forge_skill";
+  if (value === "更适合知识卡") return "knowledge_only";
+  if (value === "材料还不够") return "insufficient_coverage";
+  return null;
 }
 
 function cleanString(value: unknown, limit: number): string {

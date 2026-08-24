@@ -1,6 +1,8 @@
 export async function sendLiveReadingFallback(input: {
   context: Record<string, unknown>;
   wakePrompt: string;
+  retryPrompt?: string;
+  preferRetryPrompt?: boolean;
   compatibilityPrompt: string;
   updateModelContext: (context: Record<string, unknown>) => Promise<boolean>;
   sendMessage: (
@@ -9,8 +11,13 @@ export async function sendLiveReadingFallback(input: {
   ) => Promise<boolean>;
 }): Promise<"context" | "message-fallback" | "failed"> {
   const contextUpdated = await input.updateModelContext(input.context);
+  const prompt = contextUpdated
+    ? input.preferRetryPrompt && input.retryPrompt
+      ? input.retryPrompt
+      : input.wakePrompt
+    : input.compatibilityPrompt;
   const sent = await input.sendMessage(
-    contextUpdated ? input.wakePrompt : input.compatibilityPrompt,
+    prompt,
     { scrollToBottom: false }
   );
   if (!sent) return "failed";

@@ -46,6 +46,25 @@ describe("sendLiveReadingFallback", () => {
     });
   });
 
+  it("uses a stronger write-back reminder after a chat-only response", async () => {
+    const sendMessage = vi.fn().mockResolvedValue(true);
+
+    const mode = await sendLiveReadingFallback({
+      context,
+      wakePrompt: "read paragraph 12",
+      retryPrompt: "publish paragraph 12 before replying",
+      preferRetryPrompt: true,
+      compatibilityPrompt: "full fallback paragraph",
+      updateModelContext: vi.fn().mockResolvedValue(true),
+      sendMessage
+    });
+
+    expect(mode).toBe("context");
+    expect(sendMessage).toHaveBeenCalledWith("publish paragraph 12 before replying", {
+      scrollToBottom: false
+    });
+  });
+
   it("reports a rejected host delivery", async () => {
     const mode = await sendLiveReadingFallback({
       context,

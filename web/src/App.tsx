@@ -68,6 +68,7 @@ import {
   buildLiveReadingDraftPrompt,
   buildLiveReadingModelContext,
   buildLiveReadingPrompt,
+  buildLiveReadingRetryPrompt,
   buildLiveReadingWakePrompt,
   buildReadingCommentPrompt
 } from "./features/reading-comments/prompt-policy.js";
@@ -251,6 +252,7 @@ export function App() {
   const syncJobRef = useRef<ReadingSyncJob | null>(null);
   const companionVersionRef = useRef<string | null>(null);
   const annotationVersionRef = useRef<string | null>(null);
+  const liveReadingFallbackAttemptsRef = useRef(new Map<string, number>());
   const hostLayout = useReadingHostLayout();
   const manualCompanionDraft = useMemo<PendingCompanionCommentDraft | null>(() => {
     if (!sessionBundle) return null;
@@ -1814,9 +1816,11 @@ export function App() {
               }
             };
           });
+          liveReadingFallbackAttemptsRef.current.delete(operationId);
           return true;
         }
 
+        const fallbackAttempt = liveReadingFallbackAttemptsRef.current.get(operationId) ?? 0;
         const fallbackMode = await sendLiveReadingFallback({
           context: buildLiveReadingModelContext({
             sessionId: session.id,
@@ -1827,6 +1831,8 @@ export function App() {
             ...(longTermContext ? { longTermContext } : {})
           }),
           wakePrompt: buildLiveReadingWakePrompt(targetPosition),
+          retryPrompt: buildLiveReadingRetryPrompt(targetPosition),
+          preferRetryPrompt: fallbackAttempt > 0,
           compatibilityPrompt: buildLiveReadingPrompt({
             sessionId: session.id,
             title: session.title,
@@ -1844,6 +1850,7 @@ export function App() {
         if (fallbackMode === "failed") {
           throw new Error("Host did not accept follow-up message");
         }
+        liveReadingFallbackAttemptsRef.current.set(operationId, fallbackAttempt + 1);
         return true;
       } catch {
         setToast("这次实时跟读没有发送成功。");
@@ -1868,6 +1875,7 @@ export function App() {
     assistantPositionIndex:
       sessionBundle?.session.assistantSyncedPosition?.index ?? 0,
     sourceVerified: sourceAvailability === "available_local",
+    retryMs: 15_000,
     onQueuedPosition: sendLiveReading
   });
 
@@ -2520,7 +2528,7 @@ export function App() {
         setToast("这份快照没有变化，直接用了上次的炼制结果，没有重复耗额度。");
         return;
       }
-      const sampled = await sampleChatGptText(buildSkillForgePrompt(snapshot), {
+      let sampled = await sampleChatGptText(buildSkillForgePrompt(snapshot), {
         systemPrompt: [
           "你是严格的 Skill 架构审阅者。",
           "判断标准是可复用、可执行、有明确触发条件；绝不为了迎合而强行炼制。",
@@ -2529,9 +2537,24 @@ export function App() {
         maxTokens: 1_800,
         temperature: 0.15
       });
-      const draft = sampled ? parseSkillForgeDraft(sampled) : null;
+      let draft = sampled ? parseSkillForgeDraft(sampled) : null;
       if (!draft) {
-        setToast("这次没有拿到合格的炼制判定，什么都没写入。再点一次就好。");
+        sampled = await sampleChatGptText(
+          buildSkillForgePrompt(snapshot, { bodyLimit: 6_000, compact: true }),
+          {
+            systemPrompt: [
+              "你是严格的 Skill 架构审阅者。",
+              "这是结构修复重试。只返回一个简短、合法、能直接 JSON.parse 的 JSON 对象。",
+              "不得添加 Markdown 围栏、解释、标题或结尾文字。"
+            ].join("\n"),
+            maxTokens: 1_200,
+            temperature: 0
+          }
+        );
+        draft = sampled ? parseSkillForgeDraft(sampled) : null;
+      }
+      if (!draft) {
+        setToast("评估服务连续两次没有返回可用结构；没有写入半成品，可以稍后重试。");
         return;
       }
       const candidatePayload = toPersistedSkillCandidate(snapshot, draft);

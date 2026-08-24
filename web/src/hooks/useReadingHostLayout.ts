@@ -15,17 +15,12 @@ export function useReadingHostLayout() {
     height: window.innerHeight
   }));
   const [revision, setRevision] = useState(0);
-  const [inlineHeight, setInlineHeight] = useState(() => stableInlineHeight());
+  const [measuredInlineHeight, setMeasuredInlineHeight] = useState(() => stableInlineHeight());
 
   useEffect(() => {
     const measure = () => {
       setViewport({ width: window.innerWidth, height: window.innerHeight });
-      const nextInlineHeight = stableInlineHeight();
-      setInlineHeight(nextInlineHeight);
-      document.documentElement.style.setProperty(
-        "--reader-inline-height",
-        `${nextInlineHeight}px`
-      );
+      setMeasuredInlineHeight(stableInlineHeight());
       setRevision((value) => value + 1);
     };
     measure();
@@ -41,6 +36,22 @@ export function useReadingHostLayout() {
       window.removeEventListener("orientationchange", measure);
     };
   }, []);
+
+  const hostInlineHeight =
+    context.containerDimensions?.height ?? context.containerDimensions?.maxHeight;
+  const inlineHeight =
+    typeof hostInlineHeight === "number" &&
+    Number.isFinite(hostInlineHeight) &&
+    hostInlineHeight >= 240
+      ? Math.min(measuredInlineHeight, Math.round(hostInlineHeight))
+      : measuredInlineHeight;
+
+  useEffect(() => {
+    document.documentElement.style.setProperty(
+      "--reader-inline-height",
+      `${inlineHeight}px`
+    );
+  }, [inlineHeight]);
 
   useEffect(() => {
     const insets = context.safeAreaInsets;

@@ -49,6 +49,26 @@ describe("useReadingHostLayout", () => {
     expect(document.documentElement.dataset.displayMode).toBe("inline");
   });
 
+  it("clamps the explicit iframe height to a smaller mobile host container", () => {
+    const { result } = renderHook(() => useReadingHostLayout());
+
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent("openai:host-context-changed", {
+          detail: {
+            displayMode: "inline",
+            containerDimensions: { width: 390, height: 460, maxHeight: 460 }
+          }
+        })
+      );
+    });
+
+    expect(result.current.inlineHeight).toBe(460);
+    expect(document.documentElement.style.getPropertyValue("--reader-inline-height")).toBe(
+      "460px"
+    );
+  });
+
   it("applies host safe-area insets to the reading CSS variables", () => {
     renderHook(() => useReadingHostLayout());
 

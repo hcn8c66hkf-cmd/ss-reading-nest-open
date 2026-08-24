@@ -4,6 +4,7 @@ import {
   buildLiveReadingDraftPrompt,
   buildLiveReadingModelContext,
   buildLiveReadingPrompt,
+  buildLiveReadingRetryPrompt,
   buildLiveReadingWakePrompt,
   buildReadingCommentPrompt,
   normalizeCommentLength
@@ -272,7 +273,7 @@ describe("hidden live-reading context", () => {
     });
   });
 
-  it("keeps the visible wake-up message short and free of article/tool payload", () => {
+  it("keeps the visible wake-up message free of article data but explicit about write-back", () => {
     const prompt = buildLiveReadingWakePrompt(input.position);
 
     expect(prompt).toContain("第 12 段");
@@ -280,6 +281,18 @@ describe("hidden live-reading context", () => {
     expect(prompt).not.toContain(input.text);
     expect(prompt).not.toContain(input.sessionId);
     expect(prompt).not.toContain(input.operationId);
-    expect(prompt).not.toContain("publish_companion_comment");
+    expect(prompt).toContain("publish_companion_comment");
+    expect(prompt).toContain("必须先调用");
+  });
+
+  it("builds a stronger tool-first retry without repeating the article", () => {
+    const prompt = buildLiveReadingRetryPrompt(input.position);
+
+    expect(prompt).toContain("上一次");
+    expect(prompt).toContain("publish_companion_comment");
+    expect(prompt).toContain("不要只做口头回复");
+    expect(prompt).not.toContain(input.text);
+    expect(prompt).not.toContain(input.sessionId);
+    expect(prompt).not.toContain(input.operationId);
   });
 });

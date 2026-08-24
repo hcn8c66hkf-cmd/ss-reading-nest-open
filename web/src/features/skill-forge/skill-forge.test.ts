@@ -100,4 +100,48 @@ describe("P3 skill forge", () => {
     expect(persisted.skillMarkdown).toBeUndefined();
     expect(persisted.skillName).toBeUndefined();
   });
+
+  it("extracts JSON when the host wraps the verdict in prose and a code fence", () => {
+    const draft = parseSkillForgeDraft([
+      "我会严格按门槛判断：",
+      "```json",
+      JSON.stringify({
+        verdict: "knowledge_only",
+        title: "人物关系观察",
+        rationale: "这是剧情知识，还不是可复用流程。",
+        triggerExamples: [],
+        workflow: [],
+        boundaries: ["不触发技能"],
+        sourceNotes: ["仅覆盖当前范围"]
+      }),
+      "```",
+      "以上是判定。"
+    ].join("\n"));
+
+    expect(draft).toMatchObject({
+      verdict: "knowledge_only",
+      title: "人物关系观察"
+    });
+  });
+
+  it("accepts the localized verdict label used by the review UI", () => {
+    const draft = parseSkillForgeDraft(JSON.stringify({
+      verdict: "材料还不够",
+      title: "继续积累",
+      rationale: "当前范围不足以形成稳定工作流。",
+      triggerExamples: [],
+      workflow: [],
+      boundaries: [],
+      sourceNotes: []
+    }));
+
+    expect(draft?.verdict).toBe("insufficient_coverage");
+  });
+
+  it("can build a smaller format-repair retry prompt", () => {
+    const prompt = buildSkillForgePrompt(snapshot(), { bodyLimit: 32, compact: true });
+
+    expect(prompt).toContain("格式修复重试");
+    expect(prompt).toContain("JSON 控制在 1200 字以内");
+  });
 });

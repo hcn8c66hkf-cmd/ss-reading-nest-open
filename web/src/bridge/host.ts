@@ -26,7 +26,7 @@ function connectApp() {
   if (typeof window === "undefined" || window.parent === window) return undefined;
   if (!app) {
     app = new McpApp(
-      { name: "S×S 小窝共读", version: "0.3.3" },
+      { name: "S×S 小窝共读", version: "0.3.4" },
       {},
       {
         // The SDK's default ResizeObserver briefly sets <html> to max-content

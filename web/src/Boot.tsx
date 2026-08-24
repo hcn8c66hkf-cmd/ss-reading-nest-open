@@ -8,8 +8,8 @@ import {
   useState
 } from "react";
 
-const RESOURCE_VERSION = "app-v33";
-const APP_VERSION = "0.3.3";
+const RESOURCE_VERSION = "app-v34";
+const APP_VERSION = "0.3.4";
 const loadDefaultApp = () => import("./App.js");
 
 type AppModule = {
