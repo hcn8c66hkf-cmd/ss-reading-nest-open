@@ -274,11 +274,11 @@ describe("hidden live-reading context", () => {
   });
 
   it("keeps the visible wake-up message free of article data but explicit about write-back", () => {
-    const prompt = buildLiveReadingWakePrompt(input.position);
+    const prompt = buildLiveReadingWakePrompt(input.position, input.text);
 
     expect(prompt).toContain("第 12 段");
     expect(prompt).toContain("1-3 句短评");
-    expect(prompt).not.toContain(input.text);
+    expect(prompt).toContain(input.text);
     expect(prompt).not.toContain(input.sessionId);
     expect(prompt).not.toContain(input.operationId);
     expect(prompt).toContain("publish_companion_comment");
@@ -286,12 +286,12 @@ describe("hidden live-reading context", () => {
   });
 
   it("builds a stronger tool-first retry without repeating the article", () => {
-    const prompt = buildLiveReadingRetryPrompt(input.position);
+    const prompt = buildLiveReadingRetryPrompt(input.position, input.text);
 
     expect(prompt).toContain("上一次");
     expect(prompt).toContain("publish_companion_comment");
     expect(prompt).toContain("不要只做口头回复");
-    expect(prompt).not.toContain(input.text);
+    expect(prompt).toContain(input.text);
     expect(prompt).not.toContain(input.sessionId);
     expect(prompt).not.toContain(input.operationId);
   });

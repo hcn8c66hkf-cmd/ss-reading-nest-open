@@ -1,8 +1,9 @@
-import { registerAppResource, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
+import { registerAppResource } from "@modelcontextprotocol/ext-apps/server";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { READING_NEST_URI } from "./register-tools.js";
 
 export const LEGACY_READING_NEST_URIS = [
+  "ui://ss-reading-nest/app-v34.html",
   "ui://ss-reading-nest/app-v33.html",
   "ui://ss-reading-nest/app-v32.html",
   "ui://ss-reading-nest/app-v31.html",
@@ -19,6 +20,12 @@ export const LEGACY_READING_NEST_URIS = [
   "ui://ss-reading-nest/app-v20.html",
   "ui://ss-reading-nest/app-v19.html"
 ] as const;
+
+// Keep the legacy ChatGPT MIME while mobile clients finish converging on the
+// MCP Apps profile MIME. Both current desktop ChatGPT and the legacy mobile
+// widget host accept this form, while some mobile builds keep showing the
+// loading skeleton for text/html;profile=mcp-app resources.
+export const READING_NEST_MIME_TYPE = "text/html+skybridge";
 
 export function registerReadingResource(server: McpServer, widgetHtml: string, workerOrigin?: string) {
   const connectDomains = [workerOrigin ?? "http://localhost:8787"];
@@ -55,7 +62,7 @@ export function registerReadingResource(server: McpServer, widgetHtml: string, w
           contents: [
             {
               uri: resourceUri,
-              mimeType: RESOURCE_MIME_TYPE,
+              mimeType: READING_NEST_MIME_TYPE,
               text: widgetHtml,
               _meta: {
                 ui: {

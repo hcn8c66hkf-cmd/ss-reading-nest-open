@@ -108,11 +108,16 @@ export function buildCurrentOnlyPrompt(input: {
 
 export function buildCurrentOnlyWakePrompt(input: {
   position: number;
+  text: string;
   selectedText?: string;
 }): string {
-  return input.selectedText
-    ? `请回应我在第 ${input.position} 段选中的句子，并写回书边批注。`
-    : `请只看共读小窝的第 ${input.position} 段，按当前陪读偏好回应。`;
+  return [
+    input.selectedText
+      ? `请回应我在第 ${input.position} 段选中的句子，并写回书边批注。`
+      : `请只看共读小窝的第 ${input.position} 段，按当前陪读偏好回应。`,
+    `本段正文：\n${input.text}`,
+    input.selectedText ? `我选中的句子：${input.selectedText}` : ""
+  ].filter(Boolean).join("\n\n");
 }
 
 export function buildRecentOnlyPrompt(input: {

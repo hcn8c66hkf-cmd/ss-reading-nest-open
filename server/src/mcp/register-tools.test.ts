@@ -7,12 +7,15 @@ import {
 } from "./register-tools.js";
 
 describe("tool descriptors", () => {
-  it("binds the current UI resource to the v34 and compatibility render tools", () => {
-    expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v34.html");
-    expect(TOOL_CONFIGS.open_reading_nest_v34._meta?.ui).toEqual({
+  it("binds the current UI resource to the v35 and compatibility render tools", () => {
+    expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v35.html");
+    expect(TOOL_CONFIGS.open_reading_nest_v35._meta?.ui).toEqual({
       resourceUri: READING_NEST_URI
     });
-    expect(TOOL_CONFIGS.open_reading_nest_v34._meta?.["openai/outputTemplate"]).toBe(
+    expect(TOOL_CONFIGS.open_reading_nest_v35._meta?.["ui/resourceUri"]).toBe(
+      READING_NEST_URI
+    );
+    expect(TOOL_CONFIGS.open_reading_nest_v35._meta?.["openai/outputTemplate"]).toBe(
       READING_NEST_URI
     );
     expect(TOOL_CONFIGS.open_reading_nest._meta?.["openai/outputTemplate"]).toBe(
@@ -20,6 +23,7 @@ describe("tool descriptors", () => {
     );
     for (const [name, config] of Object.entries(TOOL_CONFIGS)) {
       if (
+        name !== "open_reading_nest_v35" &&
         name !== "open_reading_nest_v34" &&
         name !== "open_reading_nest_v33" &&
         name !== "open_reading_nest_v32" &&
@@ -109,7 +113,7 @@ describe("tool descriptors", () => {
     registerReadingTools(server as never, service as never, undefined, {
       sourceEndpointBase: "https://worker.example.test/source/secret"
     });
-    const result = (await handlers.get("open_reading_nest_v34")?.()) as {
+    const result = (await handlers.get("open_reading_nest_v35")?.()) as {
       structuredContent?: Record<string, unknown>;
     };
 
@@ -120,7 +124,7 @@ describe("tool descriptors", () => {
     expect(handlers.has("open_reading_nest")).toBe(true);
     expect(handlers.has("open_reading_nest_v23")).toBe(true);
     expect(handlers.has("open_reading_nest_v22")).toBe(true);
-    expect(configs.get("open_reading_nest_v34")._meta).toMatchObject({
+    expect(configs.get("open_reading_nest_v35")._meta).toMatchObject({
       ui: { resourceUri: READING_NEST_URI },
       "ui/resourceUri": READING_NEST_URI,
       "openai/outputTemplate": READING_NEST_URI
@@ -250,7 +254,7 @@ describe("tool descriptors", () => {
   });
 
   it("exposes book management and threaded annotation tools", () => {
-    expect(Object.keys(TOOL_CONFIGS)).toHaveLength(51);
+    expect(Object.keys(TOOL_CONFIGS)).toHaveLength(52);
     expect(TOOL_CONFIGS.create_annotation.annotations).toMatchObject({
       readOnlyHint: false,
       idempotentHint: true

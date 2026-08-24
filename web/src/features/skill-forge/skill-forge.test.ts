@@ -3,6 +3,7 @@ import {
   buildChapterSnapshot,
   buildSkillForgePrompt,
   parseSkillForgeDraft,
+  SKILL_FORGE_SAMPLING_TOOL,
   toPersistedSkillCandidate
 } from "./skill-forge.js";
 
@@ -143,5 +144,15 @@ describe("P3 skill forge", () => {
 
     expect(prompt).toContain("格式修复重试");
     expect(prompt).toContain("JSON 控制在 1200 字以内");
+  });
+
+  it("builds a tool-delivered prompt without conflicting JSON-only instructions", () => {
+    const prompt = buildSkillForgePrompt(snapshot(), {
+      toolName: SKILL_FORGE_SAMPLING_TOOL.name
+    });
+
+    expect(prompt).toContain("必须调用 submit_skill_forge_verdict 一次提交判定");
+    expect(prompt).not.toContain("只输出一个 JSON 对象");
+    expect(SKILL_FORGE_SAMPLING_TOOL.inputSchema.required).toContain("verdict");
   });
 });

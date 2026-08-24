@@ -19,9 +19,9 @@ try {
   if (tools.tools.length === 0) {
     throw new Error("MCP server returned no tools");
   }
-  const renderTool = tools.tools.find((tool) => tool.name === "open_reading_nest_v34");
+  const renderTool = tools.tools.find((tool) => tool.name === "open_reading_nest_v35");
   if (!renderTool) {
-    throw new Error("MCP server did not publish open_reading_nest_v34");
+    throw new Error("MCP server did not publish open_reading_nest_v35");
   }
   for (const name of ["create_annotation_v23", "reply_to_annotation_v23", "list_annotations_v23"]) {
     if (!tools.tools.some((tool) => tool.name === name)) {
@@ -32,7 +32,7 @@ try {
     renderTool._meta?.["openai/outputTemplate"] ??
     renderTool._meta?.["ui/resourceUri"] ??
     renderTool._meta?.ui?.resourceUri;
-  if (resourceUri !== "ui://ss-reading-nest/app-v34.html") {
+  if (resourceUri !== "ui://ss-reading-nest/app-v35.html") {
     throw new Error(`Render tool published an invalid UI resource URI: ${String(resourceUri)}`);
   }
 

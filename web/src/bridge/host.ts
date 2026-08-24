@@ -26,7 +26,7 @@ function connectApp() {
   if (typeof window === "undefined" || window.parent === window) return undefined;
   if (!app) {
     app = new McpApp(
-      { name: "S×S 小窝共读", version: "0.3.4" },
+      { name: "S×S 小窝共读", version: "0.3.5" },
       {},
       {
         // The SDK's default ResizeObserver briefly sets <html> to max-content
@@ -137,6 +137,50 @@ export async function sampleChatGptText(
   }
 }
 
+export async function sampleChatGptToolInput(
+  prompt: string,
+  tool: {
+    name: string;
+    description?: string;
+    inputSchema: {
+      type: "object";
+      properties?: Record<string, object>;
+      required?: string[];
+    };
+  },
+  options: {
+    systemPrompt?: string;
+    maxTokens?: number;
+    temperature?: number;
+  } = {}
+): Promise<Record<string, unknown> | null> {
+  const bridge = connectApp();
+  if (!bridge) return null;
+  await appReady;
+  if (appConnectionFailed || !bridge.getHostCapabilities()?.sampling?.tools) return null;
+  try {
+    const result = await bridge.createSamplingMessage({
+      messages: [
+        {
+          role: "user",
+          content: { type: "text", text: prompt }
+        }
+      ],
+      maxTokens: options.maxTokens ?? 1_200,
+      includeContext: "thisServer",
+      tools: [tool],
+      toolChoice: { mode: "required" },
+      ...(options.systemPrompt ? { systemPrompt: options.systemPrompt } : {}),
+      ...(options.temperature === undefined
+        ? {}
+        : { temperature: options.temperature })
+    });
+    return samplingToolInput(result, tool.name);
+  } catch {
+    return null;
+  }
+}
+
 function samplingText(result: unknown): string | null {
   if (!result || typeof result !== "object") return null;
   const content = (result as { content?: unknown }).content;
@@ -153,6 +197,26 @@ function samplingText(result: unknown): string | null {
     .join("\n")
     .trim();
   return text || null;
+}
+
+function samplingToolInput(
+  result: unknown,
+  toolName: string
+): Record<string, unknown> | null {
+  if (!result || typeof result !== "object") return null;
+  const content = (result as { content?: unknown }).content;
+  const blocks = Array.isArray(content) ? content : [content];
+  const toolUse = blocks.find(
+    (block): block is { type: "tool_use"; name: string; input: Record<string, unknown> } =>
+      !!block &&
+      typeof block === "object" &&
+      (block as { type?: unknown }).type === "tool_use" &&
+      (block as { name?: unknown }).name === toolName &&
+      !!(block as { input?: unknown }).input &&
+      typeof (block as { input?: unknown }).input === "object" &&
+      !Array.isArray((block as { input?: unknown }).input)
+  );
+  return toolUse?.input ?? null;
 }
 
 export async function requestReaderPip(): Promise<boolean> {

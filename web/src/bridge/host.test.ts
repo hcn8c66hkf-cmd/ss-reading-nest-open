@@ -127,6 +127,65 @@ describe("host bridge", () => {
     });
   });
 
+  it("samples strict structured input through a required host tool", async () => {
+    bridge.getHostCapabilities.mockReturnValueOnce({ sampling: { tools: {} } });
+    bridge.createSamplingMessage.mockResolvedValueOnce({
+      role: "assistant",
+      model: "host-model",
+      stopReason: "toolUse",
+      content: [
+        {
+          type: "tool_use",
+          id: "tool-1",
+          name: "submit_verdict",
+          input: { verdict: "knowledge_only", title: "人物观察" }
+        }
+      ]
+    });
+    const { sampleChatGptToolInput } = await import("./host.js");
+    const tool = {
+      name: "submit_verdict",
+      description: "Submit a verdict",
+      inputSchema: {
+        type: "object" as const,
+        properties: { verdict: { type: "string" } },
+        required: ["verdict"]
+      }
+    };
+
+    await expect(
+      sampleChatGptToolInput("评估这一章", tool, {
+        systemPrompt: "只调用工具。",
+        maxTokens: 500,
+        temperature: 0
+      })
+    ).resolves.toEqual({ verdict: "knowledge_only", title: "人物观察" });
+    expect(bridge.createSamplingMessage).toHaveBeenCalledWith({
+      messages: [
+        { role: "user", content: { type: "text", text: "评估这一章" } }
+      ],
+      maxTokens: 500,
+      includeContext: "thisServer",
+      tools: [tool],
+      toolChoice: { mode: "required" },
+      systemPrompt: "只调用工具。",
+      temperature: 0
+    });
+  });
+
+  it("does not request a structured tool when the host lacks tool sampling", async () => {
+    bridge.getHostCapabilities.mockReturnValueOnce({ sampling: {} });
+    const { sampleChatGptToolInput } = await import("./host.js");
+
+    await expect(
+      sampleChatGptToolInput("评估这一章", {
+        name: "submit_verdict",
+        inputSchema: { type: "object" }
+      })
+    ).resolves.toBeNull();
+    expect(bridge.createSamplingMessage).not.toHaveBeenCalled();
+  });
+
   it("starts the direct ChatGPT fullscreen request in the user gesture call stack", async () => {
     const requestDisplayMode = vi.fn().mockResolvedValue(undefined);
     if (window.openai) window.openai.requestDisplayMode = requestDisplayMode;

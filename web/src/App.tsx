@@ -30,6 +30,7 @@ import {
   requestReaderInline,
   requestReaderPip,
   sampleChatGptText,
+  sampleChatGptToolInput,
   setReadingFrameHeight,
   saveReaderWidgetState,
   updateModelContext
@@ -81,6 +82,7 @@ import {
   buildChapterSnapshot,
   buildSkillForgePrompt,
   parseSkillForgeDraft,
+  SKILL_FORGE_SAMPLING_TOOL,
   toPersistedSkillCandidate
 } from "./features/skill-forge/skill-forge.js";
 import {
@@ -1385,6 +1387,7 @@ export function App() {
         },
         successPrompt: buildCurrentOnlyWakePrompt({
           position: sessionBundle.session.userCurrentPosition.index,
+          text: currentText,
           ...(selectedText ? { selectedText } : {})
         }),
         fallbackPrompt,
@@ -1830,8 +1833,8 @@ export function App() {
             operationId,
             ...(longTermContext ? { longTermContext } : {})
           }),
-          wakePrompt: buildLiveReadingWakePrompt(targetPosition),
-          retryPrompt: buildLiveReadingRetryPrompt(targetPosition),
+          wakePrompt: buildLiveReadingWakePrompt(targetPosition, text),
+          retryPrompt: buildLiveReadingRetryPrompt(targetPosition, text),
           preferRetryPrompt: fallbackAttempt > 0,
           compatibilityPrompt: buildLiveReadingPrompt({
             sessionId: session.id,
@@ -2528,7 +2531,27 @@ export function App() {
         setToast("这份快照没有变化，直接用了上次的炼制结果，没有重复耗额度。");
         return;
       }
-      let sampled = await sampleChatGptText(buildSkillForgePrompt(snapshot), {
+      const toolInput = await sampleChatGptToolInput(
+        buildSkillForgePrompt(snapshot, {
+          bodyLimit: 12_000,
+          toolName: SKILL_FORGE_SAMPLING_TOOL.name
+        }),
+        SKILL_FORGE_SAMPLING_TOOL,
+        {
+          systemPrompt: [
+            "你是严格的 Skill 架构审阅者。",
+            "判断标准是可复用、可执行、有明确触发条件；绝不为了迎合而强行炼制。",
+            `只调用 ${SKILL_FORGE_SAMPLING_TOOL.name} 一次提交判定。`
+          ].join("\n"),
+          maxTokens: 1_800,
+          temperature: 0.15
+        }
+      );
+      let draft = toolInput
+        ? parseSkillForgeDraft(JSON.stringify(toolInput))
+        : null;
+      let sampled: string | null = null;
+      if (!draft) sampled = await sampleChatGptText(buildSkillForgePrompt(snapshot), {
         systemPrompt: [
           "你是严格的 Skill 架构审阅者。",
           "判断标准是可复用、可执行、有明确触发条件；绝不为了迎合而强行炼制。",
@@ -2537,7 +2560,7 @@ export function App() {
         maxTokens: 1_800,
         temperature: 0.15
       });
-      let draft = sampled ? parseSkillForgeDraft(sampled) : null;
+      if (!draft) draft = sampled ? parseSkillForgeDraft(sampled) : null;
       if (!draft) {
         sampled = await sampleChatGptText(
           buildSkillForgePrompt(snapshot, { bodyLimit: 6_000, compact: true }),
@@ -2554,7 +2577,7 @@ export function App() {
         draft = sampled ? parseSkillForgeDraft(sampled) : null;
       }
       if (!draft) {
-        setToast("评估服务连续两次没有返回可用结构；没有写入半成品，可以稍后重试。");
+        setToast("评估服务的结构化与文本路径都没有返回可用判定；没有写入半成品，可以稍后重试。");
         return;
       }
       const candidatePayload = toPersistedSkillCandidate(snapshot, draft);

@@ -42,6 +42,46 @@ export interface SkillForgeDraft {
   sourceNotes: string[];
 }
 
+export const SKILL_FORGE_SAMPLING_TOOL = {
+  name: "submit_skill_forge_verdict",
+  description:
+    "Submit exactly one strict P3 reading-forge verdict. Use empty strings and empty arrays for forge-only fields when the verdict is not forge_skill.",
+  inputSchema: {
+    type: "object" as const,
+    properties: {
+      verdict: {
+        type: "string",
+        enum: ["forge_skill", "knowledge_only", "insufficient_coverage"]
+      },
+      title: { type: "string", description: "Short Chinese verdict title" },
+      rationale: { type: "string", description: "Concrete Chinese rationale" },
+      skillName: {
+        type: "string",
+        description: "Lowercase kebab-case for forge_skill, otherwise empty"
+      },
+      description: {
+        type: "string",
+        description: "Starts with Use when for forge_skill, otherwise empty"
+      },
+      triggerExamples: { type: "array", items: { type: "string" } },
+      workflow: { type: "array", items: { type: "string" } },
+      boundaries: { type: "array", items: { type: "string" } },
+      sourceNotes: { type: "array", items: { type: "string" } }
+    },
+    required: [
+      "verdict",
+      "title",
+      "rationale",
+      "skillName",
+      "description",
+      "triggerExamples",
+      "workflow",
+      "boundaries",
+      "sourceNotes"
+    ]
+  }
+};
+
 export function buildChapterSnapshot(input: {
   sessionId: string;
   bookTitle: string;
@@ -138,7 +178,7 @@ export function buildChapterSnapshot(input: {
 
 export function buildSkillForgePrompt(
   snapshot: ChapterSnapshot,
-  options: { bodyLimit?: number; compact?: boolean } = {}
+  options: { bodyLimit?: number; compact?: boolean; toolName?: string } = {}
 ): string {
   const body = centerEllipsis(snapshot.body, options.bodyLimit ?? 24_000);
   return [
@@ -146,10 +186,12 @@ export function buildSkillForgePrompt(
     "门槛要高：只有能指导未来重复任务的稳定方法、判断框架或工作流才 forge_skill；",
     "只有知识、观点或值得记住的内容则 knowledge_only；材料不足则 insufficient_coverage。",
     "不要因为用户想试功能就硬造 Skill。未读完全书时，不得声称这是全书 Skill。",
-    "只输出一个 JSON 对象，不要 Markdown 代码围栏。字段必须是：",
+    options.toolName
+      ? `必须调用 ${options.toolName} 一次提交判定，不要另写答案。工具字段必须是：`
+      : "只输出一个 JSON 对象，不要 Markdown 代码围栏。字段必须是：",
     '{"verdict":"forge_skill|knowledge_only|insufficient_coverage","title":"短标题","rationale":"具体判定理由","skillName":"仅 forge_skill，英文小写连字符","description":"仅 forge_skill；以 Use when 开头，写清触发条件","triggerExamples":["用户会怎样问"],"workflow":["可执行步骤"],"boundaries":["不能做什么或何时不触发"],"sourceNotes":["证据与覆盖边界"]}',
     "禁止长篇复制原文；禁止把人物设定、剧情事实冒充通用方法；不确定处必须写进 boundaries/sourceNotes。",
-    options.compact
+    options.compact && !options.toolName
       ? "这是格式修复重试：所有字段务必简短，整个 JSON 控制在 1200 字以内，JSON 前后不要添加任何文字。"
       : "",
     "",

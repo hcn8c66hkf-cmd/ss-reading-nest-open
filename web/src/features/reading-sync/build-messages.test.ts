@@ -109,17 +109,23 @@ describe("reading-sync messages", () => {
     expect(recent).toContain("source=quick_action");
   });
 
-  it("keeps current-only wake prompts free of source text and tool parameters", () => {
-    const normal = buildCurrentOnlyWakePrompt({ position: 8 });
+  it("keeps current-only wake prompts self-contained without tool parameters", () => {
+    const normal = buildCurrentOnlyWakePrompt({
+      position: 8,
+      text: "当前正文不能再丢"
+    });
     const selected = buildCurrentOnlyWakePrompt({
       position: 8,
+      text: "当前正文不能再丢",
       selectedText: "这句不能回显"
     });
 
-    expect(normal).toBe("请只看共读小窝的第 8 段，按当前陪读偏好回应。");
-    expect(selected).toBe("请回应我在第 8 段选中的句子，并写回书边批注。");
+    expect(normal).toContain("请只看共读小窝的第 8 段");
+    expect(normal).toContain("当前正文不能再丢");
+    expect(selected).toContain("请回应我在第 8 段选中的句子");
+    expect(selected).toContain("当前正文不能再丢");
     expect(normal).not.toContain("publish_companion_comment");
-    expect(selected).not.toContain("这句不能回显");
+    expect(selected).toContain("这句不能回显");
     expect(selected).not.toContain("create_annotation");
   });
 

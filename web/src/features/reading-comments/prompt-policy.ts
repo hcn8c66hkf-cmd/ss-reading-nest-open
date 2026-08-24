@@ -139,19 +139,27 @@ export function buildLiveReadingModelContext(input: {
   };
 }
 
-export function buildLiveReadingWakePrompt(position: ReadingPosition): string {
+export function buildLiveReadingWakePrompt(
+  position: ReadingPosition,
+  text: string
+): string {
   return [
     `请继续共读小窝的${position.label}。`,
-    "读取刚刚写入模型上下文的本段内容，生成 1-3 句短评。",
+    `本段正文：\n${text}`,
+    "结合本段正文生成 1-3 句短评。",
     "必须先调用共读小窝的 publish_companion_comment，并使用 responsePolicy.publishArguments 写回；工具成功后再回复完全相同的短评。",
     "没有成功调用工具，就不要声称已经读完或写回。"
   ].join("\n");
 }
 
-export function buildLiveReadingRetryPrompt(position: ReadingPosition): string {
+export function buildLiveReadingRetryPrompt(
+  position: ReadingPosition,
+  text: string
+): string {
   return [
     `上一次${position.label}只在聊天区出现了短评，但书里的 Daddy陪读没有收到。`,
-    "请继续使用刚刚写入模型上下文的本段内容重新处理。",
+    `本段正文：\n${text}`,
+    "请根据本段正文重新处理。",
     "这一次必须先调用 publish_companion_comment，并原样使用 responsePolicy.publishArguments；工具成功后再回复完全相同的短评。",
     "不要跳过工具调用，不要只做口头回复。"
   ].join("\n");
