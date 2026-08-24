@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 const registerAppResource = vi.fn();
 
 vi.mock("@modelcontextprotocol/ext-apps/server", () => ({
-  RESOURCE_MIME_TYPE: "text/html+skybridge",
+  RESOURCE_MIME_TYPE: "text/html;profile=mcp-app",
   registerAppResource
 }));
 
@@ -19,8 +19,9 @@ describe("registerReadingResource", () => {
       "https://reading-nest.example.workers.dev"
     );
 
-    expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v35.html");
+    expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v36.html");
     expect(LEGACY_READING_NEST_URIS).toEqual([
+      "ui://ss-reading-nest/app-v35.html",
       "ui://ss-reading-nest/app-v34.html",
       "ui://ss-reading-nest/app-v33.html",
       "ui://ss-reading-nest/app-v32.html",
@@ -38,7 +39,7 @@ describe("registerReadingResource", () => {
       "ui://ss-reading-nest/app-v20.html",
       "ui://ss-reading-nest/app-v19.html"
     ]);
-    expect(registerAppResource).toHaveBeenCalledTimes(17);
+    expect(registerAppResource).toHaveBeenCalledTimes(18);
 
     for (const expectedUri of [READING_NEST_URI, ...LEGACY_READING_NEST_URIS]) {
       const call = registerAppResource.mock.calls.find((item) => item[2] === expectedUri);
@@ -56,7 +57,7 @@ describe("registerReadingResource", () => {
       const loaded = await loader();
       expect(loaded.contents[0]).toMatchObject({
         uri: expectedUri,
-        mimeType: "text/html+skybridge",
+        mimeType: "text/html;profile=mcp-app",
         text: "<html>latest widget</html>"
       });
       expect(loaded.contents[0]._meta.ui.csp.connectDomains).toContain(

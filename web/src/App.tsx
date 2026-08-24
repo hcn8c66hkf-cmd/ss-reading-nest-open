@@ -69,7 +69,6 @@ import {
   buildLiveReadingDraftPrompt,
   buildLiveReadingModelContext,
   buildLiveReadingPrompt,
-  buildLiveReadingRetryPrompt,
   buildLiveReadingWakePrompt,
   buildReadingCommentPrompt
 } from "./features/reading-comments/prompt-policy.js";
@@ -80,6 +79,7 @@ import {
 } from "./features/reading-memory/capture-draft.js";
 import {
   buildChapterSnapshot,
+  buildSkillForgeConversationPrompt,
   buildSkillForgePrompt,
   parseSkillForgeDraft,
   SKILL_FORGE_SAMPLING_TOOL,
@@ -254,7 +254,7 @@ export function App() {
   const syncJobRef = useRef<ReadingSyncJob | null>(null);
   const companionVersionRef = useRef<string | null>(null);
   const annotationVersionRef = useRef<string | null>(null);
-  const liveReadingFallbackAttemptsRef = useRef(new Map<string, number>());
+  const acceptedLiveReadingFallbacksRef = useRef(new Set<string>());
   const hostLayout = useReadingHostLayout();
   const manualCompanionDraft = useMemo<PendingCompanionCommentDraft | null>(() => {
     if (!sessionBundle) return null;
@@ -1758,6 +1758,44 @@ export function App() {
       ) {
         return true;
       }
+      if (acceptedLiveReadingFallbacksRef.current.has(operationId)) {
+        for (let attempt = 0; attempt < 5; attempt += 1) {
+          const result = await callTool("list_companion_comments", {
+            sessionId: session.id,
+            scope: "recent",
+            positionIndex: index,
+            limit: 20
+          }).catch(() => ({ structuredContent: {} }));
+          const content = result.structuredContent as Record<string, unknown> | undefined;
+          const comments = Array.isArray(content?.comments)
+            ? (content.comments as CompanionComment[])
+            : [];
+          const persisted = comments.find((comment) => comment.operationId === operationId);
+          if (persisted) {
+            setCompanionComments((current) =>
+              [persisted, ...current.filter((item) => item.id !== persisted.id)]
+                .filter((item) => item.sessionId === persisted.sessionId && item.inRecent)
+                .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+                .slice(0, 20)
+            );
+            setSessionBundle((current) => current?.session.id === session.id
+              ? {
+                  ...current,
+                  session: {
+                    ...current.session,
+                    assistantSyncedPosition: persisted.position,
+                    updatedAt: persisted.createdAt
+                  }
+                }
+              : current
+            );
+            acceptedLiveReadingFallbacksRef.current.delete(operationId);
+            return true;
+          }
+          await new Promise((resolve) => window.setTimeout(resolve, 1_500));
+        }
+        return true;
+      }
       const targetPosition = makePosition("novel", index, chunks.length);
       const start = index;
       const text = chunks
@@ -1819,11 +1857,10 @@ export function App() {
               }
             };
           });
-          liveReadingFallbackAttemptsRef.current.delete(operationId);
+          acceptedLiveReadingFallbacksRef.current.delete(operationId);
           return true;
         }
 
-        const fallbackAttempt = liveReadingFallbackAttemptsRef.current.get(operationId) ?? 0;
         const fallbackMode = await sendLiveReadingFallback({
           context: buildLiveReadingModelContext({
             sessionId: session.id,
@@ -1834,8 +1871,6 @@ export function App() {
             ...(longTermContext ? { longTermContext } : {})
           }),
           wakePrompt: buildLiveReadingWakePrompt(targetPosition, text),
-          retryPrompt: buildLiveReadingRetryPrompt(targetPosition, text),
-          preferRetryPrompt: fallbackAttempt > 0,
           compatibilityPrompt: buildLiveReadingPrompt({
             sessionId: session.id,
             title: session.title,
@@ -1853,7 +1888,7 @@ export function App() {
         if (fallbackMode === "failed") {
           throw new Error("Host did not accept follow-up message");
         }
-        liveReadingFallbackAttemptsRef.current.set(operationId, fallbackAttempt + 1);
+        acceptedLiveReadingFallbacksRef.current.add(operationId);
         return true;
       } catch {
         setToast("这次实时跟读没有发送成功。");
@@ -2218,6 +2253,8 @@ export function App() {
       "请自然地接着用户最后一句回复 1–3 句，最多 260 字。",
       "只返回准备写进书边的回复正文，不要标题、引号、参数、工具调用或保存说明。"
     ].join("\n\n");
+    const latestMessageId = annotation.messages.at(-1)?.id ?? "initial";
+    const operationId = `annotation-daddy-v36:${annotation.id}:${latestMessageId}`;
     try {
       const sampled = await sampleChatGptText(prompt, {
         systemPrompt: DADDY_SAMPLING_SYSTEM_PROMPT,
@@ -2230,7 +2267,7 @@ export function App() {
           annotationId: annotation.id,
           author: "assistant",
           text: trimDaddyText(sampled, 500),
-          operationId: `annotation-daddy-v28:${annotation.id}:${crypto.randomUUID()}`
+          operationId
         });
         const saved = result.structuredContent?.annotation as ReadingAnnotation | undefined;
         if (!saved) throw new Error("Missing Daddy annotation reply");
@@ -2245,8 +2282,8 @@ export function App() {
         buildDaddyAnnotationReplyFallbackPrompt({
           conversationPrompt: prompt,
           sessionId: sessionBundle.session.id,
-          position: annotation.position,
-          operationId: `annotation-daddy-v25:${encodeURIComponent(annotation.id)}:${crypto.randomUUID()}`
+          annotationId: annotation.id,
+          operationId
         }),
         { scrollToBottom: false }
       );
@@ -2577,7 +2614,46 @@ export function App() {
         draft = sampled ? parseSkillForgeDraft(sampled) : null;
       }
       if (!draft) {
-        setToast("评估服务的结构化与文本路径都没有返回可用判定；没有写入半成品，可以稍后重试。");
+        const sent = await askChatGpt(
+          buildSkillForgeConversationPrompt(snapshot),
+          { scrollToBottom: false }
+        );
+        if (!sent) {
+          setToast("当前宿主没有接收评估请求；没有写入半成品，可以稍后重试。");
+          return;
+        }
+        setToast("已经交给当前对话评估，判定写入后会自动出现在这里。");
+        for (let attempt = 0; attempt < 12; attempt += 1) {
+          await new Promise((resolve) => window.setTimeout(resolve, 1_500));
+          const refreshed = await callTool("list_companion_comments", {
+            sessionId: session.id,
+            scope: "recent",
+            limit: 1
+          }).catch(() => ({ structuredContent: {} }));
+          const refreshedContent = refreshed.structuredContent as
+            | Record<string, unknown>
+            | undefined;
+          const candidates = Array.isArray(refreshedContent?.skillCandidates)
+            ? (refreshedContent.skillCandidates as SkillCandidate[])
+            : [];
+          const saved = candidates.find(
+            (candidate) => candidate.analysisFingerprint === snapshot.fingerprint
+          );
+          if (!saved) continue;
+          setSkillCandidates((current) => [
+            saved,
+            ...current.filter((item) => item.id !== saved.id)
+          ]);
+          setToast(
+            saved.verdict === "forge_skill"
+              ? "这段确实有可复用的方法，Skill 候选已经做好，等小安审阅。"
+              : saved.verdict === "knowledge_only"
+                ? "这段更适合留作知识卡，没有硬炼成 Skill。"
+                : "现在材料还不够，先继续读，Daddy没有硬编。"
+          );
+          return;
+        }
+        setToast("评估已在当前对话继续；写入完成后重新打开 P3 就能看到结果。");
         return;
       }
       const candidatePayload = toPersistedSkillCandidate(snapshot, draft);

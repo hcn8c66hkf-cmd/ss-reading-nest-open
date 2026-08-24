@@ -208,6 +208,30 @@ export function buildSkillForgePrompt(
   ].filter(Boolean).join("\n");
 }
 
+export function buildSkillForgeConversationPrompt(snapshot: ChapterSnapshot): string {
+  const fixed = {
+    sessionId: snapshot.sessionId,
+    scope: snapshot.scope,
+    chapterLabel: snapshot.chapterLabel,
+    rangeStart: snapshot.rangeStart,
+    rangeEnd: snapshot.rangeEnd,
+    ...(snapshot.totalUnits !== undefined ? { totalUnits: snapshot.totalUnits } : {}),
+    analysisFingerprint: snapshot.fingerprint,
+    status: "draft",
+    operationId: `skill-candidate-v36:${snapshot.fingerprint}`
+  };
+  return [
+    buildSkillForgePrompt(snapshot, {
+      bodyLimit: 12_000,
+      toolName: "upsert_skill_candidate"
+    }),
+    "当前页面宿主没有返回可用的采样结果。现在请在本轮对话中完成判定，并且必须调用 upsert_skill_candidate 恰好一次保存最终结果。不要调用 save_quote。",
+    `以下字段固定照抄：${JSON.stringify(fixed)}`,
+    "其余字段按上面的严格门槛填写。forge_skill 时必须同时提供合法的 skillName、以 Use when 开头的 description，以及完整可审阅的 skillMarkdown；另外两种 verdict 不要伪造 Skill 字段。",
+    "工具成功后，用一句简短中文告诉用户判定是：可炼成 Skill、只适合知识卡，或材料不足。"
+  ].join("\n\n");
+}
+
 export function parseSkillForgeDraft(raw: string): SkillForgeDraft | null {
   try {
     const json = extractFirstJsonObject(stripFence(raw));

@@ -20,8 +20,8 @@ export interface CloudSourceUploadResult {
   diagnostics: CloudUploadDiagnostics;
 }
 
-const RESOURCE_VERSION = "app-v35";
-const APP_VERSION = "0.3.5";
+const RESOURCE_VERSION = "app-v36";
+const APP_VERSION = "0.3.6";
 const MAX_BRIDGE_NOVEL_UPLOAD_BYTES = 2 * 1024 * 1024;
 
 class NonRetryableRequestError extends Error {}

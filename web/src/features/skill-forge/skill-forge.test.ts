@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildChapterSnapshot,
+  buildSkillForgeConversationPrompt,
   buildSkillForgePrompt,
   parseSkillForgeDraft,
   SKILL_FORGE_SAMPLING_TOOL,
@@ -61,6 +62,15 @@ describe("P3 skill forge", () => {
     expect(prompt).toContain("不要因为用户想试功能就硬造 Skill");
     expect(prompt).toContain("未读完全书时，不得声称这是全书 Skill");
     expect(prompt).toContain("knowledge_only");
+  });
+
+  it("builds a model-visible fallback that persists one verdict", () => {
+    const item = snapshot();
+    const prompt = buildSkillForgeConversationPrompt(item);
+    expect(prompt).toContain("调用 upsert_skill_candidate 恰好一次");
+    expect(prompt).toContain(`\"analysisFingerprint\":\"${item.fingerprint}\"`);
+    expect(prompt).toContain(`\"operationId\":\"skill-candidate-v36:${item.fingerprint}\"`);
+    expect(prompt).toContain("不要调用 save_quote");
   });
 
   it("normalizes a forge verdict into a valid reviewable SKILL.md", () => {
