@@ -1,3 +1,4 @@
 release=v34
 approved_at=2026-08-24
 scope=live-comment-writeback-mobile-render-and-p3-retry
+validation_hotfix=91e2c9f
