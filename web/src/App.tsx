@@ -37,6 +37,7 @@ import {
 } from "./bridge/host.js";
 import { syncCurrentContext } from "./bridge/sync-current-context.js";
 import { sendLiveReadingFallback } from "./bridge/send-live-reading-fallback.js";
+import { waitForWriteback } from "./bridge/wait-for-writeback.js";
 import { CacheSettings } from "./components/CacheSettings.js";
 import { BookManagementSheet } from "./components/BookManagementSheet.js";
 import { DiaryPreview } from "./components/DiaryPreview.js";
@@ -69,7 +70,6 @@ import {
   buildLiveReadingDraftPrompt,
   buildLiveReadingModelContext,
   buildLiveReadingPrompt,
-  buildLiveReadingWakePrompt,
   buildReadingCommentPrompt
 } from "./features/reading-comments/prompt-policy.js";
 import { buildDaddyAnnotationReplyFallbackPrompt } from "./features/annotations/reply-fallback.js";
@@ -254,7 +254,7 @@ export function App() {
   const syncJobRef = useRef<ReadingSyncJob | null>(null);
   const companionVersionRef = useRef<string | null>(null);
   const annotationVersionRef = useRef<string | null>(null);
-  const acceptedLiveReadingFallbacksRef = useRef(new Set<string>());
+  const sentLiveReadingFallbacksRef = useRef(new Set<string>());
   const hostLayout = useReadingHostLayout();
   const manualCompanionDraft = useMemo<PendingCompanionCommentDraft | null>(() => {
     if (!sessionBundle) return null;
@@ -1760,44 +1760,7 @@ export function App() {
       ) {
         return true;
       }
-      if (acceptedLiveReadingFallbacksRef.current.has(operationId)) {
-        for (let attempt = 0; attempt < 5; attempt += 1) {
-          const result = await callTool("list_companion_comments", {
-            sessionId: session.id,
-            scope: "recent",
-            positionIndex: index,
-            limit: 20
-          }).catch(() => ({ structuredContent: {} }));
-          const content = result.structuredContent as Record<string, unknown> | undefined;
-          const comments = Array.isArray(content?.comments)
-            ? (content.comments as CompanionComment[])
-            : [];
-          const persisted = comments.find((comment) => comment.operationId === operationId);
-          if (persisted) {
-            setCompanionComments((current) =>
-              [persisted, ...current.filter((item) => item.id !== persisted.id)]
-                .filter((item) => item.sessionId === persisted.sessionId && item.inRecent)
-                .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
-                .slice(0, 20)
-            );
-            setSessionBundle((current) => current?.session.id === session.id
-              ? {
-                  ...current,
-                  session: {
-                    ...current.session,
-                    assistantSyncedPosition: persisted.position,
-                    updatedAt: persisted.createdAt
-                  }
-                }
-              : current
-            );
-            acceptedLiveReadingFallbacksRef.current.delete(operationId);
-            return true;
-          }
-          await new Promise((resolve) => window.setTimeout(resolve, 1_500));
-        }
-        return true;
-      }
+      const retryingFallback = sentLiveReadingFallbacksRef.current.has(operationId);
       const targetPosition = makePosition("novel", index, chunks.length);
       const start = index;
       const text = chunks
@@ -1859,10 +1822,21 @@ export function App() {
               }
             };
           });
-          acceptedLiveReadingFallbacksRef.current.delete(operationId);
+          sentLiveReadingFallbacksRef.current.delete(operationId);
           return true;
         }
 
+        const fallbackPrompt = buildLiveReadingPrompt({
+          sessionId: session.id,
+          title: session.title,
+          position: targetPosition,
+          text,
+          operationId,
+          autoSaveCompanionComments:
+            session.sessionPreferences.autoSaveCompanionComments,
+          requestedMode: mode,
+          requestedLength: length
+        });
         const fallbackMode = await sendLiveReadingFallback({
           context: buildLiveReadingModelContext({
             sessionId: session.id,
@@ -1872,25 +1846,69 @@ export function App() {
             operationId,
             ...(longTermContext ? { longTermContext } : {})
           }),
-          wakePrompt: buildLiveReadingWakePrompt(targetPosition, text),
-          compatibilityPrompt: buildLiveReadingPrompt({
-            sessionId: session.id,
-            title: session.title,
-            position: targetPosition,
-            text,
-            operationId,
-            autoSaveCompanionComments:
-              session.sessionPreferences.autoSaveCompanionComments,
-            requestedMode: mode,
-            requestedLength: length
-          }),
+          // Mobile hosts can acknowledge model-context updates without making
+          // that context available to the follow-up turn. Keep every required
+          // writeback argument in the message itself as well.
+          wakePrompt: fallbackPrompt,
+          retryPrompt: [
+            `这是${targetPosition.label}的写回重试；上一轮思考结束后，服务器仍没有收到对应短评。`,
+            fallbackPrompt
+          ].join("\n\n"),
+          preferRetryPrompt: retryingFallback,
+          compatibilityPrompt: fallbackPrompt,
           updateModelContext,
           sendMessage: askChatGpt
         });
         if (fallbackMode === "failed") {
+          sentLiveReadingFallbacksRef.current.delete(operationId);
           throw new Error("Host did not accept follow-up message");
         }
-        acceptedLiveReadingFallbacksRef.current.add(operationId);
+        sentLiveReadingFallbacksRef.current.add(operationId);
+        const persisted = await waitForWriteback<CompanionComment>({
+          load: async () => {
+            const result = await callTool("list_companion_comments", {
+              sessionId: session.id,
+              scope: "recent",
+              positionIndex: index,
+              limit: 20
+            }).catch(() => ({ structuredContent: {} }));
+            const content = result.structuredContent as Record<string, unknown> | undefined;
+            return Array.isArray(content?.comments)
+              ? (content.comments as CompanionComment[])
+              : [];
+          },
+          select: (loaded) => (loaded as CompanionComment[])
+            .find((comment) => comment.operationId === operationId),
+          attempts: 20,
+          intervalMs: 1_500
+        });
+        if (!persisted) {
+          if (retryingFallback) sentLiveReadingFallbacksRef.current.delete(operationId);
+          setToast(
+            retryingFallback
+              ? "这轮思考结束了，但短评没有写回。重读已经解锁，可以再试。"
+              : "这轮没有写回短评，正在自动重试一次。"
+          );
+          return false;
+        }
+        setCompanionComments((current) =>
+          [persisted, ...current.filter((item) => item.id !== persisted.id)]
+            .filter((item) => item.sessionId === persisted.sessionId && item.inRecent)
+            .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+            .slice(0, 20)
+        );
+        setSessionBundle((current) => current?.session.id === session.id
+          ? {
+              ...current,
+              session: {
+                ...current.session,
+                assistantSyncedPosition: persisted.position,
+                updatedAt: persisted.createdAt
+              }
+            }
+          : current
+        );
+        sentLiveReadingFallbacksRef.current.delete(operationId);
         return true;
       } catch {
         setToast("这次实时跟读没有发送成功。");
@@ -2258,7 +2276,7 @@ export function App() {
       "只返回准备写进书边的回复正文，不要标题、引号、参数、工具调用或保存说明。"
     ].join("\n\n");
     const latestMessageId = annotation.messages.at(-1)?.id ?? "initial";
-    const operationId = `annotation-daddy-v37:${annotation.id}:${latestMessageId}`;
+    const operationId = `annotation-daddy-v38:${annotation.id}:${latestMessageId}`;
     try {
       const sampled = await sampleChatGptText(prompt, {
         systemPrompt: DADDY_SAMPLING_SYSTEM_PROMPT,
@@ -2292,7 +2310,35 @@ export function App() {
         { scrollToBottom: false }
       );
       if (!sent) throw new Error("Host did not accept Daddy reply request");
-      setToast("已经请Daddy来回这条；写进书边后会自动出现。");
+      setToast("Daddy正在回复；写进书边后会自动出现。");
+      const saved = await waitForWriteback<ReadingAnnotation>({
+        load: async () => {
+          const result = await callTool("list_companion_comments", {
+            sessionId: sessionBundle.session.id,
+            scope: "recent",
+            positionIndex: annotation.position.index,
+            limit: 1
+          }).catch(() => ({ structuredContent: {} }));
+          const content = result.structuredContent as Record<string, unknown> | undefined;
+          return Array.isArray(content?.annotations)
+            ? (content.annotations as ReadingAnnotation[])
+            : [];
+        },
+        select: (loaded) => (loaded as ReadingAnnotation[]).find(
+          (item) => item.id === annotation.id &&
+            item.messages.some((message) => message.operationId === operationId)
+        ),
+        attempts: 20,
+        intervalMs: 1_500
+      });
+      if (!saved) {
+        setToast("这轮思考结束了，但回复没有写进书边；按钮已经解锁，可以重试。");
+        return false;
+      }
+      setAnnotations((current) =>
+        current.map((item) => (item.id === saved.id ? saved : item))
+      );
+      setToast("Daddy已经回在这条批注下面啦。");
       return true;
     } catch (error) {
       console.warn("Daddy annotation reply failed", error);

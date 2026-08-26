@@ -69,7 +69,7 @@ describe("P3 skill forge", () => {
     const prompt = buildSkillForgeConversationPrompt(item);
     expect(prompt).toContain("调用 upsert_skill_candidate 恰好一次");
     expect(prompt).toContain(`\"analysisFingerprint\":\"${item.fingerprint}\"`);
-    expect(prompt).toContain(`\"operationId\":\"skill-candidate-v37:${item.fingerprint}\"`);
+    expect(prompt).toContain(`\"operationId\":\"skill-candidate-v38:${item.fingerprint}\"`);
     expect(prompt).toContain("不要调用 save_quote");
   });
 

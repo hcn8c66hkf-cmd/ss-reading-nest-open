@@ -48,7 +48,7 @@ import { ReadingService } from "../services/reading-service.js";
 import type { CloudSourceService } from "../services/cloud-source-service.js";
 import { toolResult } from "./tool-result.js";
 
-export const READING_NEST_URI = "ui://ss-reading-nest/app-v37.html";
+export const READING_NEST_URI = "ui://ss-reading-nest/app-v38.html";
 
 const ANNOTATION_QUOTE_OPERATION_PREFIX = "annotation-v24:";
 const ANNOTATION_QUOTE_NOTE_PREFIX = "__ss_annotation_v24__:";
@@ -76,10 +76,24 @@ const mutation = {
 };
 
 export const TOOL_CONFIGS = {
-  open_reading_nest_v37: {
+  open_reading_nest_v38: {
     title: "打开 S×S 小窝共读",
     description:
-      "Use this primary v37 tool when the user wants to open the reading nest or continue recent reading.",
+      "Use this primary v38 tool when the user wants to open the reading nest or continue recent reading.",
+    inputSchema: openReadingNestInputSchema,
+    annotations: readOnly,
+    _meta: {
+      ui: { resourceUri: READING_NEST_URI },
+      "ui/resourceUri": READING_NEST_URI,
+      "openai/outputTemplate": READING_NEST_URI,
+      "openai/toolInvocation/invoking": "正在点亮小窝…",
+      "openai/toolInvocation/invoked": "小窝已经准备好"
+    }
+  },
+  open_reading_nest_v37: {
+    title: "打开 S×S 小窝共读（v37 兼容入口）",
+    description:
+      "Legacy compatibility entry. Prefer open_reading_nest_v38 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -93,7 +107,7 @@ export const TOOL_CONFIGS = {
   open_reading_nest_v36: {
     title: "打开 S×S 小窝共读（v36 兼容入口）",
     description:
-      "Legacy compatibility entry. Prefer open_reading_nest_v37 whenever it is available.",
+      "Legacy compatibility entry. Prefer open_reading_nest_v38 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -675,6 +689,12 @@ export function registerReadingTools(
     );
   };
 
+  registerAppTool(
+    server,
+    "open_reading_nest_v38",
+    TOOL_CONFIGS.open_reading_nest_v38,
+    openReadingNest
+  );
   registerAppTool(
     server,
     "open_reading_nest_v37",

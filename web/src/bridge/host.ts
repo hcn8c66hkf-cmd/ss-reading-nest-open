@@ -33,7 +33,7 @@ function connectApp() {
   }
   if (!app) {
     const nextApp = new McpApp(
-      { name: "S×S 小窝共读", version: "0.3.7" },
+      { name: "S×S 小窝共读", version: "0.3.8" },
       {},
       {
         // The SDK's default ResizeObserver briefly sets <html> to max-content
