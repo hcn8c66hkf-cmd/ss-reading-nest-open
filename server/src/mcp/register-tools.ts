@@ -49,6 +49,7 @@ import type { CloudSourceService } from "../services/cloud-source-service.js";
 import { toolResult } from "./tool-result.js";
 
 export const READING_NEST_URI = "ui://ss-reading-nest/app-v38.html";
+export const READING_NEST_TOOL_NAME = "open_reading_nest_v38";
 
 const ANNOTATION_QUOTE_OPERATION_PREFIX = "annotation-v24:";
 const ANNOTATION_QUOTE_NOTE_PREFIX = "__ss_annotation_v24__:";
@@ -691,7 +692,7 @@ export function registerReadingTools(
 
   registerAppTool(
     server,
-    "open_reading_nest_v38",
+    READING_NEST_TOOL_NAME,
     TOOL_CONFIGS.open_reading_nest_v38,
     openReadingNest
   );

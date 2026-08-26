@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildCurrentReadingContext,
+  READING_NEST_TOOL_NAME,
   READING_NEST_URI,
   registerReadingTools,
   TOOL_CONFIGS
@@ -9,6 +10,7 @@ import {
 describe("tool descriptors", () => {
   it("binds the current UI resource to the v38 and compatibility render tools", () => {
     expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v38.html");
+    expect(READING_NEST_TOOL_NAME).toBe("open_reading_nest_v38");
     expect(TOOL_CONFIGS.open_reading_nest_v38._meta?.ui).toEqual({
       resourceUri: READING_NEST_URI
     });

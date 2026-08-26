@@ -1,5 +1,9 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import {
+  READING_NEST_TOOL_NAME,
+  READING_NEST_URI
+} from "../dist/mcp/register-tools.js";
 
 const endpoint = process.env.MCP_ENDPOINT;
 const token = process.env.MCP_PATH_TOKEN ?? "";
@@ -19,9 +23,9 @@ try {
   if (tools.tools.length === 0) {
     throw new Error("MCP server returned no tools");
   }
-  const renderTool = tools.tools.find((tool) => tool.name === "open_reading_nest_v37");
+  const renderTool = tools.tools.find((tool) => tool.name === READING_NEST_TOOL_NAME);
   if (!renderTool) {
-    throw new Error("MCP server did not publish open_reading_nest_v37");
+    throw new Error(`MCP server did not publish ${READING_NEST_TOOL_NAME}`);
   }
   for (const name of ["create_annotation_v23", "reply_to_annotation_v23", "list_annotations_v23"]) {
     if (!tools.tools.some((tool) => tool.name === name)) {
@@ -32,7 +36,7 @@ try {
     renderTool._meta?.["openai/outputTemplate"] ??
     renderTool._meta?.["ui/resourceUri"] ??
     renderTool._meta?.ui?.resourceUri;
-  if (resourceUri !== "ui://ss-reading-nest/app-v37.html") {
+  if (resourceUri !== READING_NEST_URI) {
     throw new Error(`Render tool published an invalid UI resource URI: ${String(resourceUri)}`);
   }
 
