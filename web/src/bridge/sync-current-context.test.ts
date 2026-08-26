@@ -10,6 +10,7 @@ describe("syncCurrentContext", () => {
     });
     const send = vi.fn(async () => {
       calls.push("message");
+      return true;
     });
 
     const mode = await syncCurrentContext({
@@ -26,7 +27,7 @@ describe("syncCurrentContext", () => {
   });
 
   it("puts the current content in the message when model context is unavailable", async () => {
-    const send = vi.fn();
+    const send = vi.fn().mockResolvedValue(true);
 
     const mode = await syncCurrentContext({
       context: { title: "Book", currentText: "current paragraph" },
@@ -40,5 +41,17 @@ describe("syncCurrentContext", () => {
     expect(send).toHaveBeenCalledWith("《Book》第 2 段\n当前段落：current paragraph", {
       scrollToBottom: false
     });
+  });
+
+  it("does not report a context sync when the host did not accept the message", async () => {
+    const mode = await syncCurrentContext({
+      context: { title: "Book", currentText: "current paragraph" },
+      successPrompt: "陪我看看这里",
+      fallbackPrompt: "当前段落：current paragraph",
+      updateModelContext: vi.fn().mockResolvedValue(true),
+      sendMessage: vi.fn().mockResolvedValue(false)
+    });
+
+    expect(mode).toBe("failed");
   });
 });

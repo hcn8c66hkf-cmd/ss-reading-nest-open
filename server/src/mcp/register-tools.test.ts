@@ -7,15 +7,15 @@ import {
 } from "./register-tools.js";
 
 describe("tool descriptors", () => {
-  it("binds the current UI resource to the v36 and compatibility render tools", () => {
-    expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v36.html");
-    expect(TOOL_CONFIGS.open_reading_nest_v36._meta?.ui).toEqual({
+  it("binds the current UI resource to the v37 and compatibility render tools", () => {
+    expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v37.html");
+    expect(TOOL_CONFIGS.open_reading_nest_v37._meta?.ui).toEqual({
       resourceUri: READING_NEST_URI
     });
-    expect(TOOL_CONFIGS.open_reading_nest_v36._meta?.["ui/resourceUri"]).toBe(
+    expect(TOOL_CONFIGS.open_reading_nest_v37._meta?.["ui/resourceUri"]).toBe(
       READING_NEST_URI
     );
-    expect(TOOL_CONFIGS.open_reading_nest_v36._meta?.["openai/outputTemplate"]).toBe(
+    expect(TOOL_CONFIGS.open_reading_nest_v37._meta?.["openai/outputTemplate"]).toBe(
       READING_NEST_URI
     );
     expect(TOOL_CONFIGS.open_reading_nest._meta?.["openai/outputTemplate"]).toBe(
@@ -23,6 +23,7 @@ describe("tool descriptors", () => {
     );
     for (const [name, config] of Object.entries(TOOL_CONFIGS)) {
       if (
+        name !== "open_reading_nest_v37" &&
         name !== "open_reading_nest_v36" &&
         name !== "open_reading_nest_v35" &&
         name !== "open_reading_nest_v34" &&
@@ -114,7 +115,7 @@ describe("tool descriptors", () => {
     registerReadingTools(server as never, service as never, undefined, {
       sourceEndpointBase: "https://worker.example.test/source/secret"
     });
-    const result = (await handlers.get("open_reading_nest_v36")?.()) as {
+    const result = (await handlers.get("open_reading_nest_v37")?.()) as {
       structuredContent?: Record<string, unknown>;
     };
 
@@ -255,7 +256,7 @@ describe("tool descriptors", () => {
   });
 
   it("exposes book management and threaded annotation tools", () => {
-    expect(Object.keys(TOOL_CONFIGS)).toHaveLength(53);
+    expect(Object.keys(TOOL_CONFIGS)).toHaveLength(54);
     expect(TOOL_CONFIGS.create_annotation.annotations).toMatchObject({
       readOnlyHint: false,
       idempotentHint: true

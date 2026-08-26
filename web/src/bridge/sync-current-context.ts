@@ -6,11 +6,12 @@ export async function syncCurrentContext(input: {
   sendMessage: (
     prompt: string,
     options?: { scrollToBottom?: boolean }
-  ) => Promise<void>;
+  ) => Promise<boolean>;
 }) {
   const updated = await input.updateModelContext(input.context);
-  await input.sendMessage(updated ? input.successPrompt : input.fallbackPrompt, {
+  const sent = await input.sendMessage(updated ? input.successPrompt : input.fallbackPrompt, {
     scrollToBottom: false
   });
+  if (!sent) return "failed" as const;
   return updated ? ("context" as const) : ("message-fallback" as const);
 }

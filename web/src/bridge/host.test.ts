@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const bridge = {
   connect: vi.fn().mockResolvedValue(undefined),
   callServerTool: vi.fn(),
-  sendMessage: vi.fn().mockResolvedValue(undefined),
+  sendMessage: vi.fn().mockResolvedValue({}),
   getHostCapabilities: vi.fn().mockReturnValue({ sampling: {} }),
   createSamplingMessage: vi.fn(),
   updateModelContext: vi.fn().mockResolvedValue({}),
@@ -28,6 +28,8 @@ describe("host bridge", () => {
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
+    bridge.connect.mockResolvedValue(undefined);
+    bridge.sendMessage.mockResolvedValue({});
     Object.defineProperty(window, "parent", {
       configurable: true,
       value: {}
@@ -73,22 +75,23 @@ describe("host bridge", () => {
     });
   });
 
-  it("prefers the ChatGPT compatibility message path when the mobile host exposes it", async () => {
+  it("prefers the acknowledged Apps message path even when a mobile compatibility alias exists", async () => {
     const sendFollowUpMessage = vi.fn().mockResolvedValue(undefined);
     if (window.openai) window.openai.sendFollowUpMessage = sendFollowUpMessage;
     const { askChatGpt } = await import("./host.js");
 
     await expect(askChatGpt("请读手机上的这一段", { scrollToBottom: false })).resolves.toBe(true);
 
-    expect(sendFollowUpMessage).toHaveBeenCalledWith({
-      prompt: "请读手机上的这一段",
-      scrollToBottom: false
+    expect(bridge.sendMessage).toHaveBeenCalledWith({
+      role: "user",
+      content: [{ type: "text", text: "请读手机上的这一段" }]
     });
-    expect(bridge.sendMessage).not.toHaveBeenCalled();
+    expect(sendFollowUpMessage).not.toHaveBeenCalled();
   });
 
-  it("falls back to the shared Apps bridge when the compatibility path rejects", async () => {
-    const sendFollowUpMessage = vi.fn().mockRejectedValue(new Error("mobile alias rejected"));
+  it("falls back to the compatibility alias when the Apps host rejects delivery", async () => {
+    bridge.sendMessage.mockResolvedValueOnce({ isError: true });
+    const sendFollowUpMessage = vi.fn().mockResolvedValue(undefined);
     if (window.openai) window.openai.sendFollowUpMessage = sendFollowUpMessage;
     const { askChatGpt } = await import("./host.js");
 
@@ -97,6 +100,23 @@ describe("host bridge", () => {
     expect(bridge.sendMessage).toHaveBeenCalledWith({
       role: "user",
       content: [{ type: "text", text: "换一条路送达" }]
+    });
+    expect(sendFollowUpMessage).toHaveBeenCalledWith({
+      prompt: "换一条路送达",
+      scrollToBottom: false
+    });
+  });
+
+  it("retries the Apps handshake after an early mobile connection failure", async () => {
+    bridge.connect.mockRejectedValueOnce(new Error("host listener not ready"));
+    const { askChatGpt } = await import("./host.js");
+
+    await expect(askChatGpt("同一次点击自动重试")).resolves.toBe(true);
+
+    expect(bridge.connect).toHaveBeenCalledTimes(2);
+    expect(bridge.sendMessage).toHaveBeenCalledWith({
+      role: "user",
+      content: [{ type: "text", text: "同一次点击自动重试" }]
     });
   });
 

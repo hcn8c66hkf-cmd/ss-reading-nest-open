@@ -1392,10 +1392,12 @@ export function App() {
         }),
         fallbackPrompt,
         updateModelContext,
-        sendMessage: async (prompt, options) => {
-          await askChatGpt(prompt, options);
-        }
+        sendMessage: askChatGpt
       });
+      if (mode === "failed") {
+        setToast("当前宿主没有接收这次共读请求，请再点一次。");
+        return;
+      }
       rememberPendingCommentDraft({
         position: sessionBundle.session.userCurrentPosition,
         mode: activePreferences.readingCommentMode,
@@ -2007,10 +2009,12 @@ export function App() {
         successPrompt: policyPrompt,
         fallbackPrompt,
         updateModelContext,
-        sendMessage: async (prompt, options) => {
-          await askChatGpt(prompt, options);
-        }
+        sendMessage: askChatGpt
       });
+      if (mode === "failed") {
+        setToast("当前宿主没有接收这次共读请求，请再点一次。");
+        return;
+      }
       rememberPendingCommentDraft({
         position,
         mode: activePreferences.readingCommentMode,
@@ -2254,7 +2258,7 @@ export function App() {
       "只返回准备写进书边的回复正文，不要标题、引号、参数、工具调用或保存说明。"
     ].join("\n\n");
     const latestMessageId = annotation.messages.at(-1)?.id ?? "initial";
-    const operationId = `annotation-daddy-v36:${annotation.id}:${latestMessageId}`;
+    const operationId = `annotation-daddy-v37:${annotation.id}:${latestMessageId}`;
     try {
       const sampled = await sampleChatGptText(prompt, {
         systemPrompt: DADDY_SAMPLING_SYSTEM_PROMPT,
