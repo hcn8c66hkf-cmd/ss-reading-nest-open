@@ -2276,7 +2276,7 @@ export function App() {
       "只返回准备写进书边的回复正文，不要标题、引号、参数、工具调用或保存说明。"
     ].join("\n\n");
     const latestMessageId = annotation.messages.at(-1)?.id ?? "initial";
-    const operationId = `annotation-daddy-v38:${annotation.id}:${latestMessageId}`;
+    const operationId = `annotation-daddy-v39:${annotation.id}:${latestMessageId}`;
     try {
       const sampled = await sampleChatGptText(prompt, {
         systemPrompt: DADDY_SAMPLING_SYSTEM_PROMPT,
@@ -2313,11 +2313,9 @@ export function App() {
       setToast("Daddy正在回复；写进书边后会自动出现。");
       const saved = await waitForWriteback<ReadingAnnotation>({
         load: async () => {
-          const result = await callTool("list_companion_comments", {
+          const result = await callTool("list_annotations_v23", {
             sessionId: sessionBundle.session.id,
-            scope: "recent",
-            positionIndex: annotation.position.index,
-            limit: 1
+            positionIndex: annotation.position.index
           }).catch(() => ({ structuredContent: {} }));
           const content = result.structuredContent as Record<string, unknown> | undefined;
           return Array.isArray(content?.annotations)

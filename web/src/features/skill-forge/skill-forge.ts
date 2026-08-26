@@ -218,7 +218,7 @@ export function buildSkillForgeConversationPrompt(snapshot: ChapterSnapshot): st
     ...(snapshot.totalUnits !== undefined ? { totalUnits: snapshot.totalUnits } : {}),
     analysisFingerprint: snapshot.fingerprint,
     status: "draft",
-    operationId: `skill-candidate-v38:${snapshot.fingerprint}`
+    operationId: `skill-candidate-v39:${snapshot.fingerprint}`
   };
   return [
     buildSkillForgePrompt(snapshot, {

@@ -3,6 +3,7 @@ import type {
   ReadingCommentMode,
   ReadingPosition
 } from "@ss/shared";
+import { LIVE_READING_WRITEBACK_TOOL } from "../../bridge/host.js";
 
 type PromptSource = "catch_up_complete" | "current_only" | "quick_action";
 type PublishSource = "catch_up_completion" | "current_context" | "quick_action";
@@ -75,7 +76,7 @@ export function buildLiveReadingPrompt(input: {
   requestedLength?: CommentLength;
 }): string {
   const publication = [
-        "生成短评后，先调用 publish_companion_comment 保存完全相同的短评。",
+        `生成短评后，优先调用 ${LIVE_READING_WRITEBACK_TOOL} 保存完全相同的短评；如果该工具不可用，再调用 publish_companion_comment。`,
         publishParameters({
           sessionId: input.sessionId,
           operationId: input.operationId,
@@ -94,7 +95,7 @@ export function buildLiveReadingPrompt(input: {
     "只输出 1-3 句弹幕式短评。",
     "不总结全文，不重复剧情，不写完整书评。",
     "只做即时反应、吐槽、嗑点或伏笔提醒。",
-    "只有 publish_companion_comment 成功写下短评，才算读完本段；不要只在聊天区口头回复。",
+    `只有 ${LIVE_READING_WRITEBACK_TOOL} 或 publish_companion_comment 成功写下短评，才算读完本段；不要只在聊天区口头回复。`,
     ...publication
   ].join("\n\n");
 }
@@ -122,11 +123,12 @@ export function buildLiveReadingModelContext(input: {
         "只输出 1-3 句弹幕式短评。",
         "不总结全文，不重复剧情，不写完整书评。",
         "只做即时反应、吐槽、嗑点或伏笔提醒。",
-        "生成最终短评后，先调用 publish_companion_comment 保存完全相同的短评。",
+        `生成最终短评后，优先调用 ${LIVE_READING_WRITEBACK_TOOL} 保存完全相同的短评；不可用时再调用 publish_companion_comment。`,
         "工具成功后，再在聊天区回复完全相同的短评。",
         "工具失败时必须明确说明短评未同步到 Dock。"
       ],
-      publishTool: "publish_companion_comment",
+      publishTool: LIVE_READING_WRITEBACK_TOOL,
+      fallbackPublishTool: "publish_companion_comment",
       publishArguments: {
         sessionId: input.sessionId,
         position: input.position,
@@ -147,7 +149,7 @@ export function buildLiveReadingWakePrompt(
     `请继续共读小窝的${position.label}。`,
     `本段正文：\n${text}`,
     "结合本段正文生成 1-3 句短评。",
-    "必须先调用共读小窝的 publish_companion_comment，并使用 responsePolicy.publishArguments 写回；工具成功后再回复完全相同的短评。",
+    `必须优先调用共读小窝的 ${LIVE_READING_WRITEBACK_TOOL}，并使用 responsePolicy.publishArguments 写回；该工具不可用时再调用 publish_companion_comment。工具成功后再回复完全相同的短评。`,
     "没有成功调用工具，就不要声称已经读完或写回。"
   ].join("\n");
 }
@@ -160,7 +162,7 @@ export function buildLiveReadingRetryPrompt(
     `上一次${position.label}只在聊天区出现了短评，但书里的 Daddy陪读没有收到。`,
     `本段正文：\n${text}`,
     "请根据本段正文重新处理。",
-    "这一次必须先调用 publish_companion_comment，并原样使用 responsePolicy.publishArguments；工具成功后再回复完全相同的短评。",
+    `这一次必须优先调用 ${LIVE_READING_WRITEBACK_TOOL}，并原样使用 responsePolicy.publishArguments；该工具不可用时再调用 publish_companion_comment。工具成功后再回复完全相同的短评。`,
     "不要跳过工具调用，不要只做口头回复。"
   ].join("\n");
 }

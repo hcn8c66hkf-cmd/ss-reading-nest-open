@@ -198,7 +198,8 @@ describe("buildLiveReadingPrompt", () => {
     expect(prompt).toContain("不总结全文");
     expect(prompt).toContain("不重复剧情");
     expect(prompt).toContain("不写完整书评");
-    expect(prompt).toContain("先调用 publish_companion_comment");
+    expect(prompt).toContain("优先调用 submit_live_reading_comment_v39");
+    expect(prompt).toContain("再调用 publish_companion_comment");
     expect(prompt).toContain("position.index=12");
     expect(prompt).toContain("text=最终短评全文");
     expect(prompt).toContain("operationId=live-op-1");
@@ -216,7 +217,8 @@ describe("buildLiveReadingPrompt", () => {
       autoSaveCompanionComments: false
     });
 
-    expect(prompt).toContain("先调用 publish_companion_comment");
+    expect(prompt).toContain("优先调用 submit_live_reading_comment_v39");
+    expect(prompt).toContain("再调用 publish_companion_comment");
     expect(prompt).toContain("source=live_reading");
     expect(prompt).not.toContain("不自动保存短评到 Dock");
   });
@@ -260,7 +262,8 @@ describe("hidden live-reading context", () => {
         mode: "reaction_only",
         length: "short",
         style: "danmaku",
-        publishTool: "publish_companion_comment",
+        publishTool: "submit_live_reading_comment_v39",
+        fallbackPublishTool: "publish_companion_comment",
         publishArguments: {
           sessionId: "session-1",
           position: input.position,
@@ -282,7 +285,7 @@ describe("hidden live-reading context", () => {
     expect(prompt).not.toContain(input.sessionId);
     expect(prompt).not.toContain(input.operationId);
     expect(prompt).toContain("publish_companion_comment");
-    expect(prompt).toContain("必须先调用");
+    expect(prompt).toContain("必须优先调用");
   });
 
   it("builds a stronger tool-first retry without repeating the article", () => {

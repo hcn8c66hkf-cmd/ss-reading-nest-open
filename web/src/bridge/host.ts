@@ -1,9 +1,16 @@
 import { App as McpApp } from "@modelcontextprotocol/ext-apps";
+import {
+  publishCompanionCommentInputSchema,
+  replyToAnnotationInputSchema
+} from "@ss/shared";
 import type { ToolCallResult } from "../types/openai.js";
 
 let app: McpApp | undefined;
 let appReady: Promise<boolean> | undefined;
 let appConnectionFailed = false;
+
+export const LIVE_READING_WRITEBACK_TOOL = "submit_live_reading_comment_v39";
+export const ANNOTATION_WRITEBACK_TOOL = "submit_annotation_reply_v39";
 
 export interface ReadingHostContext {
   displayMode?: "inline" | "pip" | "fullscreen";
@@ -33,7 +40,7 @@ function connectApp() {
   }
   if (!app) {
     const nextApp = new McpApp(
-      { name: "S×S 小窝共读", version: "0.3.8" },
+      { name: "S×S 小窝共读", version: "0.3.9" },
       {},
       {
         // The SDK's default ResizeObserver briefly sets <html> to max-content
@@ -43,6 +50,37 @@ function connectApp() {
         // viewport, so report that stable height explicitly instead.
         autoResize: false
       }
+    );
+    // Follow-up turns created from iOS/iPadOS can start reasoning without
+    // exposing the server's mutation tools to that turn. Advertise two tiny
+    // app-owned writeback tools as well. The host model can submit generated
+    // text to the live iframe, and the iframe forwards it to the canonical
+    // server tool so storage and idempotency remain unchanged.
+    nextApp.registerTool(
+      LIVE_READING_WRITEBACK_TOOL,
+      {
+        title: "写回小窝实时陪读短评",
+        description:
+          "Use this for a live-reading request sent by the S×S reading widget. Submit the final short comment with the exact fixed arguments from the request.",
+        inputSchema: publishCompanionCommentInputSchema
+      },
+      async (args) => nextApp.callServerTool({
+        name: "publish_companion_comment",
+        arguments: args
+      })
+    );
+    nextApp.registerTool(
+      ANNOTATION_WRITEBACK_TOOL,
+      {
+        title: "写回小窝划线回复",
+        description:
+          "Use this for an annotation-reply request sent by the S×S reading widget. Submit the final reply with the exact fixed arguments from the request.",
+        inputSchema: replyToAnnotationInputSchema
+      },
+      async (args) => nextApp.callServerTool({
+        name: "reply_to_annotation_v23",
+        arguments: args
+      })
     );
     app = nextApp;
     appReady = nextApp.connect().then(

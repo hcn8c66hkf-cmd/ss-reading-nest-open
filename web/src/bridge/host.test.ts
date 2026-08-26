@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const bridge = {
   connect: vi.fn().mockResolvedValue(undefined),
+  registerTool: vi.fn(),
   callServerTool: vi.fn(),
   sendMessage: vi.fn().mockResolvedValue({}),
   getHostCapabilities: vi.fn().mockReturnValue({ sampling: {} }),
@@ -14,6 +15,7 @@ const bridge = {
 vi.mock("@modelcontextprotocol/ext-apps", () => ({
   App: class {
     connect = bridge.connect;
+    registerTool = bridge.registerTool;
     callServerTool = bridge.callServerTool;
     sendMessage = bridge.sendMessage;
     getHostCapabilities = bridge.getHostCapabilities;
@@ -45,6 +47,60 @@ describe("host bridge", () => {
           scrollTop: 120
         }
       }
+    });
+  });
+
+  it("advertises app-owned writeback tools before connecting to the host", async () => {
+    const { askChatGpt, ANNOTATION_WRITEBACK_TOOL, LIVE_READING_WRITEBACK_TOOL } =
+      await import("./host.js");
+
+    await askChatGpt("触发连接");
+
+    expect(bridge.registerTool.mock.calls.map(([name]) => name)).toEqual([
+      LIVE_READING_WRITEBACK_TOOL,
+      ANNOTATION_WRITEBACK_TOOL
+    ]);
+    expect(bridge.registerTool.mock.invocationCallOrder[1]).toBeLessThan(
+      bridge.connect.mock.invocationCallOrder[0]!
+    );
+  });
+
+  it("forwards app-owned writebacks to the canonical server tools", async () => {
+    const registered = new Map<string, (args: Record<string, unknown>) => Promise<unknown>>();
+    bridge.registerTool.mockImplementation((name, _config, handler) => {
+      registered.set(name, handler);
+    });
+    bridge.callServerTool.mockResolvedValue({ structuredContent: { saved: true } });
+    const { askChatGpt, ANNOTATION_WRITEBACK_TOOL, LIVE_READING_WRITEBACK_TOOL } =
+      await import("./host.js");
+    await askChatGpt("触发连接");
+
+    const liveArgs = {
+      sessionId: "session-1",
+      position: { kind: "paragraph", index: 8, label: "第 8 段" },
+      mode: "reaction_only",
+      length: "short",
+      text: "这句有点不对劲。",
+      source: "live_reading",
+      operationId: "live-op"
+    };
+    await registered.get(LIVE_READING_WRITEBACK_TOOL)?.(liveArgs);
+    const annotationArgs = {
+      sessionId: "session-1",
+      annotationId: "annotation-1",
+      author: "assistant",
+      text: "我也看到这里了。",
+      operationId: "annotation-op"
+    };
+    await registered.get(ANNOTATION_WRITEBACK_TOOL)?.(annotationArgs);
+
+    expect(bridge.callServerTool).toHaveBeenNthCalledWith(1, {
+      name: "publish_companion_comment",
+      arguments: liveArgs
+    });
+    expect(bridge.callServerTool).toHaveBeenNthCalledWith(2, {
+      name: "reply_to_annotation_v23",
+      arguments: annotationArgs
     });
   });
 
