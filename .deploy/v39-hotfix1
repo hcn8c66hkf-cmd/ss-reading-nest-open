@@ -1,0 +1,4 @@
+release=v39-hotfix1
+approved_at=2026-08-27
+scope=mobile-widget-resource-uri-cache-buster
+cache_buster_commit=a9b6ab5d70a3e67dcb79f3e569e10cff42dfbac5
