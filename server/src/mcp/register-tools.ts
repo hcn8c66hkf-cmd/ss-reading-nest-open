@@ -48,7 +48,7 @@ import { ReadingService } from "../services/reading-service.js";
 import type { CloudSourceService } from "../services/cloud-source-service.js";
 import { toolResult } from "./tool-result.js";
 
-export const READING_NEST_URI = "ui://ss-reading-nest/app-v39-hotfix2.html";
+export const READING_NEST_URI = "ui://ss-reading-nest/app-v39-hotfix3.html";
 export const READING_NEST_TOOL_NAME = "open_reading_nest_v39";
 
 const ANNOTATION_QUOTE_OPERATION_PREFIX = "annotation-v24:";

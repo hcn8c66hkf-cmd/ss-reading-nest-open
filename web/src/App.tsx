@@ -68,7 +68,6 @@ import {
 } from "./features/reading-sync/build-messages.js";
 import {
   buildLiveReadingDraftPrompt,
-  buildLiveReadingModelContext,
   buildLiveReadingPrompt,
   buildReadingCommentPrompt
 } from "./features/reading-comments/prompt-policy.js";
@@ -1767,6 +1766,10 @@ export function App() {
         .slice(start - 1, index)
         .map((chunk, offset) => `【第 ${start + offset} 段】\n${chunk}`)
         .join("\n\n");
+      if (!text.trim()) {
+        setToast(`没有取到${targetPosition.label}正文，已停止发送空请求。`);
+        return false;
+      }
       try {
         const layeredResult = await callTool("list_companion_comments", {
           sessionId: session.id,
@@ -1837,32 +1840,22 @@ export function App() {
           requestedMode: mode,
           requestedLength: length
         });
-        const fallbackMode = await sendLiveReadingFallback({
-          context: buildLiveReadingModelContext({
-            sessionId: session.id,
-            title: session.title,
-            position: targetPosition,
-            text,
-            operationId,
-            ...(longTermContext ? { longTermContext } : {})
-          }),
-          // Mobile hosts can acknowledge model-context updates without making
-          // that context available to the follow-up turn. Keep every required
-          // writeback argument in the message itself as well.
-          wakePrompt: fallbackPrompt,
-          retryPrompt: [
+        const directPrompt = retryingFallback
+          ? [
             `这是${targetPosition.label}的写回重试；上一轮思考结束后，服务器仍没有收到对应短评。`,
             fallbackPrompt
-          ].join("\n\n"),
-          preferRetryPrompt: retryingFallback,
-          compatibilityPrompt: fallbackPrompt,
-          updateModelContext,
+          ].join("\n\n")
+          : fallbackPrompt;
+        const fallbackMode = await sendLiveReadingFallback({
+          prompt: directPrompt,
           sendMessage: (prompt, options) => askChatGpt(prompt, {
             ...options,
-            // A ui/message ACK does not guarantee that mobile ChatGPT created
-            // a model turn. The queue verifies canonical server writeback; on
-            // its one automatic retry, force the alternate host transport.
-            transport: retryingFallback ? "compatibility" : "auto",
+            // The first mobile patch used the compatibility transport but hid
+            // the body in model context; the next patch embedded the body but
+            // switched back to ui/message. Use the missing combination here:
+            // direct full-body prompt over the compatibility transport first.
+            // If it produces no writeback, the queue's one retry uses Apps.
+            transport: retryingFallback ? "apps" : "compatibility",
             ...(retryingFallback ? { scrollToBottom: true } : {})
           })
         });

@@ -1,0 +1,5 @@
+release=v39-hotfix3
+approved_at=2026-08-28
+scope=direct-live-reading-body-delivery
+base=8068f769f639d2a1523253f3e42906c9db78dfb6
+resource_uri=ui://ss-reading-nest/app-v39-hotfix3.html
