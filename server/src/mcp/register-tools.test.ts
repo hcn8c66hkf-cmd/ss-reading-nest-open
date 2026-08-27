@@ -9,7 +9,7 @@ import {
 
 describe("tool descriptors", () => {
   it("binds the current UI resource to the v39 and compatibility render tools", () => {
-    expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v39.html");
+    expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v39-hotfix1.html");
     expect(READING_NEST_TOOL_NAME).toBe("open_reading_nest_v39");
     expect(TOOL_CONFIGS.open_reading_nest_v39._meta?.ui).toEqual({
       resourceUri: READING_NEST_URI
