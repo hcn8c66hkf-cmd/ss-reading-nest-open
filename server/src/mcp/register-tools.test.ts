@@ -9,7 +9,7 @@ import {
 
 describe("tool descriptors", () => {
   it("binds the current UI resource to the v39 and compatibility render tools", () => {
-    expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v39-hotfix3.html");
+    expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v39-hotfix4.html");
     expect(READING_NEST_TOOL_NAME).toBe("open_reading_nest_v39");
     expect(TOOL_CONFIGS.open_reading_nest_v39._meta?.ui).toEqual({
       resourceUri: READING_NEST_URI
@@ -259,7 +259,7 @@ describe("tool descriptors", () => {
   });
 
   it("exposes book management and threaded annotation tools", () => {
-    expect(Object.keys(TOOL_CONFIGS)).toHaveLength(55);
+    expect(Object.keys(TOOL_CONFIGS)).toHaveLength(56);
     expect(TOOL_CONFIGS.create_annotation.annotations).toMatchObject({
       readOnlyHint: false,
       idempotentHint: true
@@ -314,6 +314,60 @@ describe("tool descriptors", () => {
     expect(JSON.stringify(TOOL_CONFIGS.delete_cloud_source)).not.toMatch(
       /sourceText|publicUrl|signedUrl|currentText|includedText/
     );
+  });
+
+  it("reads exactly one live-reading paragraph from the server-side source", async () => {
+    const handlers = new Map<string, (args: any) => Promise<any>>();
+    const server = {
+      registerTool: (name: string, _config: unknown, handler: (args: any) => Promise<any>) => {
+        handlers.set(name, handler);
+      }
+    };
+    const session = {
+      id: "session-d1",
+      title: "D1 里的书",
+      type: "novel",
+      status: "active",
+      userCurrentPosition: { kind: "paragraph", index: 2, label: "第 2 段" },
+      assistantSyncedPosition: null,
+      liveReadingEnabled: true,
+      sessionPreferences: {},
+      sourceManifest: null,
+      createdAt: "2026-08-27T00:00:00.000Z",
+      updatedAt: "2026-08-27T00:00:00.000Z",
+      lastReadAt: "2026-08-27T00:00:00.000Z"
+    };
+    const service = {
+      listAllSessions: async () => [session],
+      getSessionBundle: async () => ({ session, quotes: [], reactions: [], bookmarks: [] })
+    };
+    const cloudSource = {
+      restoreNovelSource: async () => ({
+        sourceText: "第一段只留在 D1。\n\n第二段会交给 Daddy。\n\n第三段不能泄露。",
+        sourceManifest: {
+          segmentationVersion: 1
+        }
+      })
+    };
+
+    registerReadingTools(server as never, service as never, cloudSource as never);
+    const result = await handlers.get("read_live_reading_context")?.({
+      sessionId: "session-d1",
+      positionIndex: 2
+    });
+
+    expect(result.structuredContent).toMatchObject({
+      available: true,
+      sharedPage: {
+        sessionId: "session-d1",
+        title: "D1 里的书",
+        position: { kind: "paragraph", index: 2, label: "第 2 段" },
+        currentText: "第二段会交给 Daddy。"
+      }
+    });
+    expect(result.content[0].text).toContain("第二段会交给 Daddy。");
+    expect(JSON.stringify(result)).not.toContain("第一段只留在 D1。");
+    expect(JSON.stringify(result)).not.toContain("第三段不能泄露。");
   });
 
   it("saves and reloads annotations through stable legacy-catalog tools", async () => {

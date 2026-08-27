@@ -1,5 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
+import { z } from "zod";
 import {
   completeReadingSessionInputSchema,
   createAnnotationInputSchema,
@@ -36,7 +37,8 @@ import {
   deleteCloudSourceInputSchema,
   uploadCloudSourceInputSchema,
   updateSessionPreferencesInputSchema,
-  updateReadingPositionInputSchema
+  updateReadingPositionInputSchema,
+  splitNovelTextForVersion
 } from "@ss/shared";
 import type {
   ReadingSession,
@@ -48,8 +50,15 @@ import { ReadingService } from "../services/reading-service.js";
 import type { CloudSourceService } from "../services/cloud-source-service.js";
 import { toolResult } from "./tool-result.js";
 
-export const READING_NEST_URI = "ui://ss-reading-nest/app-v39-hotfix3.html";
+export const READING_NEST_URI = "ui://ss-reading-nest/app-v39-hotfix4.html";
 export const READING_NEST_TOOL_NAME = "open_reading_nest_v39";
+
+const readLiveReadingContextInputSchema = z
+  .object({
+    sessionId: z.string().min(1),
+    positionIndex: z.number().int().min(1)
+  })
+  .strict();
 
 const ANNOTATION_QUOTE_OPERATION_PREFIX = "annotation-v24:";
 const ANNOTATION_QUOTE_NOTE_PREFIX = "__ss_annotation_v24__:";
@@ -355,10 +364,17 @@ export const TOOL_CONFIGS = {
     inputSchema: getCloudSourceStatusInputSchema,
     annotations: readOnly
   },
+  read_live_reading_context: {
+    title: "读取当前实时陪读正文",
+    description:
+      "When a live-reading follow-up names a sessionId and positionIndex, call this tool before commenting. It returns exactly that one novel paragraph from the user's private D1-backed source so the model does not depend on an iOS message carrying the paragraph body.",
+    inputSchema: readLiveReadingContextInputSchema,
+    annotations: readOnly
+  },
   upload_cloud_source: {
     title: "Upload private cloud source",
     description:
-      "App-only bridge tool for uploading user-provided source bytes to private R2. Returns metadata only and never returns source text or image bytes.",
+      "App-only bridge tool for uploading user-provided source bytes to private cloud storage. Returns metadata only and never returns source text or image bytes.",
     inputSchema: uploadCloudSourceInputSchema,
     annotations: { ...mutation, idempotentHint: true },
     _meta: {
@@ -881,6 +897,77 @@ export function registerReadingTools(
       }
       const result = await cloudSourceService.getCloudSourceStatus(sessionId);
       return toolResult(result, "已检查这本书的私人云端正文状态。");
+    }
+  );
+
+  server.registerTool(
+    "read_live_reading_context",
+    TOOL_CONFIGS.read_live_reading_context,
+    async ({ sessionId, positionIndex }) => {
+      if (!cloudSourceService) {
+        return toolResult(
+          { available: false as const, reason: "cloud_source_disabled" as const },
+          "私人云端正文服务尚未启用，无法读取当前段落。"
+        );
+      }
+
+      const { session } = await service.getSessionBundle(sessionId);
+      if (session.type !== "novel") {
+        return toolResult(
+          { available: false as const, reason: "novel_only" as const, sessionId },
+          "当前只支持从私人云端正文读取小说段落。"
+        );
+      }
+
+      const { sourceText, sourceManifest } =
+        await cloudSourceService.restoreNovelSource(sessionId);
+      const paragraphs = splitNovelTextForVersion(
+        sourceText,
+        sourceManifest.segmentationVersion
+      );
+      const currentText = paragraphs[positionIndex - 1];
+      if (!currentText) {
+        return toolResult(
+          {
+            available: false as const,
+            reason: "position_out_of_range" as const,
+            sessionId,
+            positionIndex,
+            paragraphCount: paragraphs.length
+          },
+          `私人云端正文没有第 ${positionIndex} 段。`
+        );
+      }
+
+      const position = {
+        kind: "paragraph" as const,
+        index: positionIndex,
+        label: `第 ${positionIndex} 段`
+      };
+      return toolResult(
+        {
+          available: true as const,
+          sharedPage: {
+            sessionId,
+            title: session.title,
+            position,
+            currentText
+          },
+          responsePolicy: {
+            mode: "reaction_only" as const,
+            length: "short" as const,
+            style: "danmaku" as const,
+            instruction:
+              "Use sharedPage.currentText as the exact current paragraph, then follow the live-reading prompt's writeback arguments."
+          }
+        },
+        [
+          `【实时陪读：${position.label}】《${session.title}》`,
+          "本段正文：",
+          currentText,
+          "请只依据上面的本段正文生成 1-3 句弹幕式短评，并按触发消息中的参数写回 Dock。"
+        ].join("\n")
+      );
     }
   );
 

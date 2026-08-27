@@ -90,7 +90,8 @@ export function buildLiveReadingPrompt(input: {
       ];
   return [
     `【实时陪读：${input.position.label}】《${input.title}》`,
-    `本段原文：\n${input.text}`,
+    `先调用 read_live_reading_context，参数严格使用 sessionId=${input.sessionId}、positionIndex=${input.position.index}。`,
+    "必须读取该工具返回的 sharedPage.currentText，再据此短评；不要假设本条 iOS 消息携带了正文，也不要在未读取正文时凭空评论。",
     "固定模式：reaction_only；固定长度：short；风格：danmaku。",
     "只输出 1-3 句弹幕式短评。",
     "不总结全文，不重复剧情，不写完整书评。",

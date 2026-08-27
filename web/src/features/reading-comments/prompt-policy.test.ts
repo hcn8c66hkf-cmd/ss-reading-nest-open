@@ -193,7 +193,11 @@ describe("buildLiveReadingPrompt", () => {
     expect(prompt).toContain("reaction_only");
     expect(prompt).toContain("short");
     expect(prompt).toContain("1-3 句弹幕式短评");
-    expect(prompt).toContain("他把没说出口的话咽了回去");
+    expect(prompt).toContain("先调用 read_live_reading_context");
+    expect(prompt).toContain("sessionId=session-1");
+    expect(prompt).toContain("positionIndex=12");
+    expect(prompt).toContain("sharedPage.currentText");
+    expect(prompt).not.toContain("他把没说出口的话咽了回去");
     expect(prompt).toContain("才算读完本段");
     expect(prompt).toContain("不总结全文");
     expect(prompt).toContain("不重复剧情");
