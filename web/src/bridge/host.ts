@@ -9,6 +9,8 @@ let app: McpApp | undefined;
 let appReady: Promise<boolean> | undefined;
 let appConnectionFailed = false;
 
+const APP_HANDSHAKE_TIMEOUT_MS = 2_000;
+
 export const LIVE_READING_WRITEBACK_TOOL = "submit_live_reading_comment_v39";
 export const ANNOTATION_WRITEBACK_TOOL = "submit_annotation_reply_v39";
 
@@ -83,22 +85,40 @@ function connectApp() {
       })
     );
     app = nextApp;
-    appReady = nextApp.connect().then(
-      () => true,
-      () => {
-        if (app === nextApp) appConnectionFailed = true;
-        return false;
-      }
-    );
+    appReady = Promise.resolve()
+      .then(() => nextApp.connect())
+      .then(
+        () => true,
+        () => {
+          if (app === nextApp) appConnectionFailed = true;
+          return false;
+        }
+      );
   }
   return app;
+}
+
+async function waitForConnectedApp(bridge: McpApp): Promise<boolean> {
+  const readyPromise = appReady;
+  if (!readyPromise) return false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const ready = await Promise.race([
+      readyPromise,
+      new Promise<false>((resolve) => {
+        timer = setTimeout(() => resolve(false), APP_HANDSHAKE_TIMEOUT_MS);
+      })
+    ]);
+    return ready && app === bridge && !appConnectionFailed;
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
 }
 
 export async function setReadingFrameHeight(height: number): Promise<boolean> {
   const bridge = connectApp();
   if (!bridge) return false;
-  const ready = await appReady;
-  if (!ready || appConnectionFailed) return false;
+  if (!(await waitForConnectedApp(bridge))) return false;
   try {
     await bridge.sendSizeChanged({ height: Math.max(72, Math.round(height)) });
     return true;
@@ -113,8 +133,7 @@ export async function callTool(
 ): Promise<ToolCallResult> {
   const bridge = connectApp();
   if (bridge) {
-    const ready = await appReady;
-    if (ready && !appConnectionFailed) {
+    if (await waitForConnectedApp(bridge)) {
       try {
         return (await bridge.callServerTool({ name, arguments: args })) as ToolCallResult;
       } catch {
@@ -157,8 +176,7 @@ export async function askChatGpt(
 async function sendAppMessage(prompt: string): Promise<boolean> {
   const bridge = connectApp();
   if (!bridge) return false;
-  const ready = await appReady;
-  if (!ready || appConnectionFailed) return false;
+  if (!(await waitForConnectedApp(bridge))) return false;
   try {
     const result = await bridge.sendMessage({
       role: "user",
@@ -180,8 +198,10 @@ export async function sampleChatGptText(
 ): Promise<string | null> {
   const bridge = connectApp();
   if (!bridge) return null;
-  const ready = await appReady;
-  if (!ready || appConnectionFailed || !bridge.getHostCapabilities()?.sampling) return null;
+  if (
+    !(await waitForConnectedApp(bridge)) ||
+    !bridge.getHostCapabilities()?.sampling
+  ) return null;
   try {
     const result = await bridge.createSamplingMessage({
       messages: [
@@ -222,8 +242,10 @@ export async function sampleChatGptToolInput(
 ): Promise<Record<string, unknown> | null> {
   const bridge = connectApp();
   if (!bridge) return null;
-  const ready = await appReady;
-  if (!ready || appConnectionFailed || !bridge.getHostCapabilities()?.sampling?.tools) return null;
+  if (
+    !(await waitForConnectedApp(bridge)) ||
+    !bridge.getHostCapabilities()?.sampling?.tools
+  ) return null;
   try {
     const result = await bridge.createSamplingMessage({
       messages: [
@@ -289,8 +311,7 @@ export async function requestReaderPip(): Promise<boolean> {
   const bridge = connectApp();
   try {
     if (bridge) {
-      const ready = await appReady;
-      if (!ready || appConnectionFailed) return false;
+      if (!(await waitForConnectedApp(bridge))) return false;
       const result = await bridge.requestDisplayMode({ mode: "pip" });
       return result.mode === "pip";
     }
@@ -308,8 +329,7 @@ export async function updateModelContext(context: Record<string, unknown>): Prom
   const bridge = connectApp();
   if (!bridge) return false;
   try {
-    const ready = await appReady;
-    if (!ready || appConnectionFailed) return false;
+    if (!(await waitForConnectedApp(bridge))) return false;
     await bridge.updateModelContext({
       content: [{ type: "text", text: JSON.stringify(context) }]
     });
@@ -327,8 +347,7 @@ export async function requestReaderFullscreen(): Promise<boolean> {
     }
     const bridge = connectApp();
     if (bridge) {
-      const ready = await appReady;
-      if (!ready || appConnectionFailed) return false;
+      if (!(await waitForConnectedApp(bridge))) return false;
       const result = await bridge.requestDisplayMode({ mode: "fullscreen" });
       return result.mode === "fullscreen";
     }
@@ -346,8 +365,7 @@ export async function requestReaderInline(): Promise<boolean> {
     }
     const bridge = connectApp();
     if (bridge) {
-      const ready = await appReady;
-      if (!ready || appConnectionFailed) return false;
+      if (!(await waitForConnectedApp(bridge))) return false;
       const result = await bridge.requestDisplayMode({ mode: "inline" });
       return result.mode === "inline";
     }
@@ -381,7 +399,9 @@ export function subscribeHostContext(
   const bridgeListener = (context: ReadingHostContext) => listener(context);
   if (bridge) {
     bridge.addEventListener("hostcontextchanged", bridgeListener);
-    void appReady?.then(() => listener((bridge.getHostContext() ?? {}) as ReadingHostContext));
+    void waitForConnectedApp(bridge).then((ready) => {
+      if (ready) listener((bridge.getHostContext() ?? {}) as ReadingHostContext);
+    });
   } else if (window.openai?.hostContext) {
     listener(window.openai.hostContext);
   }

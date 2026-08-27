@@ -1,5 +1,6 @@
 import { createMcpHandler } from "agents/mcp";
 import widgetHtml from "../../web/dist/index.html";
+import { createMcpProbeResponse, normalizeMcpRequest } from "./mcp/request-compat.js";
 import { createMcpServerFromRepository } from "./mcp/server-factory.js";
 import { D1ReadingRepository } from "./repositories/d1-reading-repository.js";
 import { CloudSourceService } from "./services/cloud-source-service.js";
@@ -34,10 +35,13 @@ export default {
         sourceEndpointBase: `${url.origin}/source/${env.MCP_PATH_TOKEN}`,
         workerOrigin: url.origin
       });
+      const probeResponse = createMcpProbeResponse(request);
+      if (probeResponse) return probeResponse;
+      const mcpRequest = normalizeMcpRequest(request);
       return createMcpHandler(server, {
         route: url.pathname,
         enableJsonResponse: true
-      })(request, env, ctx);
+      })(mcpRequest, env, ctx);
     } catch (error) {
       console.error(
         JSON.stringify({

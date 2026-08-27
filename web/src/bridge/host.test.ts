@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const bridge = {
   connect: vi.fn().mockResolvedValue(undefined),
@@ -27,6 +27,10 @@ vi.mock("@modelcontextprotocol/ext-apps", () => ({
 }));
 
 describe("host bridge", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
@@ -173,6 +177,42 @@ describe("host bridge", () => {
     expect(bridge.sendMessage).toHaveBeenCalledWith({
       role: "user",
       content: [{ type: "text", text: "同一次点击自动重试" }]
+    });
+  });
+
+  it("falls back to window.openai after an MCP tool call fails", async () => {
+    bridge.callServerTool.mockRejectedValueOnce(new Error("MCP proxy unavailable"));
+    const legacyCallTool = vi.fn().mockResolvedValue({
+      structuredContent: { saved: true }
+    });
+    if (window.openai) window.openai.callTool = legacyCallTool;
+    const { callTool } = await import("./host.js");
+
+    await expect(callTool("save_quote", { content: "一句话" })).resolves.toEqual({
+      structuredContent: { saved: true }
+    });
+    expect(bridge.callServerTool).toHaveBeenCalledWith({
+      name: "save_quote",
+      arguments: { content: "一句话" }
+    });
+    expect(legacyCallTool).toHaveBeenCalledWith("save_quote", { content: "一句话" });
+  });
+
+  it("uses the compatibility tool bridge when the MCP handshake times out", async () => {
+    vi.useFakeTimers();
+    bridge.connect.mockImplementationOnce(() => new Promise(() => undefined));
+    const legacyCallTool = vi.fn().mockResolvedValue({
+      structuredContent: { comments: [] }
+    });
+    if (window.openai) window.openai.callTool = legacyCallTool;
+    const { callTool } = await import("./host.js");
+
+    const result = callTool("list_companion_comments", { sessionId: "session-1" });
+    await vi.advanceTimersByTimeAsync(2_000);
+
+    await expect(result).resolves.toEqual({ structuredContent: { comments: [] } });
+    expect(legacyCallTool).toHaveBeenCalledWith("list_companion_comments", {
+      sessionId: "session-1"
     });
   });
 
