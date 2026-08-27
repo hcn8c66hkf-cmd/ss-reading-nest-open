@@ -19,8 +19,9 @@ describe("registerReadingResource", () => {
       "https://reading-nest.example.workers.dev"
     );
 
-    expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v39-hotfix1.html");
+    expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v39-hotfix2.html");
     expect(LEGACY_READING_NEST_URIS).toEqual([
+      "ui://ss-reading-nest/app-v39-hotfix1.html",
       "ui://ss-reading-nest/app-v39.html",
       "ui://ss-reading-nest/app-v37.html",
       "ui://ss-reading-nest/app-v36.html",
@@ -42,7 +43,7 @@ describe("registerReadingResource", () => {
       "ui://ss-reading-nest/app-v20.html",
       "ui://ss-reading-nest/app-v19.html"
     ]);
-    expect(registerAppResource).toHaveBeenCalledTimes(21);
+    expect(registerAppResource).toHaveBeenCalledTimes(22);
 
     for (const expectedUri of [READING_NEST_URI, ...LEGACY_READING_NEST_URIS]) {
       const call = registerAppResource.mock.calls.find((item) => item[2] === expectedUri);

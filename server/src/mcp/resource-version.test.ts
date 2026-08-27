@@ -3,8 +3,9 @@ import { LEGACY_READING_NEST_URIS } from "./register-resource.js";
 import { READING_NEST_URI, TOOL_CONFIGS } from "./register-tools.js";
 
 describe("reading nest resource version", () => {
-  it("uses a fresh hotfix URI while retaining the original v39 resource", () => {
-    expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v39-hotfix1.html");
+  it("uses a fresh hotfix URI while retaining earlier v39 resources", () => {
+    expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v39-hotfix2.html");
+    expect(LEGACY_READING_NEST_URIS).toContain("ui://ss-reading-nest/app-v39-hotfix1.html");
     expect(LEGACY_READING_NEST_URIS).toContain("ui://ss-reading-nest/app-v39.html");
     expect(LEGACY_READING_NEST_URIS).not.toContain(READING_NEST_URI);
   });
