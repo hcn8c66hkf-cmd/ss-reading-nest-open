@@ -167,6 +167,23 @@ describe("host bridge", () => {
     });
   });
 
+  it("can force the compatibility alias after a false-positive Apps acknowledgement", async () => {
+    const sendFollowUpMessage = vi.fn().mockResolvedValue(undefined);
+    if (window.openai) window.openai.sendFollowUpMessage = sendFollowUpMessage;
+    const { askChatGpt } = await import("./host.js");
+
+    await expect(askChatGpt("改走兼容通道", {
+      transport: "compatibility",
+      scrollToBottom: true
+    })).resolves.toBe(true);
+
+    expect(bridge.sendMessage).not.toHaveBeenCalled();
+    expect(sendFollowUpMessage).toHaveBeenCalledWith({
+      prompt: "改走兼容通道",
+      scrollToBottom: true
+    });
+  });
+
   it("retries the Apps handshake after an early mobile connection failure", async () => {
     bridge.connect.mockRejectedValueOnce(new Error("host listener not ready"));
     const { askChatGpt } = await import("./host.js");

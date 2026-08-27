@@ -1,0 +1,4 @@
+release=v39-hotfix2
+approved_at=2026-08-28
+scope=mobile-false-positive-writeback-transport-failover
+base_cache_buster=c2c75a08922cbf6da79a56f7982b4a4613a8d64a

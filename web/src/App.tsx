@@ -1857,7 +1857,14 @@ export function App() {
           preferRetryPrompt: retryingFallback,
           compatibilityPrompt: fallbackPrompt,
           updateModelContext,
-          sendMessage: askChatGpt
+          sendMessage: (prompt, options) => askChatGpt(prompt, {
+            ...options,
+            // A ui/message ACK does not guarantee that mobile ChatGPT created
+            // a model turn. The queue verifies canonical server writeback; on
+            // its one automatic retry, force the alternate host transport.
+            transport: retryingFallback ? "compatibility" : "auto",
+            ...(retryingFallback ? { scrollToBottom: true } : {})
+          })
         });
         if (fallbackMode === "failed") {
           sentLiveReadingFallbacksRef.current.delete(operationId);
@@ -2300,18 +2307,19 @@ export function App() {
         return true;
       }
 
+      const fallbackPrompt = buildDaddyAnnotationReplyFallbackPrompt({
+        conversationPrompt: prompt,
+        sessionId: sessionBundle.session.id,
+        annotationId: annotation.id,
+        operationId
+      });
       const sent = await askChatGpt(
-        buildDaddyAnnotationReplyFallbackPrompt({
-          conversationPrompt: prompt,
-          sessionId: sessionBundle.session.id,
-          annotationId: annotation.id,
-          operationId
-        }),
+        fallbackPrompt,
         { scrollToBottom: false }
       );
       if (!sent) throw new Error("Host did not accept Daddy reply request");
       setToast("Daddy正在回复；写进书边后会自动出现。");
-      const saved = await waitForWriteback<ReadingAnnotation>({
+      const waitForSavedReply = () => waitForWriteback<ReadingAnnotation>({
         load: async () => {
           const result = await callTool("list_annotations_v23", {
             sessionId: sessionBundle.session.id,
@@ -2329,9 +2337,24 @@ export function App() {
         attempts: 20,
         intervalMs: 1_500
       });
+      let saved = await waitForSavedReply();
       if (!saved) {
-        setToast("这轮思考结束了，但回复没有写进书边；按钮已经解锁，可以重试。");
-        return false;
+        setToast("标准通道没有写回，正在换一条路自动重试。");
+        const retrySent = await askChatGpt(fallbackPrompt, {
+          transport: "compatibility",
+          // Use the documented ChatGPT default behavior on the recovery path
+          // so the user can also see whether the follow-up turn was created.
+          scrollToBottom: true
+        });
+        if (!retrySent) {
+          setToast("两条发送通道都没有接住；按钮已经解锁，可以重试。");
+          return false;
+        }
+        saved = await waitForSavedReply();
+        if (!saved) {
+          setToast("两条通道都收到请求了，但移动端没有启动回复；按钮已经解锁。");
+          return false;
+        }
       }
       setAnnotations((current) =>
         current.map((item) => (item.id === saved.id ? saved : item))

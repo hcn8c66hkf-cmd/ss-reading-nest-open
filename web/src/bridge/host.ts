@@ -148,17 +148,24 @@ export async function callTool(
 
 export async function askChatGpt(
   prompt: string,
-  options: { scrollToBottom?: boolean } = {}
+  options: {
+    scrollToBottom?: boolean;
+    transport?: "auto" | "apps" | "compatibility";
+  } = {}
 ): Promise<boolean> {
+  const transport = options.transport ?? "auto";
   // Prefer the standard MCP Apps request. Unlike the legacy compatibility
-  // alias, ui/message returns an acknowledgement with an isError flag. Some
-  // iOS/iPadOS hosts expose sendFollowUpMessage but resolve it without actually
-  // starting a conversation turn, which previously looked like a successful
-  // delivery and prevented this reliable path from running.
-  if (await sendAppMessage(prompt)) return true;
-  // If the iframe won a startup race against the mobile host, reconnect and
-  // retry the same tap once instead of making the user discover it manually.
-  if (appConnectionFailed && await sendAppMessage(prompt)) return true;
+  // alias, ui/message returns an acknowledgement with an isError flag. That
+  // acknowledgement still only proves host acceptance, not that an app-owned
+  // writeback completed. Callers that verify a writeback can explicitly retry
+  // the alternate ChatGPT compatibility transport after a false-positive ACK.
+  if (transport !== "compatibility") {
+    if (await sendAppMessage(prompt)) return true;
+    // If the iframe won a startup race against the mobile host, reconnect and
+    // retry the same tap once instead of making the user discover it manually.
+    if (appConnectionFailed && await sendAppMessage(prompt)) return true;
+    if (transport === "apps") return false;
+  }
   if (window.openai?.sendFollowUpMessage) {
     try {
       await window.openai.sendFollowUpMessage({
