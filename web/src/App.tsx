@@ -1874,11 +1874,11 @@ export function App() {
           prompt: directPrompt,
           sendMessage: (prompt, options) => askChatGpt(prompt, {
             ...options,
-            // Use the standard MCP Apps message first. A missing writeback is
-            // treated as a false-positive acknowledgement, so the queue's one
-            // retry switches to the ChatGPT compatibility transport. Both
-            // messages carry the full paragraph body.
-            transport: retryingFallback ? "compatibility" : "apps",
+            // The iOS host can acknowledge ui/message without creating a real
+            // follow-up turn. Prefer ChatGPT's feature-detected compatibility
+            // alias there, then alternate to MCP Apps if writeback verification
+            // proves it was a false positive. Both lanes carry the full body.
+            transport: retryingFallback ? "apps" : "compatibility-first",
             ...(retryingFallback ? { scrollToBottom: true } : {})
           })
         });
@@ -2299,7 +2299,7 @@ export function App() {
       "只返回准备写进书边的回复正文，不要标题、引号、参数、工具调用或保存说明。"
     ].join("\n\n");
     const latestMessageId = annotation.messages.at(-1)?.id ?? "initial";
-    const operationId = `annotation-daddy-v39:${annotation.id}:${latestMessageId}`;
+    const operationId = `annotation-daddy-v25:${encodeURIComponent(annotation.id)}:${encodeURIComponent(latestMessageId)}`;
     try {
       const sampled = await sampleChatGptText(prompt, {
         systemPrompt: DADDY_SAMPLING_SYSTEM_PROMPT,
@@ -2327,11 +2327,12 @@ export function App() {
         conversationPrompt: prompt,
         sessionId: sessionBundle.session.id,
         annotationId: annotation.id,
+        position: annotation.position,
         operationId
       });
       const sent = await askChatGpt(
         fallbackPrompt,
-        { scrollToBottom: false }
+        { transport: "compatibility-first", scrollToBottom: false }
       );
       if (!sent) throw new Error("Host did not accept Daddy reply request");
       setToast("Daddy正在回复；写进书边后会自动出现。");
@@ -2357,7 +2358,7 @@ export function App() {
       if (!saved) {
         setToast("标准通道没有写回，正在换一条路自动重试。");
         const retrySent = await askChatGpt(fallbackPrompt, {
-          transport: "compatibility",
+          transport: "apps",
           // Use the documented ChatGPT default behavior on the recovery path
           // so the user can also see whether the follow-up turn was created.
           scrollToBottom: true

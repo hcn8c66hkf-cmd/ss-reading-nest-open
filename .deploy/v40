@@ -1,0 +1,5 @@
+release=v40
+approved_at=2026-08-29
+scope=ios-follow-up-delivery-and-annotation-writeback
+base=ada1d46d8feea974427140262090da8b24cd1e80
+resource_uri=ui://ss-reading-nest/app-v40.html

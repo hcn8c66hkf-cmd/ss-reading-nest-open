@@ -7,13 +7,15 @@ describe("Daddy annotation reply fallback", () => {
       conversationPrompt: "接着回复这句。",
       sessionId: "session-1",
       annotationId: "annotation-1",
-      operationId: "annotation-daddy-v36:annotation-1"
+      position: { kind: "paragraph", index: 8, label: "第 8 段" },
+      operationId: "annotation-daddy-v25:annotation-1:message-1"
     });
 
     expect(prompt).toContain("接着回复这句。");
-    expect(prompt).toContain("调用 reply_to_annotation");
-    expect(prompt).toContain('"annotationId":"annotation-1"');
-    expect(prompt).toContain('"operationId":"annotation-daddy-v36:annotation-1"');
-    expect(prompt).toContain("不要调用 publish_companion_comment");
+    expect(prompt).toContain("调用 publish_companion_comment");
+    expect(prompt).toContain('"position":{"kind":"paragraph","index":8,"label":"第 8 段"}');
+    expect(prompt).toContain('"operationId":"annotation-daddy-v25:annotation-1:message-1"');
+    expect(prompt).toContain("绑定到正确书边");
+    expect(prompt).not.toContain("reply_to_annotation");
   });
 });

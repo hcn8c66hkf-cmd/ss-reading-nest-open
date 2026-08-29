@@ -167,6 +167,35 @@ describe("host bridge", () => {
     });
   });
 
+  it("can prefer the compatibility alias on mobile and avoid a false-positive Apps acknowledgement", async () => {
+    const sendFollowUpMessage = vi.fn().mockResolvedValue(undefined);
+    if (window.openai) window.openai.sendFollowUpMessage = sendFollowUpMessage;
+    const { askChatGpt } = await import("./host.js");
+
+    await expect(askChatGpt("手机先走兼容通道", {
+      transport: "compatibility-first"
+    })).resolves.toBe(true);
+
+    expect(sendFollowUpMessage).toHaveBeenCalledWith({
+      prompt: "手机先走兼容通道",
+      scrollToBottom: false
+    });
+    expect(bridge.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("falls back to MCP Apps when the compatibility-first alias is unavailable", async () => {
+    const { askChatGpt } = await import("./host.js");
+
+    await expect(askChatGpt("没有兼容别名时走标准通道", {
+      transport: "compatibility-first"
+    })).resolves.toBe(true);
+
+    expect(bridge.sendMessage).toHaveBeenCalledWith({
+      role: "user",
+      content: [{ type: "text", text: "没有兼容别名时走标准通道" }]
+    });
+  });
+
   it("can force the compatibility alias after a false-positive Apps acknowledgement", async () => {
     const sendFollowUpMessage = vi.fn().mockResolvedValue(undefined);
     if (window.openai) window.openai.sendFollowUpMessage = sendFollowUpMessage;
@@ -230,6 +259,23 @@ describe("host bridge", () => {
     await expect(result).resolves.toEqual({ structuredContent: { comments: [] } });
     expect(legacyCallTool).toHaveBeenCalledWith("list_companion_comments", {
       sessionId: "session-1"
+    });
+  });
+
+  it("rebuilds the MCP Apps bridge within the same send after a hanging mobile handshake times out", async () => {
+    vi.useFakeTimers();
+    bridge.connect
+      .mockImplementationOnce(() => new Promise(() => undefined))
+      .mockResolvedValueOnce(undefined);
+    const { askChatGpt } = await import("./host.js");
+
+    const first = askChatGpt("第一次连接挂起", { transport: "apps" });
+    await vi.advanceTimersByTimeAsync(2_000);
+    await expect(first).resolves.toBe(true);
+    expect(bridge.connect).toHaveBeenCalledTimes(2);
+    expect(bridge.sendMessage).toHaveBeenCalledWith({
+      role: "user",
+      content: [{ type: "text", text: "第一次连接挂起" }]
     });
   });
 

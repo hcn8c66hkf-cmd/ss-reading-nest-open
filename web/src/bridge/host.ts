@@ -42,7 +42,7 @@ function connectApp() {
   }
   if (!app) {
     const nextApp = new McpApp(
-      { name: "S×S 小窝共读", version: "0.3.9" },
+      { name: "S×S 小窝共读", version: "0.4.0" },
       {},
       {
         // The SDK's default ResizeObserver briefly sets <html> to max-content
@@ -109,6 +109,12 @@ async function waitForConnectedApp(bridge: McpApp): Promise<boolean> {
         timer = setTimeout(() => resolve(false), APP_HANDSHAKE_TIMEOUT_MS);
       })
     ]);
+    if (!ready && app === bridge) {
+      // A mobile host can leave the handshake pending forever instead of
+      // rejecting it. Treat the timeout as a failed connection so the next
+      // attempt builds a fresh bridge rather than reusing the stuck promise.
+      appConnectionFailed = true;
+    }
     return ready && app === bridge && !appConnectionFailed;
   } finally {
     if (timer !== undefined) clearTimeout(timer);
@@ -150,10 +156,14 @@ export async function askChatGpt(
   prompt: string,
   options: {
     scrollToBottom?: boolean;
-    transport?: "auto" | "apps" | "compatibility";
+    transport?: "auto" | "apps" | "compatibility" | "compatibility-first";
   } = {}
 ): Promise<boolean> {
   const transport = options.transport ?? "auto";
+  if (transport === "compatibility-first") {
+    if (await sendCompatibilityMessage(prompt, options.scrollToBottom)) return true;
+    return sendAppMessage(prompt);
+  }
   // Prefer the standard MCP Apps request. Unlike the legacy compatibility
   // alias, ui/message returns an acknowledgement with an isError flag. That
   // acknowledgement still only proves host acceptance, not that an app-owned
@@ -166,18 +176,20 @@ export async function askChatGpt(
     if (appConnectionFailed && await sendAppMessage(prompt)) return true;
     if (transport === "apps") return false;
   }
-  if (window.openai?.sendFollowUpMessage) {
-    try {
-      await window.openai.sendFollowUpMessage({
-        prompt,
-        scrollToBottom: options.scrollToBottom ?? false
-      });
-      return true;
-    } catch {
-      return false;
-    }
+  return sendCompatibilityMessage(prompt, options.scrollToBottom);
+}
+
+async function sendCompatibilityMessage(
+  prompt: string,
+  scrollToBottom = false
+): Promise<boolean> {
+  if (!window.openai?.sendFollowUpMessage) return false;
+  try {
+    await window.openai.sendFollowUpMessage({ prompt, scrollToBottom });
+    return true;
+  } catch {
+    return false;
   }
-  return false;
 }
 
 async function sendAppMessage(prompt: string): Promise<boolean> {
