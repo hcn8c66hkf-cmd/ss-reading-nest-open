@@ -1,0 +1,5 @@
+release=v39-hotfix5
+approved_at=2026-08-29
+scope=model-readable-live-reading-context
+base=dbfe6607aad6f9eaad29972de8a3bec261b552e2
+resource_uri=ui://ss-reading-nest/app-v39-hotfix5.html

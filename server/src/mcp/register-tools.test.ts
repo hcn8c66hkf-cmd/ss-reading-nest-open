@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildCurrentReadingContext,
+  buildModelReadableCurrentContext,
   READING_NEST_TOOL_NAME,
   READING_NEST_URI,
   registerReadingTools,
@@ -9,7 +10,7 @@ import {
 
 describe("tool descriptors", () => {
   it("binds the current UI resource to the v39 and compatibility render tools", () => {
-    expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v39-hotfix4.html");
+    expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v39-hotfix5.html");
     expect(READING_NEST_TOOL_NAME).toBe("open_reading_nest_v39");
     expect(TOOL_CONFIGS.open_reading_nest_v39._meta?.ui).toEqual({
       resourceUri: READING_NEST_URI
@@ -145,6 +146,74 @@ describe("tool descriptors", () => {
   it("does not expose a model API or ambiguous end session tool", () => {
     expect(Object.keys(TOOL_CONFIGS)).not.toContain("end_reading_session");
     expect(JSON.stringify(TOOL_CONFIGS)).not.toMatch(/OPENAI_API_KEY|responses|chat completions/i);
+  });
+
+  it("returns actively shared text in model-readable tool content", () => {
+    const session = {
+      id: "session-model-readable",
+      title: "正文测试",
+      type: "novel" as const,
+      userCurrentPosition: { kind: "paragraph" as const, index: 7, label: "第 7 段" }
+    } as never;
+    const text = buildModelReadableCurrentContext(session, {
+      sessionId: "session-model-readable",
+      currentPosition: { kind: "paragraph", index: 7, label: "第 7 段" },
+      currentText: "这是必须交给模型的正文。",
+      selectedText: "这一句也必须看见。",
+      mode: "live_reading"
+    });
+
+    expect(text).toContain("《正文测试》第 7 段");
+    expect(text).toContain("这是必须交给模型的正文。");
+    expect(text).toContain("这一句也必须看见。");
+    expect(text).toContain("不要声称没有收到正文");
+  });
+
+  it("keeps send_current_context body visible to the model as text content", async () => {
+    const handlers = new Map<string, (args: any) => Promise<any>>();
+    const server = {
+      registerTool: (name: string, _config: unknown, handler: (args: any) => Promise<any>) => {
+        handlers.set(name, handler);
+      }
+    };
+    const session = {
+      id: "session-current-content",
+      title: "正文交付测试",
+      type: "novel",
+      status: "active",
+      userCurrentPosition: { kind: "paragraph", index: 9, label: "第 9 段" },
+      assistantSyncedPosition: null,
+      liveReadingEnabled: true,
+      sessionPreferences: {
+        readingCommentMode: "reaction_only",
+        commentLength: "short"
+      },
+      sourceManifest: null,
+      createdAt: "2026-08-29T00:00:00.000Z",
+      updatedAt: "2026-08-29T00:00:00.000Z",
+      lastReadAt: "2026-08-29T00:00:00.000Z"
+    };
+    const service = {
+      getSessionBundle: async () => ({ session, quotes: [], reactions: [], bookmarks: [] }),
+      getLayeredReadingContext: async () => ({ memories: [], facts: [] })
+    };
+
+    registerReadingTools(server as never, service as never);
+    const result = await handlers.get("send_current_context")?.({
+      sessionId: session.id,
+      currentPosition: session.userCurrentPosition,
+      currentText: "这段正文不能只留在 structuredContent。",
+      mode: "live_reading",
+      readingCommentMode: "reaction_only",
+      commentLength: "short"
+    });
+
+    expect(result.structuredContent.context.currentText).toBe(
+      "这段正文不能只留在 structuredContent。"
+    );
+    expect(result.content[0].text).toContain(
+      "这段正文不能只留在 structuredContent。"
+    );
   });
 
   it("exposes explicit assistant confirmation and live-reading tools", () => {

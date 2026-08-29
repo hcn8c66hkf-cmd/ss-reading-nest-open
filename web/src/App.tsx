@@ -1840,6 +1840,30 @@ export function App() {
           requestedMode: mode,
           requestedLength: length
         });
+        const contextResult = await callTool("send_current_context", {
+          sessionId: session.id,
+          currentPosition: targetPosition,
+          currentText: text,
+          mode: "live_reading",
+          readingCommentMode: "reaction_only",
+          commentLength: "short"
+        }).catch(() => ({ structuredContent: {} }));
+        const contextContent = contextResult.structuredContent as
+          | Record<string, unknown>
+          | undefined;
+        const liveContext = contextContent?.context as
+          | Record<string, unknown>
+          | undefined;
+        if (liveContext) {
+          // The server tool result contains the exact paragraph in its
+          // model-readable content. Mirror it into app context as a second
+          // standards-based lane, while the follow-up prompt below carries the
+          // same text for hosts that do not retain widget-initiated results.
+          await updateModelContext({
+            ...liveContext,
+            responsePolicy: fallbackPrompt
+          }).catch(() => false);
+        }
         const directPrompt = retryingFallback
           ? [
             `这是${targetPosition.label}的写回重试；上一轮思考结束后，服务器仍没有收到对应短评。`,
@@ -1850,12 +1874,11 @@ export function App() {
           prompt: directPrompt,
           sendMessage: (prompt, options) => askChatGpt(prompt, {
             ...options,
-            // The first mobile patch used the compatibility transport but hid
-            // the body in model context; the next patch embedded the body but
-            // switched back to ui/message. Use the missing combination here:
-            // direct full-body prompt over the compatibility transport first.
-            // If it produces no writeback, the queue's one retry uses Apps.
-            transport: retryingFallback ? "apps" : "compatibility",
+            // Use the standard MCP Apps message first. A missing writeback is
+            // treated as a false-positive acknowledgement, so the queue's one
+            // retry switches to the ChatGPT compatibility transport. Both
+            // messages carry the full paragraph body.
+            transport: retryingFallback ? "compatibility" : "apps",
             ...(retryingFallback ? { scrollToBottom: true } : {})
           })
         });

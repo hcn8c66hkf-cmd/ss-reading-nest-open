@@ -50,7 +50,7 @@ import { ReadingService } from "../services/reading-service.js";
 import type { CloudSourceService } from "../services/cloud-source-service.js";
 import { toolResult } from "./tool-result.js";
 
-export const READING_NEST_URI = "ui://ss-reading-nest/app-v39-hotfix4.html";
+export const READING_NEST_URI = "ui://ss-reading-nest/app-v39-hotfix5.html";
 export const READING_NEST_TOOL_NAME = "open_reading_nest_v39";
 
 const readLiveReadingContextInputSchema = z
@@ -1387,7 +1387,7 @@ export function registerReadingTools(
       };
       return toolResult(
         { context },
-        `用户正在共读《${session.title}》，位置是${currentPosition.label}。请根据本次主动同步的内容回应。`
+        buildModelReadableCurrentContext(session, input)
       );
     }
   );
@@ -1604,4 +1604,22 @@ export function buildCurrentReadingContext(
     ...(input.batch ? { batch: input.batch } : {}),
     syncMode
   };
+}
+
+export function buildModelReadableCurrentContext(
+  session: ReadingSession,
+  input: SendCurrentContextInput
+): string {
+  const currentPosition = input.currentPosition ?? input.position!;
+  const body = input.includedText ?? input.currentText;
+  return [
+    `【共读正文：《${session.title}》${currentPosition.label}】`,
+    body ? `正文：\n${body}` : "",
+    input.selectedText ? `用户选中的句子：\n${input.selectedText}` : "",
+    input.pageDescription ? `当前漫画页描述：\n${input.pageDescription}` : "",
+    input.userNote ? `用户备注：\n${input.userNote}` : "",
+    body || input.selectedText || input.pageDescription
+      ? "以上内容由用户从共读小窝主动发送，请直接依据它回应，不要声称没有收到正文。"
+      : "本次没有可供模型阅读的文字正文；不要假装已经读到。"
+  ].filter(Boolean).join("\n\n");
 }

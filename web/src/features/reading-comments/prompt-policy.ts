@@ -76,7 +76,8 @@ export function buildLiveReadingPrompt(input: {
   requestedLength?: CommentLength;
 }): string {
   const publication = [
-        `生成短评后，优先调用 ${LIVE_READING_WRITEBACK_TOOL} 保存完全相同的短评；如果该工具不可用，再调用 publish_companion_comment。`,
+        "先生成最终短评。无论写回工具是否可用，都必须在聊天区回复这段短评，不能让本轮只思考却没有正文输出。",
+        `如果 ${LIVE_READING_WRITEBACK_TOOL} 可用，调用它保存完全相同的短评；否则尝试 publish_companion_comment。`,
         publishParameters({
           sessionId: input.sessionId,
           operationId: input.operationId,
@@ -86,17 +87,17 @@ export function buildLiveReadingPrompt(input: {
           position: input.position,
           text: "最终短评全文"
         }),
-        "工具成功后，再在聊天区回复完全相同的短评；失败时必须明确说明“短评未同步到 Dock”，不要声称 Dock 已保存。"
+        "写回成功后在聊天区回复完全相同的短评；写回失败也要正常回复短评，并补充“短评未同步到 Dock”，不要吞掉正文。"
       ];
   return [
     `【实时陪读：${input.position.label}】《${input.title}》`,
-    `先调用 read_live_reading_context，参数严格使用 sessionId=${input.sessionId}、positionIndex=${input.position.index}。`,
-    "必须读取该工具返回的 sharedPage.currentText，再据此短评；不要假设本条 iOS 消息携带了正文，也不要在未读取正文时凭空评论。",
+    `本段原文：\n${input.text}`,
+    "上面的“本段原文”就是这轮唯一要读的正文；请直接依据它回应。",
     "固定模式：reaction_only；固定长度：short；风格：danmaku。",
     "只输出 1-3 句弹幕式短评。",
     "不总结全文，不重复剧情，不写完整书评。",
     "只做即时反应、吐槽、嗑点或伏笔提醒。",
-    `只有 ${LIVE_READING_WRITEBACK_TOOL} 或 publish_companion_comment 成功写下短评，才算读完本段；不要只在聊天区口头回复。`,
+    `写回 ${LIVE_READING_WRITEBACK_TOOL} 或 publish_companion_comment 是保存步骤，不是回复正文的前置条件。`,
     ...publication
   ].join("\n\n");
 }
