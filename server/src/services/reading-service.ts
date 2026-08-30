@@ -331,7 +331,7 @@ export class ReadingService {
     operationId: string;
   }): Promise<ReadingAnnotation> {
     return this.repository.mutate((database) => {
-      this.requireSession(database.sessions, input.sessionId);
+      const session = this.requireSession(database.sessions, input.sessionId);
       const annotation = database.annotations.find(
         (item) =>
           item.id === input.annotationId && item.sessionId === input.sessionId
@@ -340,6 +340,13 @@ export class ReadingService {
         throw new AppError("INVALID_OPERATION", "找不到这条划线批注。");
       }
       if (annotation.messages.some((message) => message.operationId === input.operationId)) {
+        if (input.author === "assistant") {
+          this.advanceAssistantPositionFromComment(
+            session,
+            annotation.position,
+            this.deps.now().toISOString()
+          );
+        }
         return annotation;
       }
       const now = this.deps.now().toISOString();
@@ -351,6 +358,9 @@ export class ReadingService {
         createdAt: now
       });
       annotation.updatedAt = now;
+      if (input.author === "assistant") {
+        this.advanceAssistantPositionFromComment(session, annotation.position, now);
+      }
       return annotation;
     });
   }

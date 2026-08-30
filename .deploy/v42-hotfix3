@@ -1,0 +1,4 @@
+release=v42-hotfix3
+approved_at=2026-08-30
+scope=assistant-annotation-reply-position-sync
+base=13bf13fd511a85c3eada0c343cd8826d2f22adb0
