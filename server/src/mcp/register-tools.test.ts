@@ -9,16 +9,16 @@ import {
 } from "./register-tools.js";
 
 describe("tool descriptors", () => {
-  it("binds the current UI resource to the v40 and compatibility render tools", () => {
-    expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v40.html");
-    expect(READING_NEST_TOOL_NAME).toBe("open_reading_nest_v40");
-    expect(TOOL_CONFIGS.open_reading_nest_v40._meta?.ui).toEqual({
+  it("binds the current UI resource to the v41 and compatibility render tools", () => {
+    expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v41.html");
+    expect(READING_NEST_TOOL_NAME).toBe("open_reading_nest_v41");
+    expect(TOOL_CONFIGS.open_reading_nest_v41._meta?.ui).toEqual({
       resourceUri: READING_NEST_URI
     });
-    expect(TOOL_CONFIGS.open_reading_nest_v40._meta?.["ui/resourceUri"]).toBe(
+    expect(TOOL_CONFIGS.open_reading_nest_v41._meta?.["ui/resourceUri"]).toBe(
       READING_NEST_URI
     );
-    expect(TOOL_CONFIGS.open_reading_nest_v40._meta?.["openai/outputTemplate"]).toBe(
+    expect(TOOL_CONFIGS.open_reading_nest_v41._meta?.["openai/outputTemplate"]).toBe(
       READING_NEST_URI
     );
     expect(TOOL_CONFIGS.open_reading_nest._meta?.["openai/outputTemplate"]).toBe(
@@ -26,6 +26,7 @@ describe("tool descriptors", () => {
     );
     for (const [name, config] of Object.entries(TOOL_CONFIGS)) {
       if (
+        name !== "open_reading_nest_v41" &&
         name !== "open_reading_nest_v40" &&
         name !== "open_reading_nest_v39" &&
         name !== "open_reading_nest_v37" &&
@@ -120,7 +121,7 @@ describe("tool descriptors", () => {
     registerReadingTools(server as never, service as never, undefined, {
       sourceEndpointBase: "https://worker.example.test/source/secret"
     });
-    const result = (await handlers.get("open_reading_nest_v40")?.()) as {
+    const result = (await handlers.get("open_reading_nest_v41")?.()) as {
       structuredContent?: Record<string, unknown>;
     };
 
@@ -329,7 +330,7 @@ describe("tool descriptors", () => {
   });
 
   it("exposes book management and threaded annotation tools", () => {
-    expect(Object.keys(TOOL_CONFIGS)).toHaveLength(57);
+    expect(Object.keys(TOOL_CONFIGS)).toHaveLength(58);
     expect(TOOL_CONFIGS.create_annotation.annotations).toMatchObject({
       readOnlyHint: false,
       idempotentHint: true
@@ -438,6 +439,68 @@ describe("tool descriptors", () => {
     expect(result.content[0].text).toContain("第二段会交给 Daddy。");
     expect(JSON.stringify(result)).not.toContain("第一段只留在 D1。");
     expect(JSON.stringify(result)).not.toContain("第三段不能泄露。");
+  });
+
+  it("recovers one exact paragraph and its saved user annotation through the stable catalog", async () => {
+    const handlers = new Map<string, (args: any) => Promise<any>>();
+    const server = {
+      registerTool: (name: string, _config: unknown, handler: (args: any) => Promise<any>) => {
+        handlers.set(name, handler);
+      }
+    };
+    const session = {
+      id: "session-recovery",
+      title: "旧入口里的书",
+      type: "novel",
+      userCurrentPosition: { kind: "paragraph", index: 67, label: "第 67 段" }
+    };
+    const annotation = {
+      id: "annotation-67",
+      sessionId: session.id,
+      position: session.userCurrentPosition,
+      anchor: { selectedText: "有" },
+      messages: [{ id: "message-67", author: "user", text: "测试" }],
+      updatedAt: "2026-08-29T12:18:09.983Z"
+    };
+    const service = {
+      listAllSessions: async () => [session],
+      getSessionBundle: async () => ({ session, quotes: [], reactions: [], bookmarks: [] }),
+      listCompanionComments: async () => ({ comments: [] }),
+      listAnnotations: async () => ({ annotations: [annotation] }),
+      listAnnotationFavorites: async () => ({ favorites: [] }),
+      listReadingMemories: async () => ({ memories: [] }),
+      listReadingFacts: async () => ({ facts: [] }),
+      listSkillCandidates: async () => ({ skillCandidates: [] }),
+      getLayeredReadingContext: async () => ({ daily: true })
+    };
+    const cloudSource = {
+      restoreNovelSource: async () => ({
+        sourceText: Array.from({ length: 68 }, (_, index) =>
+          index === 66 ? "第六十七段正文会和评论一起恢复。" : `私密段落 ${index + 1}`
+        ).join("\n\n"),
+        sourceManifest: { segmentationVersion: 1 }
+      })
+    };
+
+    registerReadingTools(server as never, service as never, cloudSource as never);
+    const result = await handlers.get("list_companion_comments")?.({
+      sessionId: session.id,
+      scope: "history",
+      positionIndex: 67,
+      limit: 10
+    });
+
+    expect(result.structuredContent).toMatchObject({
+      sharedPage: {
+        sessionId: session.id,
+        position: session.userCurrentPosition,
+        currentText: "第六十七段正文会和评论一起恢复。"
+      },
+      annotations: [annotation]
+    });
+    expect(result.content[0].text).toContain("第六十七段正文会和评论一起恢复。");
+    expect(JSON.stringify(result)).not.toContain("私密段落 66");
+    expect(JSON.stringify(result)).not.toContain("私密段落 68");
   });
 
   it("saves and reloads annotations through stable legacy-catalog tools", async () => {

@@ -122,6 +122,70 @@ describe("host bridge", () => {
     });
   });
 
+  it("falls back to model-visible widget state when the iOS Apps bridge cannot connect", async () => {
+    bridge.connect.mockRejectedValueOnce(new Error("iOS compatibility host"));
+    const { updateModelContext } = await import("./host.js");
+
+    await expect(
+      updateModelContext({ title: "Book", currentText: "正文和小安的评论" })
+    ).resolves.toBe(true);
+
+    expect(window.openai?.setWidgetState).toHaveBeenCalledWith({
+      modelContent: expect.stringContaining('"currentText":"正文和小安的评论"'),
+      privateContent: {
+        screen: "novel",
+        sessionId: "session-1",
+        positionIndex: 2,
+        scrollTop: 120
+      }
+    });
+  });
+
+  it("preserves compatibility model context across later reader-state saves", async () => {
+    bridge.connect.mockRejectedValueOnce(new Error("iOS compatibility host"));
+    const { initialWidgetState, saveReaderWidgetState, updateModelContext } =
+      await import("./host.js");
+    initialWidgetState();
+    await updateModelContext({ currentText: "不能被滚动状态覆盖" });
+
+    saveReaderWidgetState({
+      screen: "novel",
+      sessionId: "session-1",
+      positionIndex: 3,
+      scrollTop: 240
+    });
+
+    expect(window.openai?.setWidgetState).toHaveBeenLastCalledWith({
+      modelContent: expect.stringContaining("不能被滚动状态覆盖"),
+      privateContent: {
+        screen: "novel",
+        sessionId: "session-1",
+        positionIndex: 3,
+        scrollTop: 240
+      }
+    });
+  });
+
+  it("restores reader state from a structured widget-state envelope", async () => {
+    if (window.openai) {
+      window.openai.widgetState = {
+        modelContent: "old context",
+        privateContent: {
+          screen: "novel",
+          sessionId: "session-2",
+          positionIndex: 9
+        }
+      };
+    }
+    const { initialWidgetState } = await import("./host.js");
+
+    expect(initialWidgetState()).toEqual({
+      screen: "novel",
+      sessionId: "session-2",
+      positionIndex: 9
+    });
+  });
+
   it("requests fullscreen and sends a message without forcing chat scroll", async () => {
     const { askChatGpt, requestReaderFullscreen } = await import("./host.js");
 

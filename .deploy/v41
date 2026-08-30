@@ -1,0 +1,5 @@
+release=v41
+approved_at=2026-08-29
+scope=ios-model-context-fallback-and-stable-catalog-recovery
+base=c3730f303b29564daa5f59afb77f5010ce468b77
+resource_uri=ui://ss-reading-nest/app-v41.html

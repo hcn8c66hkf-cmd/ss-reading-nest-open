@@ -12,6 +12,12 @@ declare global {
     collapsed?: boolean;
   }
 
+  interface ReaderWidgetEnvelope {
+    modelContent?: string | Record<string, unknown>;
+    privateContent?: ReaderWidgetState;
+    imageIds?: string[];
+  }
+
   interface Window {
     openai?: {
       toolOutput?: unknown;
@@ -39,8 +45,8 @@ declare global {
           left: number;
         };
       };
-      widgetState?: ReaderWidgetState;
-      setWidgetState?: (state: ReaderWidgetState) => void;
+      widgetState?: ReaderWidgetState | ReaderWidgetEnvelope;
+      setWidgetState?: (state: ReaderWidgetState | ReaderWidgetEnvelope) => void;
     };
   }
 }

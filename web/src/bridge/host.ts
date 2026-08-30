@@ -8,6 +8,9 @@ import type { ToolCallResult } from "../types/openai.js";
 let app: McpApp | undefined;
 let appReady: Promise<boolean> | undefined;
 let appConnectionFailed = false;
+let lastReaderWidgetState: ReaderWidgetState | undefined;
+let compatibilityModelContent: string | undefined;
+let compatibilityStateHost: Window["openai"] | undefined;
 
 const APP_HANDSHAKE_TIMEOUT_MS = 2_000;
 
@@ -42,7 +45,7 @@ function connectApp() {
   }
   if (!app) {
     const nextApp = new McpApp(
-      { name: "S×S 小窝共读", version: "0.4.0" },
+      { name: "S×S 小窝共读", version: "0.4.1" },
       {},
       {
         // The SDK's default ResizeObserver briefly sets <html> to max-content
@@ -185,6 +188,10 @@ async function sendCompatibilityMessage(
 ): Promise<boolean> {
   if (!window.openai?.sendFollowUpMessage) return false;
   try {
+    // iOS compatibility hosts can snapshot widget state when the follow-up is
+    // created. Re-assert the model-visible payload in the same call stack so a
+    // later reader-state save cannot leave that follow-up without its正文.
+    persistCompatibilityModelContext();
     await window.openai.sendFollowUpMessage({ prompt, scrollToBottom });
     return true;
   } catch {
@@ -345,17 +352,24 @@ export async function requestReaderPip(): Promise<boolean> {
 }
 
 export async function updateModelContext(context: Record<string, unknown>): Promise<boolean> {
+  refreshCompatibilityHostBoundary();
+  const serialized = JSON.stringify(context);
   const bridge = connectApp();
-  if (!bridge) return false;
-  try {
-    if (!(await waitForConnectedApp(bridge))) return false;
-    await bridge.updateModelContext({
-      content: [{ type: "text", text: JSON.stringify(context) }]
-    });
-    return true;
-  } catch {
-    return false;
+  if (bridge) {
+    try {
+      if (await waitForConnectedApp(bridge)) {
+        await bridge.updateModelContext({
+          content: [{ type: "text", text: serialized }]
+        });
+        return true;
+      }
+    } catch {
+      // Older iOS hosts expose setWidgetState/sendFollowUpMessage without a
+      // working MCP Apps handshake. Preserve the same context there below.
+    }
   }
+  compatibilityModelContent = serialized;
+  return persistCompatibilityModelContext();
 }
 
 export async function requestReaderFullscreen(): Promise<boolean> {
@@ -395,11 +409,50 @@ export async function requestReaderInline(): Promise<boolean> {
 }
 
 export function saveReaderWidgetState(state: ReaderWidgetState) {
+  refreshCompatibilityHostBoundary();
+  lastReaderWidgetState = state;
+  if (compatibilityModelContent) {
+    persistCompatibilityModelContext();
+    return;
+  }
   window.openai?.setWidgetState?.(state);
 }
 
 export function initialWidgetState(): ReaderWidgetState | undefined {
-  return window.openai?.widgetState;
+  refreshCompatibilityHostBoundary();
+  const state = unwrapReaderWidgetState(window.openai?.widgetState);
+  lastReaderWidgetState = state;
+  return state;
+}
+
+function persistCompatibilityModelContext(): boolean {
+  refreshCompatibilityHostBoundary();
+  if (!compatibilityModelContent || !window.openai?.setWidgetState) return false;
+  const current = lastReaderWidgetState ?? unwrapReaderWidgetState(window.openai.widgetState);
+  try {
+    window.openai.setWidgetState({
+      modelContent: compatibilityModelContent,
+      ...(current ? { privateContent: current } : {})
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function refreshCompatibilityHostBoundary() {
+  if (compatibilityStateHost && compatibilityStateHost !== window.openai) {
+    compatibilityModelContent = undefined;
+    lastReaderWidgetState = undefined;
+  }
+  compatibilityStateHost = window.openai;
+}
+
+function unwrapReaderWidgetState(
+  state: ReaderWidgetState | ReaderWidgetEnvelope | undefined
+): ReaderWidgetState | undefined {
+  if (!state) return undefined;
+  return "screen" in state ? state : state.privateContent;
 }
 
 export function initialToolOutput<T>(): T | undefined {

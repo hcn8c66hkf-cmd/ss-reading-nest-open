@@ -509,10 +509,16 @@ describe("App", () => {
 
     await waitFor(() => expect(sendFollowUpMessage).toHaveBeenCalled());
     const prompt = String(sendFollowUpMessage.mock.calls[0]?.[0]?.prompt ?? "");
-    expect(prompt).not.toContain("publish_companion_comment");
-    expect(prompt).toContain("不自动保存短评到 Dock");
-    expect(prompt).toContain("不要调用任何应用写回工具");
-    expect(prompt).toContain("直接在聊天区回复短评");
+    const modelVisibleDelivery = [
+      prompt,
+      JSON.stringify(
+        (window.openai?.setWidgetState as ReturnType<typeof vi.fn>).mock.calls
+      )
+    ].join("\n");
+    expect(modelVisibleDelivery).not.toContain("publish_companion_comment");
+    expect(modelVisibleDelivery).toContain("不自动保存短评到 Dock");
+    expect(modelVisibleDelivery).toContain("不要调用任何应用写回工具");
+    expect(modelVisibleDelivery).toContain("直接在聊天区回复短评");
   });
 
   it("disables the current-paragraph action while a sync request is in flight", async () => {

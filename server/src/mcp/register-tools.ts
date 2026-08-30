@@ -50,8 +50,8 @@ import { ReadingService } from "../services/reading-service.js";
 import type { CloudSourceService } from "../services/cloud-source-service.js";
 import { toolResult } from "./tool-result.js";
 
-export const READING_NEST_URI = "ui://ss-reading-nest/app-v40.html";
-export const READING_NEST_TOOL_NAME = "open_reading_nest_v40";
+export const READING_NEST_URI = "ui://ss-reading-nest/app-v41.html";
+export const READING_NEST_TOOL_NAME = "open_reading_nest_v41";
 
 const readLiveReadingContextInputSchema = z
   .object({
@@ -86,10 +86,24 @@ const mutation = {
 };
 
 export const TOOL_CONFIGS = {
-  open_reading_nest_v40: {
+  open_reading_nest_v41: {
     title: "打开 S×S 小窝共读",
     description:
-      "Use this primary v40 tool when the user wants to open the reading nest or continue recent reading.",
+      "Use this primary v41 tool when the user wants to open the reading nest or continue recent reading.",
+    inputSchema: openReadingNestInputSchema,
+    annotations: readOnly,
+    _meta: {
+      ui: { resourceUri: READING_NEST_URI },
+      "ui/resourceUri": READING_NEST_URI,
+      "openai/outputTemplate": READING_NEST_URI,
+      "openai/toolInvocation/invoking": "正在点亮小窝…",
+      "openai/toolInvocation/invoked": "小窝已经准备好"
+    }
+  },
+  open_reading_nest_v40: {
+    title: "打开 S×S 小窝共读（v40 兼容入口）",
+    description:
+      "Legacy compatibility entry. Prefer open_reading_nest_v41 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -103,7 +117,7 @@ export const TOOL_CONFIGS = {
   open_reading_nest_v39: {
     title: "打开 S×S 小窝共读（v39 兼容入口）",
     description:
-      "Legacy compatibility entry. Prefer open_reading_nest_v40 whenever it is available.",
+      "Legacy compatibility entry. Prefer open_reading_nest_v41 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -117,7 +131,7 @@ export const TOOL_CONFIGS = {
   open_reading_nest_v37: {
     title: "打开 S×S 小窝共读（v37 兼容入口）",
     description:
-      "Legacy compatibility entry. Prefer open_reading_nest_v40 whenever it is available.",
+      "Legacy compatibility entry. Prefer open_reading_nest_v41 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -131,7 +145,7 @@ export const TOOL_CONFIGS = {
   open_reading_nest_v36: {
     title: "打开 S×S 小窝共读（v36 兼容入口）",
     description:
-      "Legacy compatibility entry. Prefer open_reading_nest_v40 whenever it is available.",
+      "Legacy compatibility entry. Prefer open_reading_nest_v41 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -696,6 +710,40 @@ function collectionVersion(items: unknown[]): string {
   return `v1-${items.length}-${(hash >>> 0).toString(36)}`;
 }
 
+async function recoverExactSharedPage(
+  service: ReadingService,
+  cloudSourceService: CloudSourceService | undefined,
+  sessionId: string,
+  positionIndex: number | undefined
+) {
+  if (!cloudSourceService || !positionIndex) return undefined;
+  try {
+    const { session } = await service.getSessionBundle(sessionId);
+    if (session.type !== "novel") return undefined;
+    const { sourceText, sourceManifest } =
+      await cloudSourceService.restoreNovelSource(sessionId);
+    const currentText = splitNovelTextForVersion(
+      sourceText,
+      sourceManifest.segmentationVersion
+    )[positionIndex - 1];
+    if (!currentText) return undefined;
+    return {
+      sessionId,
+      title: session.title,
+      position: {
+        kind: "paragraph" as const,
+        index: positionIndex,
+        label: `第 ${positionIndex} 段`
+      },
+      currentText
+    };
+  } catch {
+    // Recovery is additive: a temporarily unavailable private source must not
+    // stop the stable catalog tool from returning saved comments/annotations.
+    return undefined;
+  }
+}
+
 export function registerReadingTools(
   server: McpServer,
   service: ReadingService,
@@ -723,6 +771,12 @@ export function registerReadingTools(
   registerAppTool(
     server,
     READING_NEST_TOOL_NAME,
+    TOOL_CONFIGS.open_reading_nest_v41,
+    openReadingNest
+  );
+  registerAppTool(
+    server,
+    "open_reading_nest_v40",
     TOOL_CONFIGS.open_reading_nest_v40,
     openReadingNest
   );
@@ -1092,7 +1146,8 @@ export function registerReadingTools(
         memoryResult,
         factResult,
         skillResult,
-        layeredContext
+        layeredContext,
+        recoverySharedPage
       ] =
         await Promise.all([
           service.listCompanionComments(input),
@@ -1123,6 +1178,14 @@ export function registerReadingTools(
                 depth: "daily",
                 positionIndex: input.positionIndex
               })
+            : undefined,
+          input.scope === "history"
+            ? recoverExactSharedPage(
+                service,
+                cloudSourceService,
+                input.sessionId,
+                input.positionIndex
+              )
             : undefined
         ]);
       const version = collectionVersion([
@@ -1162,6 +1225,17 @@ export function registerReadingTools(
         {
           version,
           unchanged,
+          ...(recoverySharedPage
+            ? {
+                sharedPage: recoverySharedPage,
+                responsePolicy: {
+                  mode: "reaction_only" as const,
+                  length: "short" as const,
+                  instruction:
+                    "Use sharedPage.currentText as the exact current paragraph. The annotations field contains the user's saved selection and comment at this position."
+                }
+              }
+            : {}),
           ...(unchanged
             ? { comments: [], ...(annotationResult ? { annotations: [] } : {}) }
             : {
@@ -1174,7 +1248,16 @@ export function registerReadingTools(
                 ...(layeredContext ? { layeredContext } : {})
               })
         },
-        unchanged ? "Daddy陪读短评没有更新。" : "已读取这本书的Daddy陪读短评。"
+        recoverySharedPage
+          ? [
+              `【共读恢复：${recoverySharedPage.position.label}】《${recoverySharedPage.title}》`,
+              "本段正文：",
+              recoverySharedPage.currentText,
+              "本段已保存的划线与评论位于 structuredContent.annotations。"
+            ].join("\n")
+          : unchanged
+            ? "Daddy陪读短评没有更新。"
+            : "已读取这本书的Daddy陪读短评。"
       );
     }
   );
