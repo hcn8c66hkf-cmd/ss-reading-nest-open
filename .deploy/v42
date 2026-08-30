@@ -1,0 +1,5 @@
+release=v42
+approved_at=2026-08-30
+scope=model-visible-open-preload-and-ios-independent-recovery
+base=81b843b3df0dc9597b6aaae4531a764dd7d69a0d
+resource_uri=ui://ss-reading-nest/app-v42.html

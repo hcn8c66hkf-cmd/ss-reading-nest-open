@@ -50,8 +50,8 @@ import { ReadingService } from "../services/reading-service.js";
 import type { CloudSourceService } from "../services/cloud-source-service.js";
 import { toolResult } from "./tool-result.js";
 
-export const READING_NEST_URI = "ui://ss-reading-nest/app-v41.html";
-export const READING_NEST_TOOL_NAME = "open_reading_nest_v41";
+export const READING_NEST_URI = "ui://ss-reading-nest/app-v42.html";
+export const READING_NEST_TOOL_NAME = "open_reading_nest_v42";
 
 const readLiveReadingContextInputSchema = z
   .object({
@@ -86,10 +86,24 @@ const mutation = {
 };
 
 export const TOOL_CONFIGS = {
-  open_reading_nest_v41: {
+  open_reading_nest_v42: {
     title: "打开 S×S 小窝共读",
     description:
-      "Use this primary v41 tool when the user wants to open the reading nest or continue recent reading.",
+      "Use this primary v42 tool when the user wants to open the reading nest or continue recent reading. It preloads the exact current paragraph and saved annotations into the model-visible tool result so iOS follow-up delivery is not required.",
+    inputSchema: openReadingNestInputSchema,
+    annotations: readOnly,
+    _meta: {
+      ui: { resourceUri: READING_NEST_URI },
+      "ui/resourceUri": READING_NEST_URI,
+      "openai/outputTemplate": READING_NEST_URI,
+      "openai/toolInvocation/invoking": "正在点亮小窝…",
+      "openai/toolInvocation/invoked": "小窝已经准备好"
+    }
+  },
+  open_reading_nest_v41: {
+    title: "打开 S×S 小窝共读（v41 兼容入口）",
+    description:
+      "Legacy compatibility entry. Prefer open_reading_nest_v42 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -103,7 +117,7 @@ export const TOOL_CONFIGS = {
   open_reading_nest_v40: {
     title: "打开 S×S 小窝共读（v40 兼容入口）",
     description:
-      "Legacy compatibility entry. Prefer open_reading_nest_v41 whenever it is available.",
+      "Legacy compatibility entry. Prefer open_reading_nest_v42 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -117,7 +131,7 @@ export const TOOL_CONFIGS = {
   open_reading_nest_v39: {
     title: "打开 S×S 小窝共读（v39 兼容入口）",
     description:
-      "Legacy compatibility entry. Prefer open_reading_nest_v41 whenever it is available.",
+      "Legacy compatibility entry. Prefer open_reading_nest_v42 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -131,7 +145,7 @@ export const TOOL_CONFIGS = {
   open_reading_nest_v37: {
     title: "打开 S×S 小窝共读（v37 兼容入口）",
     description:
-      "Legacy compatibility entry. Prefer open_reading_nest_v41 whenever it is available.",
+      "Legacy compatibility entry. Prefer open_reading_nest_v42 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -145,7 +159,7 @@ export const TOOL_CONFIGS = {
   open_reading_nest_v36: {
     title: "打开 S×S 小窝共读（v36 兼容入口）",
     description:
-      "Legacy compatibility entry. Prefer open_reading_nest_v41 whenever it is available.",
+      "Legacy compatibility entry. Prefer open_reading_nest_v42 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -758,19 +772,86 @@ export function registerReadingTools(
         cacheState: "unknown" as const
       }))
     );
+    const activeNovel = bookshelfSessions.find(
+      ({ session }) =>
+        session.type === "novel" &&
+        session.status === "active" &&
+        session.userCurrentPosition.index > 0
+    );
+    const preloadPositionIndex = activeNovel?.session.userCurrentPosition.index;
+    const [preloadedSharedPage, preloadedAnnotations] = activeNovel
+      ? await Promise.all([
+          recoverExactSharedPage(
+            service,
+            cloudSourceService,
+            activeNovel.session.id,
+            preloadPositionIndex
+          ),
+          service.listAnnotations({
+            sessionId: activeNovel.session.id,
+            positionIndex: preloadPositionIndex
+          }).catch(() => ({ annotations: [] }))
+        ])
+      : [undefined, { annotations: [] }];
+    const followupRecovery = preloadedSharedPage
+      ? {
+          tool: "list_companion_comments" as const,
+          arguments: {
+            sessionId: preloadedSharedPage.sessionId,
+            scope: "history" as const,
+            positionIndex: preloadedSharedPage.position.index,
+            limit: 20
+          },
+          instruction:
+            "If the user later asks whether正文 or a new page comment was received, call this tool with these exact arguments before answering. Do not rely on the iOS widget creating a follow-up turn."
+        }
+      : undefined;
+    const preloadedUserComments = preloadedAnnotations.annotations.flatMap((annotation) =>
+      annotation.messages
+        .filter((message) => message.author === "user")
+        .map((message) => message.text)
+    );
     return toolResult(
       {
         bookshelfSessions,
         recentSessions: bookshelfSessions.slice(0, 10),
+        ...(preloadedSharedPage
+          ? {
+              sharedPage: preloadedSharedPage,
+              annotations: preloadedAnnotations.annotations,
+              followupRecovery,
+              responsePolicy: {
+                mode: "preload_only" as const,
+                instruction:
+                  "The exact current paragraph and saved annotations are already visible to the model. Do not claim they were not received. Do not comment on the paragraph until the user asks."
+              }
+            }
+          : {}),
         ...(options.sourceEndpointBase ? { sourceEndpointBase: options.sourceEndpointBase } : {})
       },
-      "已打开 S×S 小窝共读。"
+      preloadedSharedPage
+        ? [
+            "已打开 S×S 小窝共读，并通过服务器预装当前共读上下文。",
+            `【当前正文：${preloadedSharedPage.position.label}】《${preloadedSharedPage.title}》`,
+            preloadedSharedPage.currentText,
+            preloadedUserComments.length > 0
+              ? `【本段已保存的用户评论】\n${preloadedUserComments.join("\n")}`
+              : "【本段已保存的用户评论】暂无",
+            "不要声称没有收到正文。用户稍后询问页面里的新评论时，必须先按 structuredContent.followupRecovery 调用 list_companion_comments 再回答。"
+          ].join("\n\n")
+        : "已打开 S×S 小窝共读。"
     );
   };
 
   registerAppTool(
     server,
     READING_NEST_TOOL_NAME,
+    TOOL_CONFIGS.open_reading_nest_v42,
+    openReadingNest
+  );
+  registerAppTool(
+    server,
+    "open_reading_nest_v41",
     TOOL_CONFIGS.open_reading_nest_v41,
     openReadingNest
   );

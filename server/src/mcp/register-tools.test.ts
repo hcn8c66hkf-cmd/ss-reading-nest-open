@@ -9,16 +9,16 @@ import {
 } from "./register-tools.js";
 
 describe("tool descriptors", () => {
-  it("binds the current UI resource to the v41 and compatibility render tools", () => {
-    expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v41.html");
-    expect(READING_NEST_TOOL_NAME).toBe("open_reading_nest_v41");
-    expect(TOOL_CONFIGS.open_reading_nest_v41._meta?.ui).toEqual({
+  it("binds the current UI resource to the v42 and compatibility render tools", () => {
+    expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v42.html");
+    expect(READING_NEST_TOOL_NAME).toBe("open_reading_nest_v42");
+    expect(TOOL_CONFIGS.open_reading_nest_v42._meta?.ui).toEqual({
       resourceUri: READING_NEST_URI
     });
-    expect(TOOL_CONFIGS.open_reading_nest_v41._meta?.["ui/resourceUri"]).toBe(
+    expect(TOOL_CONFIGS.open_reading_nest_v42._meta?.["ui/resourceUri"]).toBe(
       READING_NEST_URI
     );
-    expect(TOOL_CONFIGS.open_reading_nest_v41._meta?.["openai/outputTemplate"]).toBe(
+    expect(TOOL_CONFIGS.open_reading_nest_v42._meta?.["openai/outputTemplate"]).toBe(
       READING_NEST_URI
     );
     expect(TOOL_CONFIGS.open_reading_nest._meta?.["openai/outputTemplate"]).toBe(
@@ -26,6 +26,7 @@ describe("tool descriptors", () => {
     );
     for (const [name, config] of Object.entries(TOOL_CONFIGS)) {
       if (
+        name !== "open_reading_nest_v42" &&
         name !== "open_reading_nest_v41" &&
         name !== "open_reading_nest_v40" &&
         name !== "open_reading_nest_v39" &&
@@ -115,13 +116,14 @@ describe("tool descriptors", () => {
         quotes: [],
         reactions: [],
         bookmarks: []
-      })
+      }),
+      listAnnotations: async () => ({ annotations: [] })
     };
 
     registerReadingTools(server as never, service as never, undefined, {
       sourceEndpointBase: "https://worker.example.test/source/secret"
     });
-    const result = (await handlers.get("open_reading_nest_v41")?.()) as {
+    const result = (await handlers.get("open_reading_nest_v42")?.()) as {
       structuredContent?: Record<string, unknown>;
     };
 
@@ -137,6 +139,82 @@ describe("tool descriptors", () => {
       "ui/resourceUri": READING_NEST_URI,
       "openai/outputTemplate": READING_NEST_URI
     });
+  });
+
+  it("preloads the exact current paragraph and comments through the stale generic open entry", async () => {
+    const handlers = new Map<string, (args?: any) => Promise<any>>();
+    const server = {
+      registerTool: (name: string, _config: unknown, handler: (args?: any) => Promise<any>) => {
+        handlers.set(name, handler);
+      }
+    };
+    const session = {
+      id: "session-generic-preload",
+      title: "手机旧目录里的书",
+      type: "novel",
+      status: "active",
+      userCurrentPosition: { kind: "paragraph", index: 2, label: "第 2 段" },
+      assistantSyncedPosition: null,
+      liveReadingEnabled: false,
+      sessionPreferences: {},
+      sourceManifest: null,
+      createdAt: "2026-08-30T00:00:00.000Z",
+      updatedAt: "2026-08-30T00:00:00.000Z",
+      lastReadAt: "2026-08-30T00:00:00.000Z"
+    };
+    const annotation = {
+      id: "annotation-preload",
+      sessionId: session.id,
+      position: session.userCurrentPosition,
+      anchor: { selectedText: "这句" },
+      createdBy: "user",
+      messages: [
+        {
+          id: "message-preload",
+          author: "user",
+          text: "Daddy收到这条了吗",
+          createdAt: "2026-08-30T00:01:00.000Z"
+        }
+      ],
+      createdAt: "2026-08-30T00:01:00.000Z",
+      updatedAt: "2026-08-30T00:01:00.000Z"
+    };
+    const service = {
+      listAllSessions: async () => [session],
+      getSessionBundle: async () => ({ session, quotes: [], reactions: [], bookmarks: [] }),
+      listAnnotations: async () => ({ annotations: [annotation] })
+    };
+    const cloudSource = {
+      restoreNovelSource: async () => ({
+        sourceText: "第一段不能预装。\n\n第二段和评论必须直接进入打开工具的结果。\n\n第三段不能预装。",
+        sourceManifest: { segmentationVersion: 1 }
+      })
+    };
+
+    registerReadingTools(server as never, service as never, cloudSource as never);
+    const result = await handlers.get("open_reading_nest")?.();
+
+    expect(result.structuredContent).toMatchObject({
+      sharedPage: {
+        sessionId: session.id,
+        position: session.userCurrentPosition,
+        currentText: "第二段和评论必须直接进入打开工具的结果。"
+      },
+      annotations: [annotation],
+      followupRecovery: {
+        tool: "list_companion_comments",
+        arguments: {
+          sessionId: session.id,
+          scope: "history",
+          positionIndex: 2,
+          limit: 20
+        }
+      }
+    });
+    expect(result.content[0].text).toContain("第二段和评论必须直接进入打开工具的结果。");
+    expect(result.content[0].text).toContain("Daddy收到这条了吗");
+    expect(JSON.stringify(result)).not.toContain("第一段不能预装。");
+    expect(JSON.stringify(result)).not.toContain("第三段不能预装。");
   });
 
   it("declares the current page as an Apps SDK file param", () => {
@@ -330,7 +408,7 @@ describe("tool descriptors", () => {
   });
 
   it("exposes book management and threaded annotation tools", () => {
-    expect(Object.keys(TOOL_CONFIGS)).toHaveLength(58);
+    expect(Object.keys(TOOL_CONFIGS)).toHaveLength(59);
     expect(TOOL_CONFIGS.create_annotation.annotations).toMatchObject({
       readOnlyHint: false,
       idempotentHint: true
