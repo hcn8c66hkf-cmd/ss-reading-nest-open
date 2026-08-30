@@ -41,6 +41,7 @@ import {
   splitNovelTextForVersion
 } from "@ss/shared";
 import type {
+  ReadingAnnotation,
   ReadingSession,
   SendCurrentContextInput,
   SourceManifest,
@@ -724,6 +725,41 @@ function collectionVersion(items: unknown[]): string {
   return `v1-${items.length}-${(hash >>> 0).toString(36)}`;
 }
 
+function buildRequiredAnnotationWritebacks(
+  sessionId: string,
+  annotations: ReadingAnnotation[]
+) {
+  return annotations.flatMap((annotation) => {
+    const latestMessage = annotation.messages?.at(-1);
+    if (!latestMessage || latestMessage.author !== "user") return [];
+    const operationId = [
+      DADDY_ANNOTATION_REPLY_OPERATION_PREFIX,
+      encodeURIComponent(annotation.id),
+      ":",
+      encodeURIComponent(latestMessage.id)
+    ].join("");
+    return [{
+      annotationId: annotation.id,
+      selectedText: annotation.anchor.selectedText,
+      userMessage: {
+        id: latestMessage.id,
+        text: latestMessage.text
+      },
+      publishTool: "publish_companion_comment" as const,
+      publishArguments: {
+        sessionId,
+        position: annotation.position,
+        mode: "light_chat" as const,
+        length: "short" as const,
+        source: "current_context" as const,
+        operationId
+      },
+      instruction:
+        "Reply to this user annotation, then call publish_companion_comment with publishArguments unchanged and text set to the exact final reply. Do not answer only in chat."
+    }];
+  });
+}
+
 async function recoverExactSharedPage(
   service: ReadingService,
   cloudSourceService: CloudSourceService | undefined,
@@ -815,6 +851,12 @@ export function registerReadingTools(
         .filter((message) => message.author === "user")
         .map((message) => message.text)
     );
+    const requiredWritebacks = preloadedSharedPage
+      ? buildRequiredAnnotationWritebacks(
+          preloadedSharedPage.sessionId,
+          preloadedAnnotations.annotations
+        )
+      : [];
     return toolResult(
       {
         bookshelfSessions,
@@ -823,11 +865,14 @@ export function registerReadingTools(
           ? {
               sharedPage: preloadedSharedPage,
               annotations: preloadedAnnotations.annotations,
+              ...(requiredWritebacks.length > 0 ? { requiredWritebacks } : {}),
               followupRecovery,
               responsePolicy: {
                 mode: "preload_only" as const,
                 instruction:
-                  "The exact current paragraph and saved annotations are already visible to the model. Do not claim they were not received. Do not comment on the paragraph until the user asks."
+                  requiredWritebacks.length > 0
+                    ? "The exact current paragraph and saved annotations are visible. Every entry in requiredWritebacks is an unresolved user annotation: reply to it and call its publishTool with publishArguments unchanged before answering in chat."
+                    : "The exact current paragraph and saved annotations are already visible to the model. Do not claim they were not received. Do not comment on the paragraph until the user asks."
               }
             }
           : {}),
@@ -841,6 +886,9 @@ export function registerReadingTools(
             preloadedUserComments.length > 0
               ? `【本段已保存的用户评论】\n${preloadedUserComments.join("\n")}`
               : "【本段已保存的用户评论】暂无",
+            requiredWritebacks.length > 0
+              ? `检测到 ${requiredWritebacks.length} 条尚未回复的书边评论。必须先按 structuredContent.requiredWritebacks 调用 publish_companion_comment 写回，再在聊天区回复相同内容。`
+              : "本段没有待回复的书边评论。",
             "不要声称没有收到正文。用户稍后询问页面里的新评论时，必须先按 structuredContent.followupRecovery 调用 list_companion_comments 再回答。"
           ].join("\n\n")
         : "已打开 S×S 小窝共读。"
@@ -1306,6 +1354,10 @@ export function registerReadingTools(
         }))
       ]);
       const unchanged = knownVersion === version;
+      const requiredWritebacks = buildRequiredAnnotationWritebacks(
+        input.sessionId,
+        annotationResult?.annotations ?? []
+      );
       return toolResult(
         {
           version,
@@ -1313,11 +1365,14 @@ export function registerReadingTools(
           ...(recoverySharedPage
             ? {
                 sharedPage: recoverySharedPage,
+                ...(requiredWritebacks.length > 0 ? { requiredWritebacks } : {}),
                 responsePolicy: {
                   mode: "reaction_only" as const,
                   length: "short" as const,
                   instruction:
-                    "Use sharedPage.currentText as the exact current paragraph. The annotations field contains the user's saved selection and comment at this position."
+                    requiredWritebacks.length > 0
+                      ? "Use sharedPage.currentText as the exact paragraph. Every entry in requiredWritebacks is an unresolved user annotation: reply to it and call its publishTool with publishArguments unchanged before answering in chat."
+                      : "Use sharedPage.currentText as the exact current paragraph. The annotations field contains the user's saved selection and comment at this position."
                 }
               }
             : {}),
@@ -1338,7 +1393,10 @@ export function registerReadingTools(
               `【共读恢复：${recoverySharedPage.position.label}】《${recoverySharedPage.title}》`,
               "本段正文：",
               recoverySharedPage.currentText,
-              "本段已保存的划线与评论位于 structuredContent.annotations。"
+              "本段已保存的划线与评论位于 structuredContent.annotations。",
+              requiredWritebacks.length > 0
+                ? `检测到 ${requiredWritebacks.length} 条尚未回复的书边评论。必须先按 structuredContent.requiredWritebacks 调用 publish_companion_comment 写回，再在聊天区回复相同内容。`
+                : "本段没有待回复的书边评论。"
             ].join("\n")
           : unchanged
             ? "Daddy陪读短评没有更新。"

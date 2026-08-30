@@ -592,6 +592,19 @@ describe("tool descriptors", () => {
       annotations: [annotation]
     });
     expect(result.content[0].text).toContain("第六十七段正文会和评论一起恢复。");
+    expect(result.structuredContent.requiredWritebacks).toEqual([
+      expect.objectContaining({
+        annotationId: annotation.id,
+        publishTool: "publish_companion_comment",
+        publishArguments: expect.objectContaining({
+          sessionId: session.id,
+          position: session.userCurrentPosition,
+          source: "current_context",
+          operationId: "annotation-daddy-v25:annotation-67:message-67"
+        })
+      })
+    ]);
+    expect(result.content[0].text).toContain("必须先按 structuredContent.requiredWritebacks");
     expect(JSON.stringify(result)).not.toContain("私密段落 66");
     expect(JSON.stringify(result)).not.toContain("私密段落 68");
   });

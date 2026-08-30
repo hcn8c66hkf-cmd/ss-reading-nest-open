@@ -1,0 +1,4 @@
+release=v42-hotfix2
+approved_at=2026-08-30
+scope=companion-position-sync-and-required-annotation-writeback
+base=ba5048f04d071061d71efb67b607541f0335d85d

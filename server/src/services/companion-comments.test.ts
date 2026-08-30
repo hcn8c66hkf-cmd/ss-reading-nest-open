@@ -82,6 +82,53 @@ describe("ReadingService companion comments", () => {
       .toMatchObject({ index: 6, label: "第 6 段" });
   });
 
+  it("uses recovered quick-action and current-context comments as proof Daddy read the paragraph", async () => {
+    const { service } = createService();
+    const session = await service.startSession("第一本", "novel");
+    await service.updateUserPosition(session.id, position(7));
+
+    await service.publishCompanionComment(commentInput(session.id, "quick-comment-6", 6));
+    await service.publishCompanionComment({
+      ...commentInput(session.id, "context-comment-7", 7),
+      source: "current_context"
+    });
+
+    expect((await service.getSessionBundle(session.id)).session.assistantSyncedPosition)
+      .toMatchObject({ index: 7, label: "第 7 段" });
+
+    await service.publishCompanionComment({
+      ...commentInput(session.id, "context-comment-7", 7),
+      source: "current_context"
+    });
+    expect((await service.getSessionBundle(session.id)).session.assistantSyncedPosition)
+      .toMatchObject({ index: 7, label: "第 7 段" });
+  });
+
+  it("repairs a previously saved idempotent comment whose Daddy position was left behind", async () => {
+    const { repository, service } = createService();
+    const session = await service.startSession("第一本", "novel");
+    await service.updateUserPosition(session.id, position(7));
+    repository.database.sessions[0]!.assistantSyncedPosition = position(6);
+    repository.database.companionComments.push(
+      makeStoredComment({
+        id: "saved-seven",
+        sessionId: session.id,
+        position: position(7),
+        operationId: "context-comment-7",
+        createdAt: "2026-06-22T09:00:00.000Z"
+      })
+    );
+
+    await service.publishCompanionComment({
+      ...commentInput(session.id, "context-comment-7", 7),
+      source: "current_context"
+    });
+
+    expect(repository.database.companionComments).toHaveLength(1);
+    expect((await service.getSessionBundle(session.id)).session.assistantSyncedPosition)
+      .toMatchObject({ index: 7, label: "第 7 段" });
+  });
+
   it("publishes idempotently with default recent and history flags", async () => {
     const { repository, service } = createService();
     const session = await startSessionWithHistory(service);

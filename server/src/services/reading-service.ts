@@ -230,7 +230,14 @@ export class ReadingService {
           item.sessionId === input.sessionId &&
           item.operationId === input.operationId
       );
-      if (existing) return existing;
+      if (existing) {
+        this.advanceAssistantPositionFromComment(
+          session,
+          existing.position,
+          this.deps.now().toISOString()
+        );
+        return existing;
+      }
       const comment: CompanionComment = {
         id: this.deps.id(),
         sessionId: input.sessionId,
@@ -247,17 +254,7 @@ export class ReadingService {
         createdAt: this.deps.now().toISOString()
       };
       database.companionComments.push(comment);
-      if (input.source === "live_reading") {
-        const current = session.assistantSyncedPosition;
-        if (
-          input.position.kind === session.userCurrentPosition.kind &&
-          input.position.index <= session.userCurrentPosition.index &&
-          (!current || input.position.index >= current.index)
-        ) {
-          session.assistantSyncedPosition = structuredClone(input.position);
-          session.updatedAt = comment.createdAt;
-        }
-      }
+      this.advanceAssistantPositionFromComment(session, input.position, comment.createdAt);
       this.pruneCompanionComments(database, input.sessionId, "recent");
       if (comment.inHistory) {
         this.pruneCompanionComments(database, input.sessionId, "history");
@@ -265,6 +262,22 @@ export class ReadingService {
       this.removeUnusedCompanionComments(database);
       return comment;
     });
+  }
+
+  private advanceAssistantPositionFromComment(
+    session: ReadingSession,
+    position: ReadingPosition,
+    updatedAt: string
+  ) {
+    const current = session.assistantSyncedPosition;
+    if (
+      position.kind === session.userCurrentPosition.kind &&
+      position.index <= session.userCurrentPosition.index &&
+      (!current || position.index >= current.index)
+    ) {
+      session.assistantSyncedPosition = structuredClone(position);
+      session.updatedAt = updatedAt;
+    }
   }
 
   async createAnnotation(input: {
