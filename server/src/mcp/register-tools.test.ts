@@ -162,6 +162,13 @@ describe("tool descriptors", () => {
       updatedAt: "2026-08-30T00:00:00.000Z",
       lastReadAt: "2026-08-30T00:00:00.000Z"
     };
+    const staleFirstSession = {
+      ...session,
+      id: "session-stale-first",
+      title: "书架排第一但不是刚读的书",
+      userCurrentPosition: { kind: "paragraph", index: 1, label: "第 1 段" },
+      updatedAt: "2026-08-29T00:00:00.000Z"
+    };
     const annotation = {
       id: "annotation-preload",
       sessionId: session.id,
@@ -180,13 +187,20 @@ describe("tool descriptors", () => {
       updatedAt: "2026-08-30T00:01:00.000Z"
     };
     const service = {
-      listAllSessions: async () => [session],
-      getSessionBundle: async () => ({ session, quotes: [], reactions: [], bookmarks: [] }),
+      listAllSessions: async () => [staleFirstSession, session],
+      getSessionBundle: async (sessionId: string) => ({
+        session: sessionId === session.id ? session : staleFirstSession,
+        quotes: [],
+        reactions: [],
+        bookmarks: []
+      }),
       listAnnotations: async () => ({ annotations: [annotation] })
     };
     const cloudSource = {
-      restoreNovelSource: async () => ({
-        sourceText: "第一段不能预装。\n\n第二段和评论必须直接进入打开工具的结果。\n\n第三段不能预装。",
+      restoreNovelSource: async (sessionId: string) => ({
+        sourceText: sessionId === session.id
+          ? "第一段不能预装。\n\n第二段和评论必须直接进入打开工具的结果。\n\n第三段不能预装。"
+          : "错误书目的正文不能预装。",
         sourceManifest: { segmentationVersion: 1 }
       })
     };
@@ -215,6 +229,7 @@ describe("tool descriptors", () => {
     expect(result.content[0].text).toContain("Daddy收到这条了吗");
     expect(JSON.stringify(result)).not.toContain("第一段不能预装。");
     expect(JSON.stringify(result)).not.toContain("第三段不能预装。");
+    expect(result.structuredContent.sharedPage.title).not.toBe("书架排第一但不是刚读的书");
   });
 
   it("declares the current page as an Apps SDK file param", () => {

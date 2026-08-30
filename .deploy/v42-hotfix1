@@ -1,0 +1,4 @@
+release=v42-hotfix1
+approved_at=2026-08-30
+scope=preload-most-recently-updated-active-book
+base=45881c3eddd966183a736c8ef20fb8b272c2c1d5

@@ -772,12 +772,16 @@ export function registerReadingTools(
         cacheState: "unknown" as const
       }))
     );
-    const activeNovel = bookshelfSessions.find(
-      ({ session }) =>
-        session.type === "novel" &&
-        session.status === "active" &&
-        session.userCurrentPosition.index > 0
-    );
+    const activeNovel = bookshelfSessions
+      .filter(
+        ({ session }) =>
+          session.type === "novel" &&
+          session.status === "active" &&
+          session.userCurrentPosition.index > 0
+      )
+      .sort((left, right) =>
+        right.session.updatedAt.localeCompare(left.session.updatedAt)
+      )[0];
     const preloadPositionIndex = activeNovel?.session.userCurrentPosition.index;
     const [preloadedSharedPage, preloadedAnnotations] = activeNovel
       ? await Promise.all([
