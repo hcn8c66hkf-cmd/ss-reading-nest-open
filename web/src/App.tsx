@@ -31,6 +31,7 @@ import {
   requestReaderPip,
   sampleChatGptText,
   sampleChatGptToolInput,
+  sendFollowUpFromUserGesture,
   setReadingFrameHeight,
   saveReaderWidgetState,
   updateModelContext
@@ -254,6 +255,7 @@ export function App() {
   const companionVersionRef = useRef<string | null>(null);
   const annotationVersionRef = useRef<string | null>(null);
   const sentLiveReadingFallbacksRef = useRef(new Set<string>());
+  const liveReadingGestureWakeupsRef = useRef(new Map<string, Promise<boolean>>());
   const hostLayout = useReadingHostLayout();
   const manualCompanionDraft = useMemo<PendingCompanionCommentDraft | null>(() => {
     if (!sessionBundle) return null;
@@ -1306,10 +1308,55 @@ export function App() {
     }
   }
 
+  function queueLiveReadingWakeFromUserGesture(nextPosition: ReadingPosition) {
+    if (!sessionBundle || sessionBundle.session.type !== "novel") return;
+    const session = sessionBundle.session;
+    if (
+      !session.liveReadingEnabled ||
+      sourceAvailability !== "available_local" ||
+      (session.assistantSyncedPosition?.index ?? 0) >= nextPosition.index
+    ) return;
+    const text = chunks[nextPosition.index - 1] ?? "";
+    if (!text.trim()) return;
+    const operationId = buildLiveReadingOperationId(
+      session.id,
+      nextPosition.kind,
+      nextPosition.index,
+      session.sessionPreferences.readingCommentMode,
+      session.sessionPreferences.commentLength
+    );
+    if (
+      liveReadingGestureWakeupsRef.current.has(operationId) ||
+      sentLiveReadingFallbacksRef.current.has(operationId) ||
+      companionComments.some((comment) => comment.operationId === operationId)
+    ) return;
+    const pending = sendFollowUpFromUserGesture(
+      buildLiveReadingPrompt({
+        sessionId: session.id,
+        title: session.title,
+        position: nextPosition,
+        text,
+        operationId,
+        autoSaveCompanionComments:
+          session.sessionPreferences.autoSaveCompanionComments,
+        requestedMode: session.sessionPreferences.readingCommentMode,
+        requestedLength: session.sessionPreferences.commentLength
+      }),
+      false
+    );
+    liveReadingGestureWakeupsRef.current.set(operationId, pending);
+    void pending.then((sent) => {
+      if (!sent && liveReadingGestureWakeupsRef.current.get(operationId) === pending) {
+        liveReadingGestureWakeupsRef.current.delete(operationId);
+      }
+    });
+  }
+
   async function changePosition(index: number) {
     if (!sessionBundle) return;
     setReaderScrollTop(0);
     const nextPosition = makePosition(sessionBundle.session.type, index, sessionBundle.session.type === "novel" ? chunks.length : mangaPages.length);
+    queueLiveReadingWakeFromUserGesture(nextPosition);
     setSessionBundle({
       ...sessionBundle,
       session: {
@@ -1759,7 +1806,6 @@ export function App() {
       ) {
         return true;
       }
-      const retryingFallback = sentLiveReadingFallbacksRef.current.has(operationId);
       const targetPosition = makePosition("novel", index, chunks.length);
       const start = index;
       const text = chunks
@@ -1770,7 +1816,15 @@ export function App() {
         setToast(`没有取到${targetPosition.label}正文，已停止发送空请求。`);
         return false;
       }
+      const gestureWake = liveReadingGestureWakeupsRef.current.get(operationId);
+      const gestureWakeSent = gestureWake
+        ? await gestureWake.catch(() => false)
+        : false;
+      if (gestureWake) liveReadingGestureWakeupsRef.current.delete(operationId);
+      const retryingFallback =
+        !gestureWakeSent && sentLiveReadingFallbacksRef.current.has(operationId);
       try {
+        if (!gestureWakeSent) {
         const layeredResult = await callTool("list_companion_comments", {
           sessionId: session.id,
           scope: "recent",
@@ -1885,6 +1939,7 @@ export function App() {
         if (fallbackMode === "failed") {
           sentLiveReadingFallbacksRef.current.delete(operationId);
           throw new Error("Host did not accept follow-up message");
+        }
         }
         sentLiveReadingFallbacksRef.current.add(operationId);
         const persisted = await waitForWriteback<CompanionComment>({
@@ -2190,17 +2245,76 @@ export function App() {
     }
   }
 
+  function wakeAnnotationReplyFromUserGesture(input: {
+    position: ReadingPosition;
+    selectedText: string;
+    userComment: string;
+    saveOperationId: string;
+  }) {
+    if (!sessionBundle) return Promise.resolve(false);
+    return sendFollowUpFromUserGesture([
+      `【小窝书边评论：${input.position.label}】《${sessionBundle.session.title}》`,
+      `划线原文：${input.selectedText}`,
+      `用户刚写下：${input.userComment}`,
+      `保存操作：${input.saveOperationId}`,
+      "这条评论正在写入服务器。请调用 list_companion_comments，参数严格使用：" +
+        JSON.stringify({
+          sessionId: sessionBundle.session.id,
+          scope: "history",
+          positionIndex: input.position.index,
+          limit: 20
+        }) + "。",
+      "读取后先完成 structuredContent.requiredParagraphWriteback（如果存在），再完成 requiredWritebacks 中对应这条最新评论的书边回复。每次调用都保持其 publishArguments 不变，只补最终文本。",
+      "如果第一次读取时保存尚未出现，再读取一次；不要等用户回聊天框提醒。"
+    ].join("\n\n"), false);
+  }
+
+  async function waitForGestureAnnotationReply(annotation: ReadingAnnotation) {
+    const latestMessage = annotation.messages.at(-1);
+    if (!latestMessage || latestMessage.author !== "user") return undefined;
+    const operationId = `annotation-daddy-v25:${encodeURIComponent(annotation.id)}:${encodeURIComponent(latestMessage.id)}`;
+    return waitForWriteback<ReadingAnnotation>({
+      load: async () => {
+        const result = await callTool("list_annotations_v23", {
+          sessionId: annotation.sessionId,
+          positionIndex: annotation.position.index
+        }).catch(() => ({ structuredContent: {} }));
+        const content = result.structuredContent as Record<string, unknown> | undefined;
+        return Array.isArray(content?.annotations)
+          ? (content.annotations as ReadingAnnotation[])
+          : [];
+      },
+      select: (loaded) => (loaded as ReadingAnnotation[]).find(
+        (item) => item.id === annotation.id &&
+          item.messages.some((message) => message.operationId === operationId)
+      ),
+      attempts: 20,
+      intervalMs: 1_500
+    });
+  }
+
   async function createReadingAnnotation(anchor: TextAnchor, comment?: string) {
     if (!sessionBundle || annotationSaving) return false;
     setAnnotationSaving(true);
+    const position = sessionBundle.session.userCurrentPosition;
+    const saveOperationId = `annotation-v24:${crypto.randomUUID()}`;
+    const savePromise = callTool("save_quote", {
+      sessionId: sessionBundle.session.id,
+      content: anchor.selectedText,
+      position,
+      note: encodeAnnotationQuoteNote(anchor, comment),
+      operationId: saveOperationId
+    });
+    const gestureWake = comment
+      ? wakeAnnotationReplyFromUserGesture({
+          position,
+          selectedText: anchor.selectedText,
+          userComment: comment,
+          saveOperationId
+        })
+      : undefined;
     try {
-      const result = await callTool("save_quote", {
-        sessionId: sessionBundle.session.id,
-        content: anchor.selectedText,
-        position: sessionBundle.session.userCurrentPosition,
-        note: encodeAnnotationQuoteNote(anchor, comment),
-        operationId: `annotation-v24:${crypto.randomUUID()}`
-      });
+      const result = await savePromise;
       const annotation = result.structuredContent?.annotation as
         | ReadingAnnotation
         | undefined;
@@ -2210,6 +2324,16 @@ export function App() {
         annotation
       ]);
       if (comment) {
+        if (await gestureWake?.catch(() => false)) {
+          const saved = await waitForGestureAnnotationReply(annotation);
+          if (saved) {
+            setAnnotations((current) =>
+              current.map((item) => (item.id === saved.id ? saved : item))
+            );
+            setToast("Daddy已经回在这条批注下面啦。");
+            return true;
+          }
+        }
         await askDaddyToReply(annotation);
       } else {
         setToast("这句话已经划好线。" );
@@ -2226,15 +2350,25 @@ export function App() {
 
   async function replyToReadingAnnotation(annotationId: string, text: string) {
     if (!sessionBundle || annotationSaving) return;
+    const currentAnnotation = annotations.find((item) => item.id === annotationId);
+    if (!currentAnnotation) return;
     setAnnotationSaving(true);
+    const saveOperationId = `annotation-reply-v24:${crypto.randomUUID()}`;
+    const savePromise = callTool("save_reaction", {
+      sessionId: sessionBundle.session.id,
+      content: `${ANNOTATION_REPLY_CONTENT_PREFIX}${JSON.stringify({ annotationId, text })}`,
+      position: sessionBundle.session.userCurrentPosition,
+      speaker: "user",
+      operationId: saveOperationId
+    });
+    const gestureWake = wakeAnnotationReplyFromUserGesture({
+      position: currentAnnotation.position,
+      selectedText: currentAnnotation.anchor.selectedText,
+      userComment: text,
+      saveOperationId
+    });
     try {
-      const result = await callTool("save_reaction", {
-        sessionId: sessionBundle.session.id,
-        content: `${ANNOTATION_REPLY_CONTENT_PREFIX}${JSON.stringify({ annotationId, text })}`,
-        position: sessionBundle.session.userCurrentPosition,
-        speaker: "user",
-        operationId: `annotation-reply-v24:${crypto.randomUUID()}`
-      });
+      const result = await savePromise;
       const annotation = result.structuredContent?.annotation as
         | ReadingAnnotation
         | undefined;
@@ -2242,6 +2376,16 @@ export function App() {
       setAnnotations((current) =>
         current.map((item) => (item.id === annotation.id ? annotation : item))
       );
+      if (await gestureWake.catch(() => false)) {
+        const saved = await waitForGestureAnnotationReply(annotation);
+        if (saved) {
+          setAnnotations((current) =>
+            current.map((item) => (item.id === saved.id ? saved : item))
+          );
+          setToast("Daddy已经回在这条批注下面啦。");
+          return;
+        }
+      }
       await askDaddyToReply(annotation);
     } catch {
       setToast("这条回复没有保存成功，请重试。");

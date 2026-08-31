@@ -277,6 +277,25 @@ describe("host bridge", () => {
     });
   });
 
+  it("starts a compatibility follow-up in the originating user gesture", async () => {
+    let resolveFollowUp: (() => void) | undefined;
+    const sendFollowUpMessage = vi.fn(() => new Promise<void>((resolve) => {
+      resolveFollowUp = resolve;
+    }));
+    if (window.openai) window.openai.sendFollowUpMessage = sendFollowUpMessage;
+    const { sendFollowUpFromUserGesture } = await import("./host.js");
+
+    const pending = sendFollowUpFromUserGesture("切段后立刻叫醒", false);
+
+    expect(sendFollowUpMessage).toHaveBeenCalledWith({
+      prompt: "切段后立刻叫醒",
+      scrollToBottom: false
+    });
+    expect(bridge.connect).not.toHaveBeenCalled();
+    resolveFollowUp?.();
+    await expect(pending).resolves.toBe(true);
+  });
+
   it("retries the Apps handshake after an early mobile connection failure", async () => {
     bridge.connect.mockRejectedValueOnce(new Error("host listener not ready"));
     const { askChatGpt } = await import("./host.js");

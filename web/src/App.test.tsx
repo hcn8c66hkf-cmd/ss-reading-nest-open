@@ -786,6 +786,78 @@ describe("App", () => {
     await deviceCache.remove("sequence-session");
   });
 
+  it("starts the iOS follow-up in the same tap that changes paragraphs", async () => {
+    const deviceCache = new IndexedDbReadingCache();
+    const sourceManifest = {
+      ...manifest("gesture-wake-source", "9"),
+      segmentationVersion: 3,
+      paragraphCount: 2
+    };
+    await deviceCache.put(
+      novelCache(
+        "gesture-wake-session",
+        "触摸唤醒测试",
+        sourceManifest,
+        ["第一段已经读过。", "第二段要在点击当下送出。"]
+      )
+    );
+    const baseBundle = bookshelfBundle(
+      "gesture-wake-session",
+      "触摸唤醒测试",
+      1,
+      "light_chat",
+      sourceManifest
+    );
+    const bundle: SessionBundle = {
+      ...baseBundle,
+      session: {
+        ...baseBundle.session,
+        liveReadingEnabled: true,
+        assistantSyncedPosition: {
+          kind: "paragraph",
+          index: 1,
+          total: 2,
+          label: "第 1 段"
+        }
+      }
+    };
+    const callTool = vi.fn(async (name: string) => {
+      if (name === "list_companion_comments") {
+        return { structuredContent: { comments: [] } };
+      }
+      return { structuredContent: {} };
+    });
+    const sendFollowUpMessage = vi.fn((_input: { prompt: string; scrollToBottom?: boolean }) =>
+      new Promise<void>(() => undefined)
+    );
+    Object.defineProperty(window, "openai", {
+      configurable: true,
+      value: {
+        toolOutput: { bookshelfSessions: [bundle] },
+        callTool,
+        sendFollowUpMessage,
+        requestDisplayMode: vi.fn(),
+        setWidgetState: vi.fn()
+      }
+    });
+
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "继续阅读《触摸唤醒测试》" }));
+    fireEvent.click(await screen.findByRole("button", { name: "下一段" }));
+
+    expect(sendFollowUpMessage).toHaveBeenCalledTimes(1);
+    expect(String(sendFollowUpMessage.mock.calls[0]?.[0]?.prompt)).toContain(
+      "第二段要在点击当下送出。"
+    );
+    const updateCall = callTool.mock.calls.findIndex(([name]) => name === "update_reading_position");
+    expect(updateCall).toBeGreaterThanOrEqual(0);
+    expect(sendFollowUpMessage.mock.invocationCallOrder[0]).toBeLessThan(
+      callTool.mock.invocationCallOrder[updateCall]!
+    );
+
+    await deviceCache.remove("gesture-wake-session");
+  });
+
   it("persists per-session preferences from the secondary actions sheet", async () => {
     let preferences = {
       readingCommentMode: "light_chat",

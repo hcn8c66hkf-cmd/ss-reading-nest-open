@@ -51,8 +51,8 @@ import { ReadingService } from "../services/reading-service.js";
 import type { CloudSourceService } from "../services/cloud-source-service.js";
 import { toolResult } from "./tool-result.js";
 
-export const READING_NEST_URI = "ui://ss-reading-nest/app-v42.html";
-export const READING_NEST_TOOL_NAME = "open_reading_nest_v42";
+export const READING_NEST_URI = "ui://ss-reading-nest/app-v43.html";
+export const READING_NEST_TOOL_NAME = "open_reading_nest_v43";
 
 const readLiveReadingContextInputSchema = z
   .object({
@@ -87,10 +87,24 @@ const mutation = {
 };
 
 export const TOOL_CONFIGS = {
-  open_reading_nest_v42: {
+  open_reading_nest_v43: {
     title: "打开 S×S 小窝共读",
     description:
-      "Use this primary v42 tool when the user wants to open the reading nest or continue recent reading. It preloads the exact current paragraph and saved annotations into the model-visible tool result so iOS follow-up delivery is not required.",
+      "Use this primary v43 tool when the user wants to open the reading nest or continue recent reading. It preloads current context and starts mobile follow-ups from the originating user gesture.",
+    inputSchema: openReadingNestInputSchema,
+    annotations: readOnly,
+    _meta: {
+      ui: { resourceUri: READING_NEST_URI },
+      "ui/resourceUri": READING_NEST_URI,
+      "openai/outputTemplate": READING_NEST_URI,
+      "openai/toolInvocation/invoking": "正在点亮小窝…",
+      "openai/toolInvocation/invoked": "小窝已经准备好"
+    }
+  },
+  open_reading_nest_v42: {
+    title: "打开 S×S 小窝共读（v42 兼容入口）",
+    description:
+      "Legacy compatibility entry. Prefer open_reading_nest_v43 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -946,6 +960,12 @@ export function registerReadingTools(
   registerAppTool(
     server,
     READING_NEST_TOOL_NAME,
+    TOOL_CONFIGS.open_reading_nest_v43,
+    openReadingNest
+  );
+  registerAppTool(
+    server,
+    "open_reading_nest_v42",
     TOOL_CONFIGS.open_reading_nest_v42,
     openReadingNest
   );

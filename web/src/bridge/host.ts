@@ -45,7 +45,7 @@ function connectApp() {
   }
   if (!app) {
     const nextApp = new McpApp(
-      { name: "S×S 小窝共读", version: "0.4.2" },
+      { name: "S×S 小窝共读", version: "0.4.3" },
       {},
       {
         // The SDK's default ResizeObserver briefly sets <html> to max-content
@@ -196,6 +196,24 @@ async function sendCompatibilityMessage(
     return true;
   } catch {
     return false;
+  }
+}
+
+export function sendFollowUpFromUserGesture(
+  prompt: string,
+  scrollToBottom = false
+): Promise<boolean> {
+  if (!window.openai?.sendFollowUpMessage) return Promise.resolve(false);
+  try {
+    // Keep this host call synchronous with the originating tap. In particular,
+    // do not await the MCP Apps handshake or a server tool first: mobile hosts
+    // can discard a component-authored follow-up once user activation expires.
+    persistCompatibilityModelContext();
+    return window.openai
+      .sendFollowUpMessage({ prompt, scrollToBottom })
+      .then(() => true, () => false);
+  } catch {
+    return Promise.resolve(false);
   }
 }
 
