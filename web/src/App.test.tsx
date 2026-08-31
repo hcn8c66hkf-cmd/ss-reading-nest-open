@@ -786,7 +786,7 @@ describe("App", () => {
     await deviceCache.remove("sequence-session");
   });
 
-  it("starts the iOS follow-up in the same tap that changes paragraphs", async () => {
+  it("does not trust an iOS compatibility follow-up before the in-widget path runs", async () => {
     const deviceCache = new IndexedDbReadingCache();
     const sourceManifest = {
       ...manifest("gesture-wake-source", "9"),
@@ -798,7 +798,7 @@ describe("App", () => {
         "gesture-wake-session",
         "触摸唤醒测试",
         sourceManifest,
-        ["第一段已经读过。", "第二段要在点击当下送出。"]
+        ["第一段已经读过。", "第二段应先在卡内生成短评。"]
       )
     );
     const baseBundle = bookshelfBundle(
@@ -845,14 +845,16 @@ describe("App", () => {
     fireEvent.click(await screen.findByRole("button", { name: "继续阅读《触摸唤醒测试》" }));
     fireEvent.click(await screen.findByRole("button", { name: "下一段" }));
 
-    expect(sendFollowUpMessage).toHaveBeenCalledTimes(1);
-    expect(String(sendFollowUpMessage.mock.calls[0]?.[0]?.prompt)).toContain(
-      "第二段要在点击当下送出。"
-    );
+    expect(sendFollowUpMessage).not.toHaveBeenCalled();
     const updateCall = callTool.mock.calls.findIndex(([name]) => name === "update_reading_position");
     expect(updateCall).toBeGreaterThanOrEqual(0);
-    expect(sendFollowUpMessage.mock.invocationCallOrder[0]).toBeLessThan(
-      callTool.mock.invocationCallOrder[updateCall]!
+
+    await waitFor(() => expect(sendFollowUpMessage).toHaveBeenCalledTimes(1));
+    expect(String(sendFollowUpMessage.mock.calls[0]?.[0]?.prompt)).toContain(
+      "第二段应先在卡内生成短评。"
+    );
+    expect(callTool.mock.invocationCallOrder[updateCall]!).toBeLessThan(
+      sendFollowUpMessage.mock.invocationCallOrder[0]!
     );
 
     await deviceCache.remove("gesture-wake-session");

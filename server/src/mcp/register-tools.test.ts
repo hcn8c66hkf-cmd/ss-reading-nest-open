@@ -9,16 +9,16 @@ import {
 } from "./register-tools.js";
 
 describe("tool descriptors", () => {
-  it("binds the current UI resource to the v43 and compatibility render tools", () => {
-    expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v43.html");
-    expect(READING_NEST_TOOL_NAME).toBe("open_reading_nest_v43");
-    expect(TOOL_CONFIGS.open_reading_nest_v43._meta?.ui).toEqual({
+  it("binds the current UI resource to the v44 and compatibility render tools", () => {
+    expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v44.html");
+    expect(READING_NEST_TOOL_NAME).toBe("open_reading_nest_v44");
+    expect(TOOL_CONFIGS.open_reading_nest_v44._meta?.ui).toEqual({
       resourceUri: READING_NEST_URI
     });
-    expect(TOOL_CONFIGS.open_reading_nest_v43._meta?.["ui/resourceUri"]).toBe(
+    expect(TOOL_CONFIGS.open_reading_nest_v44._meta?.["ui/resourceUri"]).toBe(
       READING_NEST_URI
     );
-    expect(TOOL_CONFIGS.open_reading_nest_v43._meta?.["openai/outputTemplate"]).toBe(
+    expect(TOOL_CONFIGS.open_reading_nest_v44._meta?.["openai/outputTemplate"]).toBe(
       READING_NEST_URI
     );
     expect(TOOL_CONFIGS.open_reading_nest._meta?.["openai/outputTemplate"]).toBe(
@@ -26,6 +26,7 @@ describe("tool descriptors", () => {
     );
     for (const [name, config] of Object.entries(TOOL_CONFIGS)) {
       if (
+        name !== "open_reading_nest_v44" &&
         name !== "open_reading_nest_v43" &&
         name !== "open_reading_nest_v42" &&
         name !== "open_reading_nest_v41" &&
@@ -125,7 +126,7 @@ describe("tool descriptors", () => {
     registerReadingTools(server as never, service as never, undefined, {
       sourceEndpointBase: "https://worker.example.test/source/secret"
     });
-    const result = (await handlers.get("open_reading_nest_v43")?.()) as {
+    const result = (await handlers.get("open_reading_nest_v44")?.()) as {
       structuredContent?: Record<string, unknown>;
     };
 
@@ -437,7 +438,7 @@ describe("tool descriptors", () => {
   });
 
   it("exposes book management and threaded annotation tools", () => {
-    expect(Object.keys(TOOL_CONFIGS)).toHaveLength(60);
+    expect(Object.keys(TOOL_CONFIGS)).toHaveLength(61);
     expect(TOOL_CONFIGS.create_annotation.annotations).toMatchObject({
       readOnlyHint: false,
       idempotentHint: true

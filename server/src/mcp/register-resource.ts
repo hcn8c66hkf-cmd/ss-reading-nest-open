@@ -6,6 +6,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { READING_NEST_URI } from "./register-tools.js";
 
 export const LEGACY_READING_NEST_URIS = [
+  "ui://ss-reading-nest/app-v43.html",
   "ui://ss-reading-nest/app-v42.html",
   "ui://ss-reading-nest/app-v41.html",
   "ui://ss-reading-nest/app-v40.html",
