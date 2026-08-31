@@ -117,7 +117,8 @@ describe("tool descriptors", () => {
         reactions: [],
         bookmarks: []
       }),
-      listAnnotations: async () => ({ annotations: [] })
+      listAnnotations: async () => ({ annotations: [] }),
+      listCompanionComments: async () => ({ comments: [] })
     };
 
     registerReadingTools(server as never, service as never, undefined, {
@@ -155,8 +156,8 @@ describe("tool descriptors", () => {
       status: "active",
       userCurrentPosition: { kind: "paragraph", index: 2, label: "第 2 段" },
       assistantSyncedPosition: null,
-      liveReadingEnabled: false,
-      sessionPreferences: {},
+      liveReadingEnabled: true,
+      sessionPreferences: { autoSaveCompanionComments: true },
       sourceManifest: null,
       createdAt: "2026-08-30T00:00:00.000Z",
       updatedAt: "2026-08-30T00:00:00.000Z",
@@ -194,7 +195,8 @@ describe("tool descriptors", () => {
         reactions: [],
         bookmarks: []
       }),
-      listAnnotations: async () => ({ annotations: [annotation] })
+      listAnnotations: async () => ({ annotations: [annotation] }),
+      listCompanionComments: async () => ({ comments: [] })
     };
     const cloudSource = {
       restoreNovelSource: async (sessionId: string) => ({
@@ -222,6 +224,17 @@ describe("tool descriptors", () => {
           scope: "history",
           positionIndex: 2,
           limit: 20
+        }
+      },
+      requiredParagraphWriteback: {
+        publishTool: "publish_companion_comment",
+        publishArguments: {
+          sessionId: session.id,
+          position: { kind: "paragraph", index: 2, label: "第 2 段" },
+          mode: "reaction_only",
+          length: "short",
+          source: "live_reading",
+          operationId: `live-recovery-v43:${session.id}:paragraph:2`
         }
       }
     });

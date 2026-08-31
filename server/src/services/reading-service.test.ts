@@ -120,11 +120,6 @@ describe("ReadingService", () => {
       id: () => `annotation-id-${++sequence}`
     });
     const session = await annotationService.startSession("批注测试", "novel");
-    await annotationService.updateUserPosition(session.id, {
-      kind: "paragraph",
-      index: 3,
-      label: "第 3 段"
-    });
     const created = await annotationService.createAnnotation({
       sessionId: session.id,
       position: { kind: "paragraph", index: 3, label: "第 3 段" },
@@ -153,12 +148,6 @@ describe("ReadingService", () => {
       text: "嗯，连纸都替她留不住这句话。",
       operationId: "reply-annotation-1"
     });
-    expect((await annotationService.getSessionBundle(session.id)).session.assistantSyncedPosition)
-      .toMatchObject({ index: 3, label: "第 3 段" });
-    await repository.mutate((database) => {
-      database.sessions.find((item) => item.id === session.id)!
-        .assistantSyncedPosition = { kind: "paragraph", index: 2, label: "第 2 段" };
-    });
     await annotationService.replyToAnnotation({
       sessionId: session.id,
       annotationId: created.id,
@@ -167,7 +156,7 @@ describe("ReadingService", () => {
       operationId: "reply-annotation-1"
     });
     expect((await annotationService.getSessionBundle(session.id)).session.assistantSyncedPosition)
-      .toMatchObject({ index: 3, label: "第 3 段" });
+      .toBeNull();
 
     const listed = await annotationService.listAnnotations({
       sessionId: session.id,

@@ -794,6 +794,33 @@ async function recoverExactSharedPage(
   }
 }
 
+function buildRequiredParagraphWriteback(
+  session: ReadingSession,
+  sharedPage: NonNullable<Awaited<ReturnType<typeof recoverExactSharedPage>>>,
+  existingCommentCount: number
+) {
+  if (
+    existingCommentCount > 0 ||
+    !session.liveReadingEnabled ||
+    !session.sessionPreferences.autoSaveCompanionComments
+  ) {
+    return undefined;
+  }
+  return {
+    publishTool: "publish_companion_comment" as const,
+    publishArguments: {
+      sessionId: session.id,
+      position: sharedPage.position,
+      mode: "reaction_only" as const,
+      length: "short" as const,
+      source: "live_reading" as const,
+      operationId: `live-recovery-v43:${session.id}:${sharedPage.position.kind}:${sharedPage.position.index}`
+    },
+    instruction:
+      "Generate a 1-3 sentence short reaction using only sharedPage.currentText. Call publish_companion_comment with publishArguments unchanged and text set to the exact final reaction before replying in chat."
+  };
+}
+
 export function registerReadingTools(
   server: McpServer,
   service: ReadingService,
@@ -819,7 +846,7 @@ export function registerReadingTools(
         right.session.updatedAt.localeCompare(left.session.updatedAt)
       )[0];
     const preloadPositionIndex = activeNovel?.session.userCurrentPosition.index;
-    const [preloadedSharedPage, preloadedAnnotations] = activeNovel
+    const [preloadedSharedPage, preloadedAnnotations, preloadedComments] = activeNovel
       ? await Promise.all([
           recoverExactSharedPage(
             service,
@@ -830,9 +857,15 @@ export function registerReadingTools(
           service.listAnnotations({
             sessionId: activeNovel.session.id,
             positionIndex: preloadPositionIndex
-          }).catch(() => ({ annotations: [] }))
+          }).catch(() => ({ annotations: [] })),
+          service.listCompanionComments({
+            sessionId: activeNovel.session.id,
+            scope: "history",
+            positionIndex: preloadPositionIndex,
+            limit: 1
+          }).catch(() => ({ comments: [] }))
         ])
-      : [undefined, { annotations: [] }];
+      : [undefined, { annotations: [] }, { comments: [] }];
     const followupRecovery = preloadedSharedPage
       ? {
           tool: "list_companion_comments" as const,
@@ -857,6 +890,13 @@ export function registerReadingTools(
           preloadedAnnotations.annotations
         )
       : [];
+    const requiredParagraphWriteback = preloadedSharedPage && activeNovel
+      ? buildRequiredParagraphWriteback(
+          activeNovel.session,
+          preloadedSharedPage,
+          preloadedComments.comments.length
+        )
+      : undefined;
     return toolResult(
       {
         bookshelfSessions,
@@ -865,13 +905,18 @@ export function registerReadingTools(
           ? {
               sharedPage: preloadedSharedPage,
               annotations: preloadedAnnotations.annotations,
+              ...(requiredParagraphWriteback ? { requiredParagraphWriteback } : {}),
               ...(requiredWritebacks.length > 0 ? { requiredWritebacks } : {}),
               followupRecovery,
               responsePolicy: {
                 mode: "preload_only" as const,
                 instruction:
-                  requiredWritebacks.length > 0
-                    ? "The exact current paragraph and saved annotations are visible. Every entry in requiredWritebacks is an unresolved user annotation: reply to it and call its publishTool with publishArguments unchanged before answering in chat."
+                  requiredParagraphWriteback && requiredWritebacks.length > 0
+                    ? "First complete requiredParagraphWriteback for the paragraph short comment. Then complete every unresolved annotation in requiredWritebacks. Call each publishTool with its arguments unchanged before answering in chat."
+                    : requiredParagraphWriteback
+                      ? "Complete requiredParagraphWriteback for the paragraph short comment before answering in chat."
+                      : requiredWritebacks.length > 0
+                        ? "The exact current paragraph and saved annotations are visible. Every entry in requiredWritebacks is an unresolved user annotation: reply to it and call its publishTool with publishArguments unchanged before answering in chat."
                     : "The exact current paragraph and saved annotations are already visible to the model. Do not claim they were not received. Do not comment on the paragraph until the user asks."
               }
             }
@@ -889,6 +934,9 @@ export function registerReadingTools(
             requiredWritebacks.length > 0
               ? `检测到 ${requiredWritebacks.length} 条尚未回复的书边评论。必须先按 structuredContent.requiredWritebacks 调用 publish_companion_comment 写回，再在聊天区回复相同内容。`
               : "本段没有待回复的书边评论。",
+            requiredParagraphWriteback
+              ? "本段还没有 Daddy 短评。必须先按 structuredContent.requiredParagraphWriteback 生成并写回本段短评；书边回复不能替代本段短评。"
+              : "本段 Daddy 短评已存在，或当前设置无需自动保存。",
             "不要声称没有收到正文。用户稍后询问页面里的新评论时，必须先按 structuredContent.followupRecovery 调用 list_companion_comments 再回答。"
           ].join("\n\n")
         : "已打开 S×S 小窝共读。"
@@ -1280,7 +1328,8 @@ export function registerReadingTools(
         factResult,
         skillResult,
         layeredContext,
-        recoverySharedPage
+        recoverySharedPage,
+        recoverySession
       ] =
         await Promise.all([
           service.listCompanionComments(input),
@@ -1319,6 +1368,11 @@ export function registerReadingTools(
                 input.sessionId,
                 input.positionIndex
               )
+            : undefined,
+          input.scope === "history" && input.positionIndex
+            ? service.getSessionBundle(input.sessionId)
+                .then(({ session }) => session)
+                .catch(() => undefined)
             : undefined
         ]);
       const version = collectionVersion([
@@ -1358,6 +1412,13 @@ export function registerReadingTools(
         input.sessionId,
         annotationResult?.annotations ?? []
       );
+      const requiredParagraphWriteback = recoverySharedPage && recoverySession
+        ? buildRequiredParagraphWriteback(
+            recoverySession,
+            recoverySharedPage,
+            result.comments.length
+          )
+        : undefined;
       return toolResult(
         {
           version,
@@ -1365,13 +1426,18 @@ export function registerReadingTools(
           ...(recoverySharedPage
             ? {
                 sharedPage: recoverySharedPage,
+                ...(requiredParagraphWriteback ? { requiredParagraphWriteback } : {}),
                 ...(requiredWritebacks.length > 0 ? { requiredWritebacks } : {}),
                 responsePolicy: {
                   mode: "reaction_only" as const,
                   length: "short" as const,
                   instruction:
-                    requiredWritebacks.length > 0
-                      ? "Use sharedPage.currentText as the exact paragraph. Every entry in requiredWritebacks is an unresolved user annotation: reply to it and call its publishTool with publishArguments unchanged before answering in chat."
+                    requiredParagraphWriteback && requiredWritebacks.length > 0
+                      ? "First complete requiredParagraphWriteback for the paragraph short comment. Then complete every unresolved annotation in requiredWritebacks. Call each publishTool with its arguments unchanged before answering in chat."
+                      : requiredParagraphWriteback
+                        ? "Complete requiredParagraphWriteback for the paragraph short comment before answering in chat."
+                        : requiredWritebacks.length > 0
+                          ? "Use sharedPage.currentText as the exact paragraph. Every entry in requiredWritebacks is an unresolved user annotation: reply to it and call its publishTool with publishArguments unchanged before answering in chat."
                       : "Use sharedPage.currentText as the exact current paragraph. The annotations field contains the user's saved selection and comment at this position."
                 }
               }
@@ -1396,7 +1462,10 @@ export function registerReadingTools(
               "本段已保存的划线与评论位于 structuredContent.annotations。",
               requiredWritebacks.length > 0
                 ? `检测到 ${requiredWritebacks.length} 条尚未回复的书边评论。必须先按 structuredContent.requiredWritebacks 调用 publish_companion_comment 写回，再在聊天区回复相同内容。`
-                : "本段没有待回复的书边评论。"
+                : "本段没有待回复的书边评论。",
+              requiredParagraphWriteback
+                ? "本段还没有 Daddy 短评。必须先按 structuredContent.requiredParagraphWriteback 生成并写回；书边回复不能替代本段短评。"
+                : "本段 Daddy 短评已存在，或当前设置无需自动保存。"
             ].join("\n")
           : unchanged
             ? "Daddy陪读短评没有更新。"

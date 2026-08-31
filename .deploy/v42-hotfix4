@@ -1,0 +1,4 @@
+release=v42-hotfix4
+approved_at=2026-08-30
+scope=separate-required-paragraph-comment-from-annotation-replies
+base=881b12e00aeafc9a6bd72b658a847b8f9be15c13
