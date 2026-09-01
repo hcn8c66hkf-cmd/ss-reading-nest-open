@@ -35,6 +35,24 @@ describe("useLiveReading", () => {
     expect(result.current).toMatchObject({ activeIndex: 4, queuedCount: 0, failedIndex: null });
   });
 
+  it("uses the server backlog as authoritative and does not repeat a completed later paragraph", async () => {
+    const onQueuedPosition = vi.fn().mockResolvedValue(true);
+    renderHook(() =>
+      useLiveReading({
+        enabled: true,
+        sessionKey: "session-1:reaction_only:short",
+        userPositionIndex: 74,
+        assistantPositionIndex: 72,
+        pendingPositionIndices: [73],
+        sourceVerified: true,
+        onQueuedPosition
+      })
+    );
+
+    await waitFor(() => expect(onQueuedPosition).toHaveBeenCalledWith(73));
+    expect(onQueuedPosition).not.toHaveBeenCalledWith(74);
+  });
+
   it("does not repeat a paragraph after its short comment confirms completion", async () => {
     const onQueuedPosition = vi.fn().mockResolvedValue(true);
     const { rerender } = renderHook(

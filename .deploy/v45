@@ -1,0 +1,4 @@
+release=v45
+approved_at=2026-09-01
+scope=durable-reading-backlog
+base=600bced0

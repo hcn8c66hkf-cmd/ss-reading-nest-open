@@ -68,6 +68,116 @@ async function startSessionWithHistory(service: ReadingService, title = "第一�
 }
 
 describe("ReadingService companion comments", () => {
+  it("persists every rapidly crossed paragraph and never skips a missing middle comment", async () => {
+    const { service } = createService();
+    const session = await startSessionWithHistory(service);
+    await service.updateUserPosition(session.id, position(71));
+    await service.publishCompanionComment(commentInput(session.id, "comment-71", 71));
+    await service.setLiveReadingMode(session.id, true);
+
+    await service.updateUserPosition(session.id, position(74));
+    expect((await service.getSessionBundle(session.id)).session)
+      .toMatchObject({
+        assistantSyncedPosition: { index: 71 },
+        pendingLiveReadingPositions: [
+          { index: 72 },
+          { index: 73 },
+          { index: 74 }
+        ]
+      });
+
+    await service.publishCompanionComment({
+      ...commentInput(session.id, "comment-72", 72),
+      source: "live_reading"
+    });
+    await service.publishCompanionComment({
+      ...commentInput(session.id, "comment-74", 74),
+      source: "live_reading"
+    });
+    expect((await service.getSessionBundle(session.id)).session)
+      .toMatchObject({
+        assistantSyncedPosition: { index: 72 },
+        pendingLiveReadingPositions: [{ index: 73 }]
+      });
+
+    await service.publishCompanionComment({
+      ...commentInput(session.id, "comment-73", 73),
+      source: "live_reading"
+    });
+    expect((await service.getSessionBundle(session.id)).session)
+      .toMatchObject({
+        assistantSyncedPosition: { index: 74 },
+        pendingLiveReadingPositions: []
+      });
+  });
+
+  it("repairs a legacy 72-to-74 gap into a durable paragraph 73 backlog", async () => {
+    const { repository, service } = createService();
+    const session = await startSessionWithHistory(service);
+    await service.updateUserPosition(session.id, position(74));
+    const storedSession = repository.database.sessions[0]!;
+    storedSession.liveReadingEnabled = true;
+    storedSession.assistantSyncedPosition = position(74);
+    delete storedSession.liveReadingStartIndex;
+    delete storedSession.pendingLiveReadingPositions;
+    delete storedSession.pendingAnnotationReplies;
+    for (const index of [64, 65, 66, 67, 68, 69, 70, 71, 72, 74]) {
+      repository.database.companionComments.push(
+        makeStoredComment({
+          id: `legacy-${index}`,
+          sessionId: session.id,
+          position: position(index),
+          operationId: `legacy-${index}`,
+          createdAt: `2026-09-01T08:${String(index - 60).padStart(2, "0")}:00.000Z`,
+          inRecent: true,
+          inHistory: true
+        })
+      );
+    }
+
+    await service.reconcilePendingWork(session.id);
+
+    expect((await service.getSessionBundle(session.id)).session)
+      .toMatchObject({
+        liveReadingStartIndex: 64,
+        assistantSyncedPosition: { index: 72 },
+        pendingLiveReadingPositions: [{ index: 73 }]
+      });
+  });
+
+  it("persists unresolved annotation replies until Daddy answers them", async () => {
+    const { service } = createService();
+    const session = await startSessionWithHistory(service);
+    await service.setLiveReadingMode(session.id, true);
+    const annotation = await service.createAnnotation({
+      sessionId: session.id,
+      position: position(1),
+      anchor: { selectedText: "太搞笑了" },
+      author: "user",
+      comment: "哈哈哈哈哈哈太搞笑了",
+      operationId: "annotation-user-1"
+    });
+
+    expect((await service.getSessionBundle(session.id)).session.pendingAnnotationReplies)
+      .toEqual([
+        expect.objectContaining({
+          annotationId: annotation.id,
+          messageId: annotation.messages[0]!.id,
+          position: expect.objectContaining({ index: 1 })
+        })
+      ]);
+
+    await service.replyToAnnotation({
+      sessionId: session.id,
+      annotationId: annotation.id,
+      author: "assistant",
+      text: "这场误会已经滚成雪球了。",
+      operationId: "annotation-daddy-1"
+    });
+    expect((await service.getSessionBundle(session.id)).session.pendingAnnotationReplies)
+      .toEqual([]);
+  });
+
   it("uses a published live comment as proof that Daddy reached that position", async () => {
     const { service } = createService();
     const session = await service.startSession("第一本", "novel");

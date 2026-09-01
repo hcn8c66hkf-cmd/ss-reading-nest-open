@@ -269,6 +269,44 @@ export function App() {
   }, [manualSaveRevision, sessionBundle]);
   const companionDraftForSave = pendingCommentDraft ?? manualCompanionDraft;
 
+  const applyLiveReadingState = useCallback((
+    sessionId: string,
+    value: unknown
+  ) => {
+    if (!value || typeof value !== "object") return;
+    const state = value as Record<string, unknown>;
+    setSessionBundle((current) => {
+      if (current?.session.id !== sessionId) return current;
+      return {
+        ...current,
+        session: {
+          ...current.session,
+          ...(Object.prototype.hasOwnProperty.call(state, "assistantSyncedPosition")
+            ? {
+                assistantSyncedPosition:
+                  (state.assistantSyncedPosition as ReadingPosition | null) ?? null
+              }
+            : {}),
+          ...(typeof state.liveReadingStartIndex === "number"
+            ? { liveReadingStartIndex: state.liveReadingStartIndex }
+            : {}),
+          ...(Array.isArray(state.pendingLiveReadingPositions)
+            ? {
+                pendingLiveReadingPositions:
+                  state.pendingLiveReadingPositions as ReadingPosition[]
+              }
+            : {}),
+          ...(Array.isArray(state.pendingAnnotationReplies)
+            ? {
+                pendingAnnotationReplies:
+                  state.pendingAnnotationReplies as ReadingSession["pendingAnnotationReplies"]
+              }
+            : {})
+        }
+      };
+    });
+  }, []);
+
   const loadCompanionComments = useCallback(async (sessionId: string, background = false) => {
     if (!background) setCompanionLoading(true);
     try {
@@ -282,6 +320,10 @@ export function App() {
       });
       const version = result.structuredContent?.version;
       if (typeof version === "string") companionVersionRef.current = version;
+      applyLiveReadingState(
+        sessionId,
+        result.structuredContent?.liveReadingState
+      );
       if (result.structuredContent?.unchanged === true) {
         setCompanionError("");
         return;
@@ -299,36 +341,6 @@ export function App() {
           .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
           .slice(0, 20)
       );
-      const latestLiveComment = comments
-        .filter(
-          (comment) =>
-            comment.sessionId === sessionId && comment.source === "live_reading"
-        )
-        .sort(
-          (left, right) =>
-            right.position.index - left.position.index ||
-            right.createdAt.localeCompare(left.createdAt)
-        )[0];
-      if (latestLiveComment) {
-        setSessionBundle((current) => {
-          if (current?.session.id !== sessionId) return current;
-          const synced = current.session.assistantSyncedPosition;
-          if (
-            synced?.kind === latestLiveComment.position.kind &&
-            synced.index >= latestLiveComment.position.index
-          ) {
-            return current;
-          }
-          return {
-            ...current,
-            session: {
-              ...current.session,
-              assistantSyncedPosition: latestLiveComment.position,
-              updatedAt: new Date().toISOString()
-            }
-          };
-        });
-      }
       setCompanionError("");
     } catch {
       if (!background) {
@@ -338,7 +350,7 @@ export function App() {
     } finally {
       if (!background) setCompanionLoading(false);
     }
-  }, []);
+  }, [applyLiveReadingState]);
 
   const loadAnnotations = useCallback(
     async (sessionId: string, positionIndex: number, background = false) => {
@@ -355,6 +367,10 @@ export function App() {
         });
         const version = result.structuredContent?.version;
         if (typeof version === "string") annotationVersionRef.current = version;
+        applyLiveReadingState(
+          sessionId,
+          result.structuredContent?.liveReadingState
+        );
         if (result.structuredContent?.unchanged === true) {
           setAnnotationsError("");
           return;
@@ -388,7 +404,7 @@ export function App() {
         if (!background) setAnnotationsLoading(false);
       }
     },
-    []
+    [applyLiveReadingState]
   );
 
   const loadAnnotationFavorites = useCallback(async (sessionId: string) => {
@@ -1318,10 +1334,11 @@ export function App() {
         updatedAt: new Date().toISOString()
       }
     });
-    await callTool("update_reading_position", {
+    const result = await callTool("update_reading_position", {
       sessionId: sessionBundle.session.id,
       userCurrentPosition: nextPosition
     });
+    applyLiveReadingState(sessionBundle.session.id, result.structuredContent);
   }
 
   async function lookAtNovel(
@@ -1813,19 +1830,10 @@ export function App() {
               .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
               .slice(0, 20)
           );
-          setSessionBundle((current) => {
-            if (current?.session.id !== session.id) return current;
-            const synced = current.session.assistantSyncedPosition;
-            if (synced && synced.index >= comment.position.index) return current;
-            return {
-              ...current,
-              session: {
-                ...current.session,
-                assistantSyncedPosition: comment.position,
-                updatedAt: comment.createdAt
-              }
-            };
-          });
+          applyLiveReadingState(
+            session.id,
+            result.structuredContent?.liveReadingState
+          );
           sentLiveReadingFallbacksRef.current.delete(operationId);
           return true;
         }
@@ -1921,17 +1929,7 @@ export function App() {
             .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
             .slice(0, 20)
         );
-        setSessionBundle((current) => current?.session.id === session.id
-          ? {
-              ...current,
-              session: {
-                ...current.session,
-                assistantSyncedPosition: persisted.position,
-                updatedAt: persisted.createdAt
-              }
-            }
-          : current
-        );
+        await loadCompanionComments(session.id, true);
         sentLiveReadingFallbacksRef.current.delete(operationId);
         return true;
       } catch {
@@ -1939,7 +1937,14 @@ export function App() {
         return false;
       }
     },
-    [chunks, companionComments, sessionBundle, sourceAvailability]
+    [
+      applyLiveReadingState,
+      chunks,
+      companionComments,
+      loadCompanionComments,
+      sessionBundle,
+      sourceAvailability
+    ]
   );
 
   const liveReadingState = useLiveReading({
@@ -1956,6 +1961,10 @@ export function App() {
     userPositionIndex: sessionBundle?.session.userCurrentPosition.index ?? 1,
     assistantPositionIndex:
       sessionBundle?.session.assistantSyncedPosition?.index ?? 0,
+    pendingPositionIndices:
+      sessionBundle?.session.pendingLiveReadingPositions?.map(
+        (position) => position.index
+      ),
     sourceVerified: sourceAvailability === "available_local",
     retryMs: 15_000,
     onQueuedPosition: sendLiveReading
@@ -1980,6 +1989,10 @@ export function App() {
           (result.structuredContent?.liveReadingEnabled as boolean | undefined) ?? enabled
       }
     });
+    applyLiveReadingState(
+      sessionBundle.session.id,
+      result.structuredContent
+    );
   }
 
   async function lookAtManga(

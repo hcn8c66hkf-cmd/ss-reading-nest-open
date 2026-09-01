@@ -119,6 +119,15 @@ function copySession(session: ReadingSession): ReadingSession {
       ? structuredClone(session.assistantSyncedPosition)
       : null,
     liveReadingEnabled: session.liveReadingEnabled,
+    ...(session.liveReadingStartIndex !== undefined
+      ? { liveReadingStartIndex: session.liveReadingStartIndex }
+      : {}),
+    ...(session.pendingLiveReadingPositions
+      ? { pendingLiveReadingPositions: structuredClone(session.pendingLiveReadingPositions) }
+      : {}),
+    ...(session.pendingAnnotationReplies
+      ? { pendingAnnotationReplies: structuredClone(session.pendingAnnotationReplies) }
+      : {}),
     sessionPreferences: structuredClone(session.sessionPreferences),
     sourceManifest: copySourceManifest(session.sourceManifest),
     ...(session.lastAssistantConfirmation

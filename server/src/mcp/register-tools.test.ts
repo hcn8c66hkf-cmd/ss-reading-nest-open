@@ -9,16 +9,16 @@ import {
 } from "./register-tools.js";
 
 describe("tool descriptors", () => {
-  it("binds the current UI resource to the v44 and compatibility render tools", () => {
-    expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v44.html");
-    expect(READING_NEST_TOOL_NAME).toBe("open_reading_nest_v44");
-    expect(TOOL_CONFIGS.open_reading_nest_v44._meta?.ui).toEqual({
+  it("binds the current UI resource to the v45 and compatibility render tools", () => {
+    expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v45.html");
+    expect(READING_NEST_TOOL_NAME).toBe("open_reading_nest_v45");
+    expect(TOOL_CONFIGS.open_reading_nest_v45._meta?.ui).toEqual({
       resourceUri: READING_NEST_URI
     });
-    expect(TOOL_CONFIGS.open_reading_nest_v44._meta?.["ui/resourceUri"]).toBe(
+    expect(TOOL_CONFIGS.open_reading_nest_v45._meta?.["ui/resourceUri"]).toBe(
       READING_NEST_URI
     );
-    expect(TOOL_CONFIGS.open_reading_nest_v44._meta?.["openai/outputTemplate"]).toBe(
+    expect(TOOL_CONFIGS.open_reading_nest_v45._meta?.["openai/outputTemplate"]).toBe(
       READING_NEST_URI
     );
     expect(TOOL_CONFIGS.open_reading_nest._meta?.["openai/outputTemplate"]).toBe(
@@ -26,6 +26,7 @@ describe("tool descriptors", () => {
     );
     for (const [name, config] of Object.entries(TOOL_CONFIGS)) {
       if (
+        name !== "open_reading_nest_v45" &&
         name !== "open_reading_nest_v44" &&
         name !== "open_reading_nest_v43" &&
         name !== "open_reading_nest_v42" &&
@@ -126,7 +127,7 @@ describe("tool descriptors", () => {
     registerReadingTools(server as never, service as never, undefined, {
       sourceEndpointBase: "https://worker.example.test/source/secret"
     });
-    const result = (await handlers.get("open_reading_nest_v44")?.()) as {
+    const result = (await handlers.get("open_reading_nest_v45")?.()) as {
       structuredContent?: Record<string, unknown>;
     };
 
@@ -245,6 +246,93 @@ describe("tool descriptors", () => {
     expect(JSON.stringify(result)).not.toContain("第一段不能预装。");
     expect(JSON.stringify(result)).not.toContain("第三段不能预装。");
     expect(result.structuredContent.sharedPage.title).not.toBe("书架排第一但不是刚读的书");
+  });
+
+  it("opens the earliest durable backlog instead of skipping from paragraph 72 to 74", async () => {
+    const handlers = new Map<string, (args?: any) => Promise<any>>();
+    const server = {
+      registerTool: (name: string, _config: unknown, handler: (args?: any) => Promise<any>) => {
+        handlers.set(name, handler);
+      }
+    };
+    const session = {
+      id: "session-gap-73",
+      title: "快速翻页测试",
+      type: "novel",
+      status: "active",
+      userCurrentPosition: { kind: "paragraph", index: 74, label: "第 74 段" },
+      assistantSyncedPosition: { kind: "paragraph", index: 72, label: "第 72 段" },
+      liveReadingEnabled: true,
+      liveReadingStartIndex: 64,
+      pendingLiveReadingPositions: [
+        { kind: "paragraph", index: 73, label: "第 73 段" }
+      ],
+      pendingAnnotationReplies: [
+        {
+          annotationId: "annotation-73",
+          messageId: "message-73",
+          position: { kind: "paragraph", index: 73, label: "第 73 段" }
+        }
+      ],
+      sessionPreferences: { autoSaveCompanionComments: true },
+      sourceManifest: null,
+      createdAt: "2026-09-01T08:00:00.000Z",
+      updatedAt: "2026-09-01T08:54:00.000Z",
+      lastReadAt: "2026-09-01T08:54:00.000Z"
+    };
+    const annotation = {
+      id: "annotation-73",
+      sessionId: session.id,
+      position: { kind: "paragraph", index: 73, label: "第 73 段" },
+      anchor: { selectedText: "正在户外烧烤俱乐部" },
+      createdBy: "user",
+      messages: [
+        {
+          id: "message-73",
+          author: "user",
+          text: "哈哈哈哈哈哈太搞笑了",
+          createdAt: "2026-09-01T08:51:57.442Z"
+        }
+      ],
+      createdAt: "2026-09-01T08:51:57.442Z",
+      updatedAt: "2026-09-01T08:51:57.442Z"
+    };
+    const service = {
+      listAllSessions: async () => [session],
+      getSessionBundle: async () => ({ session, quotes: [], reactions: [], bookmarks: [] }),
+      listAnnotations: async ({ positionIndex }: { positionIndex?: number }) => ({
+        annotations: positionIndex === 73 ? [annotation] : []
+      }),
+      listCompanionComments: async () => ({ comments: [] })
+    };
+    const cloudSource = {
+      restoreNovelSource: async () => ({
+        sourceText: Array.from({ length: 74 }, (_, index) =>
+          index === 72 ? "第七十三段必须先补，不能被第七十四段盖住。" : `段落 ${index + 1}`
+        ).join("\n\n"),
+        sourceManifest: { segmentationVersion: 1 }
+      })
+    };
+
+    registerReadingTools(server as never, service as never, cloudSource as never);
+    const result = await handlers.get("open_reading_nest_v45")?.();
+
+    expect(result.structuredContent).toMatchObject({
+      sharedPage: {
+        sessionId: session.id,
+        position: { index: 73 },
+        currentText: "第七十三段必须先补，不能被第七十四段盖住。"
+      },
+      annotations: [annotation],
+      liveReadingState: {
+        assistantSyncedPosition: { index: 72 },
+        pendingLiveReadingPositions: [{ index: 73 }],
+        pendingAnnotationReplies: [{ annotationId: "annotation-73" }]
+      }
+    });
+    expect(result.structuredContent.requiredParagraphWriteback).toBeDefined();
+    expect(result.structuredContent.requiredWritebacks).toHaveLength(1);
+    expect(JSON.stringify(result)).not.toContain("第七十四段盖住。\n\n段落 74");
   });
 
   it("declares the current page as an Apps SDK file param", () => {
@@ -438,7 +526,7 @@ describe("tool descriptors", () => {
   });
 
   it("exposes book management and threaded annotation tools", () => {
-    expect(Object.keys(TOOL_CONFIGS)).toHaveLength(61);
+    expect(Object.keys(TOOL_CONFIGS)).toHaveLength(62);
     expect(TOOL_CONFIGS.create_annotation.annotations).toMatchObject({
       readOnlyHint: false,
       idempotentHint: true

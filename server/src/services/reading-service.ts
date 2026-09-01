@@ -17,6 +17,7 @@ import type {
   ReadingMemoryKind,
   ReadingMemorySource,
   ReadingFactCard,
+  PendingAnnotationReply,
   SkillCandidate,
   SkillForgeVerdict,
   AnnotationAuthor,
@@ -121,9 +122,40 @@ export class ReadingService {
   ): Promise<ReadingSession> {
     return this.repository.mutate((database) => {
       const session = this.requireSession(database.sessions, sessionId);
+      this.ensurePendingWorkMetadata(database, session);
+      const previousIndex = session.userCurrentPosition.index;
       session.userCurrentPosition = userCurrentPosition;
+      if (
+        session.type === "novel" &&
+        session.liveReadingEnabled &&
+        session.sessionPreferences.autoSaveCompanionComments
+      ) {
+        const rangeStart = userCurrentPosition.index > previousIndex
+          ? previousIndex + 1
+          : userCurrentPosition.index;
+        this.enqueueLiveReadingRange(
+          database,
+          session,
+          rangeStart,
+          userCurrentPosition.index
+        );
+      }
+      this.recomputeContiguousAssistantPosition(database, session);
       session.updatedAt = this.deps.now().toISOString();
       return session;
+    });
+  }
+
+  async reconcilePendingWork(sessionId?: string): Promise<ReadingSession[]> {
+    return this.repository.mutate((database) => {
+      const sessions = sessionId
+        ? [this.requireSession(database.sessions, sessionId)]
+        : database.sessions;
+      for (const session of sessions) {
+        this.ensurePendingWorkMetadata(database, session);
+        this.recomputeContiguousAssistantPosition(database, session);
+      }
+      return sessions.map((session) => structuredClone(session));
     });
   }
 
@@ -164,6 +196,23 @@ export class ReadingService {
     return this.repository.mutate((database) => {
       const session = this.requireSession(database.sessions, sessionId);
       session.liveReadingEnabled = enabled;
+      if (enabled) {
+        session.liveReadingStartIndex = session.userCurrentPosition.index;
+        session.pendingLiveReadingPositions = [];
+        session.pendingAnnotationReplies ??= [];
+        if (session.sessionPreferences.autoSaveCompanionComments) {
+          this.enqueueLiveReadingRange(
+            database,
+            session,
+            session.userCurrentPosition.index,
+            session.userCurrentPosition.index
+          );
+        }
+      } else {
+        delete session.liveReadingStartIndex;
+        session.pendingLiveReadingPositions = [];
+      }
+      this.recomputeContiguousAssistantPosition(database, session);
       session.updatedAt = this.deps.now().toISOString();
       return session;
     });
@@ -208,6 +257,18 @@ export class ReadingService {
         return session;
       }
       session.sessionPreferences = nextPreferences;
+      if (!nextPreferences.autoSaveCompanionComments) {
+        session.pendingLiveReadingPositions = [];
+      } else if (session.liveReadingEnabled) {
+        session.liveReadingStartIndex ??= session.userCurrentPosition.index;
+        this.enqueueLiveReadingRange(
+          database,
+          session,
+          session.userCurrentPosition.index,
+          session.userCurrentPosition.index
+        );
+      }
+      this.recomputeContiguousAssistantPosition(database, session);
       session.updatedAt = this.deps.now().toISOString();
       return session;
     });
@@ -225,17 +286,15 @@ export class ReadingService {
     this.validateCompanionComment(input);
     return this.repository.mutate((database) => {
       const session = this.requireSession(database.sessions, input.sessionId);
+      this.ensurePendingWorkMetadata(database, session);
       const existing = database.companionComments.find(
         (item) =>
           item.sessionId === input.sessionId &&
           item.operationId === input.operationId
       );
       if (existing) {
-        this.advanceAssistantPositionFromComment(
-          session,
-          existing.position,
-          this.deps.now().toISOString()
-        );
+        this.completePendingLiveReadingPosition(session, existing.position.index);
+        this.recomputeContiguousAssistantPosition(database, session);
         return existing;
       }
       const comment: CompanionComment = {
@@ -254,7 +313,9 @@ export class ReadingService {
         createdAt: this.deps.now().toISOString()
       };
       database.companionComments.push(comment);
-      this.advanceAssistantPositionFromComment(session, input.position, comment.createdAt);
+      this.completePendingLiveReadingPosition(session, input.position.index);
+      this.recomputeContiguousAssistantPosition(database, session);
+      session.updatedAt = comment.createdAt;
       this.pruneCompanionComments(database, input.sessionId, "recent");
       if (comment.inHistory) {
         this.pruneCompanionComments(database, input.sessionId, "history");
@@ -262,22 +323,6 @@ export class ReadingService {
       this.removeUnusedCompanionComments(database);
       return comment;
     });
-  }
-
-  private advanceAssistantPositionFromComment(
-    session: ReadingSession,
-    position: ReadingPosition,
-    updatedAt: string
-  ) {
-    const current = session.assistantSyncedPosition;
-    if (
-      position.kind === session.userCurrentPosition.kind &&
-      position.index <= session.userCurrentPosition.index &&
-      (!current || position.index >= current.index)
-    ) {
-      session.assistantSyncedPosition = structuredClone(position);
-      session.updatedAt = updatedAt;
-    }
   }
 
   async createAnnotation(input: {
@@ -289,7 +334,8 @@ export class ReadingService {
     operationId: string;
   }): Promise<ReadingAnnotation> {
     return this.repository.mutate((database) => {
-      this.requireSession(database.sessions, input.sessionId);
+      const session = this.requireSession(database.sessions, input.sessionId);
+      this.ensurePendingWorkMetadata(database, session);
       const existing = database.annotations.find(
         (item) =>
           item.sessionId === input.sessionId &&
@@ -319,6 +365,9 @@ export class ReadingService {
         updatedAt: now
       };
       database.annotations.push(annotation);
+      if (input.author === "user" && input.comment) {
+        this.upsertPendingAnnotationReply(session, annotation);
+      }
       return annotation;
     });
   }
@@ -331,7 +380,8 @@ export class ReadingService {
     operationId: string;
   }): Promise<ReadingAnnotation> {
     return this.repository.mutate((database) => {
-      this.requireSession(database.sessions, input.sessionId);
+      const session = this.requireSession(database.sessions, input.sessionId);
+      this.ensurePendingWorkMetadata(database, session);
       const annotation = database.annotations.find(
         (item) =>
           item.id === input.annotationId && item.sessionId === input.sessionId
@@ -351,6 +401,12 @@ export class ReadingService {
         createdAt: now
       });
       annotation.updatedAt = now;
+      if (input.author === "user") {
+        this.upsertPendingAnnotationReply(session, annotation);
+      } else {
+        session.pendingAnnotationReplies = (session.pendingAnnotationReplies ?? [])
+          .filter((item) => item.annotationId !== annotation.id);
+      }
       return annotation;
     });
   }
@@ -1001,6 +1057,193 @@ export class ReadingService {
         "根据用户吐槽概括今天的情绪",
         "用最近书签作为下次共读的开场"
       ]
+    };
+  }
+
+  private ensurePendingWorkMetadata(
+    database: ReadingDatabase,
+    session: ReadingSession
+  ) {
+    if (session.pendingLiveReadingPositions === undefined) {
+      session.pendingLiveReadingPositions = [];
+      if (
+        session.type === "novel" &&
+        session.liveReadingEnabled &&
+        session.sessionPreferences.autoSaveCompanionComments
+      ) {
+        const recentProof = database.companionComments
+          .filter(
+            (comment) =>
+              comment.sessionId === session.id &&
+              comment.position.kind === session.userCurrentPosition.kind &&
+              comment.position.index <= session.userCurrentPosition.index &&
+              (comment.inRecent || comment.inHistory)
+          )
+          .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+        const latestUniqueIndices = [...new Set(
+          recentProof.map((comment) => comment.position.index)
+        )].slice(0, 10);
+        session.liveReadingStartIndex ??= latestUniqueIndices.length > 0
+          ? Math.min(...latestUniqueIndices)
+          : session.userCurrentPosition.index;
+        this.enqueueLiveReadingRange(
+          database,
+          session,
+          session.liveReadingStartIndex,
+          session.userCurrentPosition.index
+        );
+      }
+    }
+
+    if (session.pendingAnnotationReplies === undefined) {
+      const threshold = session.liveReadingStartIndex ?? session.userCurrentPosition.index;
+      session.pendingAnnotationReplies = database.annotations
+        .filter((annotation) => {
+          if (
+            annotation.sessionId !== session.id ||
+            annotation.position.index < threshold
+          ) return false;
+          return annotation.messages.at(-1)?.author === "user";
+        })
+        .map((annotation) => this.pendingAnnotationReply(annotation));
+    }
+  }
+
+  private enqueueLiveReadingRange(
+    database: ReadingDatabase,
+    session: ReadingSession,
+    startIndex: number,
+    endIndex: number
+  ) {
+    if (endIndex < startIndex) return;
+    session.liveReadingStartIndex = Math.min(
+      session.liveReadingStartIndex ?? startIndex,
+      startIndex
+    );
+    const completed = new Set(
+      database.companionComments
+        .filter(
+          (comment) =>
+            comment.sessionId === session.id &&
+            comment.position.kind === session.userCurrentPosition.kind &&
+            (comment.inRecent || comment.inHistory)
+        )
+        .map((comment) => comment.position.index)
+    );
+    const pending = new Map(
+      (session.pendingLiveReadingPositions ?? []).map((position) => [
+        position.index,
+        position
+      ])
+    );
+    for (let index = Math.max(1, startIndex); index <= endIndex; index += 1) {
+      if (completed.has(index)) {
+        pending.delete(index);
+        continue;
+      }
+      pending.set(index, this.positionAt(session, index));
+    }
+    session.pendingLiveReadingPositions = [...pending.values()]
+      .sort((left, right) => left.index - right.index);
+  }
+
+  private completePendingLiveReadingPosition(
+    session: ReadingSession,
+    positionIndex: number
+  ) {
+    session.pendingLiveReadingPositions = (session.pendingLiveReadingPositions ?? [])
+      .filter((position) => position.index !== positionIndex);
+  }
+
+  private recomputeContiguousAssistantPosition(
+    database: ReadingDatabase,
+    session: ReadingSession
+  ) {
+    const liveQueueActive =
+      session.type === "novel" &&
+      session.liveReadingEnabled &&
+      session.sessionPreferences.autoSaveCompanionComments &&
+      session.liveReadingStartIndex !== undefined;
+    if (!liveQueueActive) {
+      const latest = database.companionComments
+        .filter(
+          (comment) =>
+            comment.sessionId === session.id &&
+            comment.position.kind === session.userCurrentPosition.kind &&
+            comment.position.index <= session.userCurrentPosition.index
+        )
+        .sort(
+          (left, right) =>
+            right.position.index - left.position.index ||
+            right.createdAt.localeCompare(left.createdAt)
+        )[0];
+      if (
+        latest &&
+        (!session.assistantSyncedPosition ||
+          latest.position.index >= session.assistantSyncedPosition.index)
+      ) {
+        session.assistantSyncedPosition = structuredClone(latest.position);
+      }
+      return;
+    }
+
+    const pending = [...(session.pendingLiveReadingPositions ?? [])]
+      .sort((left, right) => left.index - right.index);
+    session.pendingLiveReadingPositions = pending;
+    const firstPending = pending[0];
+    if (firstPending && firstPending.index <= session.userCurrentPosition.index) {
+      const contiguousIndex = firstPending.index - 1;
+      session.assistantSyncedPosition = contiguousIndex >= 1
+        ? this.positionAt(session, contiguousIndex)
+        : null;
+      return;
+    }
+    const currentIndex = session.assistantSyncedPosition?.index ?? 0;
+    const contiguousIndex = Math.max(currentIndex, session.userCurrentPosition.index);
+    session.assistantSyncedPosition = contiguousIndex >= 1
+      ? this.positionAt(session, contiguousIndex)
+      : null;
+  }
+
+  private upsertPendingAnnotationReply(
+    session: ReadingSession,
+    annotation: ReadingAnnotation
+  ) {
+    const pending = this.pendingAnnotationReply(annotation);
+    session.pendingAnnotationReplies = [
+      ...(session.pendingAnnotationReplies ?? [])
+        .filter((item) => item.annotationId !== annotation.id),
+      pending
+    ].sort(
+      (left, right) =>
+        left.position.index - right.position.index ||
+        left.messageId.localeCompare(right.messageId)
+    );
+  }
+
+  private pendingAnnotationReply(
+    annotation: ReadingAnnotation
+  ): PendingAnnotationReply {
+    const latest = annotation.messages.at(-1);
+    if (!latest || latest.author !== "user") {
+      throw new AppError("INVALID_OPERATION", "这条批注当前不需要Daddy回复。");
+    }
+    return {
+      annotationId: annotation.id,
+      messageId: latest.id,
+      position: structuredClone(annotation.position)
+    };
+  }
+
+  private positionAt(session: ReadingSession, index: number): ReadingPosition {
+    const kind = session.userCurrentPosition.kind;
+    return {
+      kind,
+      index,
+      ...(session.userCurrentPosition.total !== undefined
+        ? { total: session.userCurrentPosition.total }
+        : {}),
+      label: kind === "page" ? `第 ${index} 页` : `第 ${index} 段`
     };
   }
 

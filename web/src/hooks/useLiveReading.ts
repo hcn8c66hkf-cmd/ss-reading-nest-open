@@ -14,6 +14,7 @@ export function useLiveReading(input: {
   sessionKey?: string;
   userPositionIndex: number;
   assistantPositionIndex: number;
+  pendingPositionIndices?: number[];
   sourceVerified: boolean;
   retryMs?: number;
   onQueuedPosition: (index: number) => Promise<boolean | void> | boolean | void;
@@ -127,14 +128,16 @@ export function useLiveReading(input: {
   useEffect(() => {
     if (!input.enabled || !input.sourceVerified || !input.sessionKey) return;
     const previous = lastObservedIndex.current;
-    const indices = previous === null
-      ? [input.userPositionIndex]
-      : input.userPositionIndex > previous
-        ? Array.from(
-            { length: input.userPositionIndex - previous },
-            (_, offset) => previous + offset + 1
-          )
-        : [input.userPositionIndex];
+    const indices = input.pendingPositionIndices !== undefined
+      ? [...new Set(input.pendingPositionIndices)].sort((left, right) => left - right)
+      : previous === null
+        ? [input.userPositionIndex]
+        : input.userPositionIndex > previous
+          ? Array.from(
+              { length: input.userPositionIndex - previous },
+              (_, offset) => previous + offset + 1
+            )
+          : [input.userPositionIndex];
     lastObservedIndex.current = input.userPositionIndex;
     for (const index of indices) {
       if (index <= input.assistantPositionIndex) continue;
@@ -150,7 +153,8 @@ export function useLiveReading(input: {
     input.enabled,
     input.sessionKey,
     input.sourceVerified,
-    input.userPositionIndex
+    input.userPositionIndex,
+    input.pendingPositionIndices?.join(",")
   ]);
 
   useEffect(() => {

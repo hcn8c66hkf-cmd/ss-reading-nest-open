@@ -101,6 +101,9 @@ export interface ReadingSession {
   userCurrentPosition: ReadingPosition;
   assistantSyncedPosition: ReadingPosition | null;
   liveReadingEnabled: boolean;
+  liveReadingStartIndex?: number;
+  pendingLiveReadingPositions?: ReadingPosition[];
+  pendingAnnotationReplies?: PendingAnnotationReply[];
   sessionPreferences: SessionPreferences;
   sourceManifest: SourceManifest | null;
   lastAssistantConfirmation?: {
@@ -112,6 +115,12 @@ export interface ReadingSession {
   updatedAt: string;
   lastReadAt: string;
   completedAt?: string;
+}
+
+export interface PendingAnnotationReply {
+  annotationId: string;
+  messageId: string;
+  position: ReadingPosition;
 }
 
 export interface Quote {

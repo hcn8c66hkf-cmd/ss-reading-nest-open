@@ -51,8 +51,8 @@ import { ReadingService } from "../services/reading-service.js";
 import type { CloudSourceService } from "../services/cloud-source-service.js";
 import { toolResult } from "./tool-result.js";
 
-export const READING_NEST_URI = "ui://ss-reading-nest/app-v44.html";
-export const READING_NEST_TOOL_NAME = "open_reading_nest_v44";
+export const READING_NEST_URI = "ui://ss-reading-nest/app-v45.html";
+export const READING_NEST_TOOL_NAME = "open_reading_nest_v45";
 
 const readLiveReadingContextInputSchema = z
   .object({
@@ -87,10 +87,24 @@ const mutation = {
 };
 
 export const TOOL_CONFIGS = {
-  open_reading_nest_v44: {
+  open_reading_nest_v45: {
     title: "打开 S×S 小窝共读",
     description:
-      "Use this primary v44 tool when the user wants to open the reading nest or continue recent reading. It preloads current context and prefers in-widget model sampling for automatic writeback.",
+      "Use this primary v45 tool when the user wants to open the reading nest or continue recent reading. It restores the earliest durable paragraph or annotation backlog before the current page.",
+    inputSchema: openReadingNestInputSchema,
+    annotations: readOnly,
+    _meta: {
+      ui: { resourceUri: READING_NEST_URI },
+      "ui/resourceUri": READING_NEST_URI,
+      "openai/outputTemplate": READING_NEST_URI,
+      "openai/toolInvocation/invoking": "正在点亮小窝…",
+      "openai/toolInvocation/invoked": "小窝已经准备好"
+    }
+  },
+  open_reading_nest_v44: {
+    title: "打开 S×S 小窝共读（v44 兼容入口）",
+    description:
+      "Legacy compatibility entry. Prefer open_reading_nest_v45 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -104,7 +118,7 @@ export const TOOL_CONFIGS = {
   open_reading_nest_v43: {
     title: "打开 S×S 小窝共读（v43 兼容入口）",
     description:
-      "Legacy compatibility entry. Prefer open_reading_nest_v44 whenever it is available.",
+      "Legacy compatibility entry. Prefer open_reading_nest_v45 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -118,7 +132,7 @@ export const TOOL_CONFIGS = {
   open_reading_nest_v42: {
     title: "打开 S×S 小窝共读（v42 兼容入口）",
     description:
-      "Legacy compatibility entry. Prefer open_reading_nest_v44 whenever it is available.",
+      "Legacy compatibility entry. Prefer open_reading_nest_v45 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -849,6 +863,15 @@ function buildRequiredParagraphWriteback(
   };
 }
 
+function summarizePendingWork(session: ReadingSession) {
+  return {
+    assistantSyncedPosition: session.assistantSyncedPosition,
+    liveReadingStartIndex: session.liveReadingStartIndex,
+    pendingLiveReadingPositions: session.pendingLiveReadingPositions ?? [],
+    pendingAnnotationReplies: session.pendingAnnotationReplies ?? []
+  };
+}
+
 export function registerReadingTools(
   server: McpServer,
   service: ReadingService,
@@ -856,6 +879,7 @@ export function registerReadingTools(
   options: { sourceEndpointBase?: string } = {}
 ) {
   const openReadingNest = async () => {
+    await service.reconcilePendingWork?.();
     const sessions = await service.listAllSessions();
     const bookshelfSessions = await Promise.all(
       sessions.map(async (session) => ({
@@ -873,7 +897,17 @@ export function registerReadingTools(
       .sort((left, right) =>
         right.session.updatedAt.localeCompare(left.session.updatedAt)
       )[0];
-    const preloadPositionIndex = activeNovel?.session.userCurrentPosition.index;
+    const preloadPositionIndex = activeNovel
+      ? [
+          ...(activeNovel.session.pendingLiveReadingPositions ?? []).map(
+            (position) => position.index
+          ),
+          ...(activeNovel.session.pendingAnnotationReplies ?? []).map(
+            (item) => item.position.index
+          )
+        ].sort((left, right) => left - right)[0] ??
+        activeNovel.session.userCurrentPosition.index
+      : undefined;
     const [preloadedSharedPage, preloadedAnnotations, preloadedComments] = activeNovel
       ? await Promise.all([
           recoverExactSharedPage(
@@ -929,6 +963,9 @@ export function registerReadingTools(
       {
         bookshelfSessions,
         recentSessions: bookshelfSessions.slice(0, 10),
+        ...(activeNovel
+          ? { liveReadingState: summarizePendingWork(activeNovel.session) }
+          : {}),
         ...(preloadedSharedPage
           ? {
               sharedPage: preloadedSharedPage,
@@ -974,6 +1011,12 @@ export function registerReadingTools(
   registerAppTool(
     server,
     READING_NEST_TOOL_NAME,
+    TOOL_CONFIGS.open_reading_nest_v45,
+    openReadingNest
+  );
+  registerAppTool(
+    server,
+    "open_reading_nest_v44",
     TOOL_CONFIGS.open_reading_nest_v44,
     openReadingNest
   );
@@ -1126,7 +1169,7 @@ export function registerReadingTools(
         {
           sessionId,
           userCurrentPosition: session.userCurrentPosition,
-          assistantSyncedPosition: session.assistantSyncedPosition,
+          ...summarizePendingWork(session),
           updatedAt: session.updatedAt
         },
         `用户进度已更新到${userCurrentPosition.label}。`
@@ -1160,6 +1203,7 @@ export function registerReadingTools(
         {
           sessionId,
           liveReadingEnabled: session.liveReadingEnabled,
+          ...summarizePendingWork(session),
           updatedAt: session.updatedAt
         },
         enabled ? "实时陪读模式已开启。" : "实时陪读模式已关闭。"
@@ -1349,8 +1393,9 @@ export function registerReadingTools(
         );
       }
       const comment = await service.publishCompanionComment(input);
+      const { session } = await service.getSessionBundle(input.sessionId);
       return toolResult(
-        { saved: true, comment },
+        { saved: true, comment, liveReadingState: summarizePendingWork(session) },
         "陪读短评已同步到这本书的小窝。请在聊天区回复相同短评。"
       );
     }
@@ -1360,6 +1405,7 @@ export function registerReadingTools(
     "list_companion_comments",
     TOOL_CONFIGS.list_companion_comments,
     async ({ knownVersion, ...input }) => {
+      await service.reconcilePendingWork?.(input.sessionId);
       const [
         result,
         annotationResult,
@@ -1369,7 +1415,7 @@ export function registerReadingTools(
         skillResult,
         layeredContext,
         recoverySharedPage,
-        recoverySession
+        sessionState
       ] =
         await Promise.all([
           service.listCompanionComments(input),
@@ -1409,11 +1455,9 @@ export function registerReadingTools(
                 input.positionIndex
               )
             : undefined,
-          input.scope === "history" && input.positionIndex
-            ? service.getSessionBundle(input.sessionId)
-                .then(({ session }) => session)
-                .catch(() => undefined)
-            : undefined
+          service.getSessionBundle(input.sessionId)
+            .then(({ session }) => session)
+            .catch(() => undefined)
         ]);
       const version = collectionVersion([
         ...result.comments.map((comment) => ({
@@ -1452,9 +1496,9 @@ export function registerReadingTools(
         input.sessionId,
         annotationResult?.annotations ?? []
       );
-      const requiredParagraphWriteback = recoverySharedPage && recoverySession
+      const requiredParagraphWriteback = recoverySharedPage && sessionState
         ? buildRequiredParagraphWriteback(
-            recoverySession,
+            sessionState,
             recoverySharedPage,
             result.comments.length
           )
@@ -1463,6 +1507,9 @@ export function registerReadingTools(
         {
           version,
           unchanged,
+          ...(sessionState
+            ? { liveReadingState: summarizePendingWork(sessionState) }
+            : {}),
           ...(recoverySharedPage
             ? {
                 sharedPage: recoverySharedPage,
