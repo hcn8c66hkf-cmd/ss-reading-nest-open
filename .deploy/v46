@@ -2,3 +2,4 @@ release=v46
 approved_at=2026-09-07
 scope=server-side-companion-autoplay
 base=59d1f06
+retry=complete-app-source
