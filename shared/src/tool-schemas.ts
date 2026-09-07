@@ -538,7 +538,9 @@ export const completeReadingSessionInputSchema = z.object({
   finalPosition: readingPositionSchema.optional()
 });
 export const generateDiaryContextInputSchema = z.object({
-  sessionId: sessionIdSchema
+  sessionId: sessionIdSchema,
+  mode: z.enum(["context", "diary", "memory", "skill_forge"]).optional().default("context"),
+  prompt: z.string().trim().min(1).max(24_000).optional()
 });
 
 export type SendCurrentContextInput = z.infer<typeof sendCurrentContextInputSchema>;

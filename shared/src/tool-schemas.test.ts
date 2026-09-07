@@ -13,6 +13,7 @@ import {
   listReadingFactsInputSchema,
   listReadingMemoriesInputSchema,
   getLayeredReadingContextInputSchema,
+  generateDiaryContextInputSchema,
   publishCompanionCommentInputSchema,
   renameReadingSessionInputSchema,
   replyToAnnotationInputSchema,
@@ -26,6 +27,18 @@ import {
   upsertReadingFactInputSchema,
   upsertReadingMemoryInputSchema
 } from "./tool-schemas.js";
+
+describe("reading artifact generation schema", () => {
+  it("keeps the old context call and accepts server generation modes", () => {
+    expect(generateDiaryContextInputSchema.parse({ sessionId: "session-1" }).mode)
+      .toBe("context");
+    expect(generateDiaryContextInputSchema.parse({
+      sessionId: "session-1",
+      mode: "memory",
+      prompt: "整理这段记忆"
+    })).toMatchObject({ mode: "memory", prompt: "整理这段记忆" });
+  });
+});
 
 describe("sendCurrentContextInputSchema", () => {
   it("accepts one top-level current page file reference", () => {

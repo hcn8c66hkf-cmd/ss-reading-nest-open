@@ -52,8 +52,8 @@ import type { CloudSourceService } from "../services/cloud-source-service.js";
 import type { CompanionAutoplayService } from "../services/companion-autoplay-service.js";
 import { toolResult } from "./tool-result.js";
 
-export const READING_NEST_URI = "ui://ss-reading-nest/app-v46.html";
-export const READING_NEST_TOOL_NAME = "open_reading_nest_v46";
+export const READING_NEST_URI = "ui://ss-reading-nest/app-v47.html";
+export const READING_NEST_TOOL_NAME = "open_reading_nest_v47";
 
 const readLiveReadingContextInputSchema = z
   .object({
@@ -105,10 +105,24 @@ const mutation = {
 };
 
 export const TOOL_CONFIGS = {
-  open_reading_nest_v46: {
+  open_reading_nest_v47: {
     title: "打开 S×S 小窝共读",
     description:
-      "Use this primary v46 tool when the user wants to open the reading nest or continue recent reading. It restores durable pending work and supports server-side automatic completion.",
+      "Use this primary v47 tool when the user wants to open the reading nest or continue recent reading. It includes responsive annotation saves and server-generated reading artifacts.",
+    inputSchema: openReadingNestInputSchema,
+    annotations: readOnly,
+    _meta: {
+      ui: { resourceUri: READING_NEST_URI },
+      "ui/resourceUri": READING_NEST_URI,
+      "openai/outputTemplate": READING_NEST_URI,
+      "openai/toolInvocation/invoking": "正在点亮小窝…",
+      "openai/toolInvocation/invoked": "小窝已经准备好"
+    }
+  },
+  open_reading_nest_v46: {
+    title: "打开 S×S 小窝共读（v46 兼容入口）",
+    description:
+      "Legacy compatibility entry. Prefer open_reading_nest_v47 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -122,7 +136,7 @@ export const TOOL_CONFIGS = {
   open_reading_nest_v45: {
     title: "打开 S×S 小窝共读（v45 兼容入口）",
     description:
-      "Legacy compatibility entry. Prefer open_reading_nest_v46 whenever it is available.",
+      "Legacy compatibility entry. Prefer open_reading_nest_v47 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -136,7 +150,7 @@ export const TOOL_CONFIGS = {
   open_reading_nest_v44: {
     title: "打开 S×S 小窝共读（v44 兼容入口）",
     description:
-      "Legacy compatibility entry. Prefer open_reading_nest_v46 whenever it is available.",
+      "Legacy compatibility entry. Prefer open_reading_nest_v47 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -150,7 +164,7 @@ export const TOOL_CONFIGS = {
   open_reading_nest_v43: {
     title: "打开 S×S 小窝共读（v43 兼容入口）",
     description:
-      "Legacy compatibility entry. Prefer open_reading_nest_v46 whenever it is available.",
+      "Legacy compatibility entry. Prefer open_reading_nest_v47 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -164,7 +178,7 @@ export const TOOL_CONFIGS = {
   open_reading_nest_v42: {
     title: "打开 S×S 小窝共读（v42 兼容入口）",
     description:
-      "Legacy compatibility entry. Prefer open_reading_nest_v46 whenever it is available.",
+      "Legacy compatibility entry. Prefer open_reading_nest_v47 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -1094,6 +1108,12 @@ export function registerReadingTools(
   registerAppTool(
     server,
     READING_NEST_TOOL_NAME,
+    TOOL_CONFIGS.open_reading_nest_v47,
+    openReadingNest
+  );
+  registerAppTool(
+    server,
+    "open_reading_nest_v46",
     TOOL_CONFIGS.open_reading_nest_v46,
     openReadingNest
   );
@@ -2102,8 +2122,24 @@ export function registerReadingTools(
   server.registerTool(
     "generate_diary_context",
     TOOL_CONFIGS.generate_diary_context,
-    async ({ sessionId }) => {
+    async ({ sessionId, mode, prompt }) => {
       const diaryContext = await service.diaryContext(sessionId);
+      if (mode !== "context") {
+        if (!options.companionAutoplayService || !prompt) {
+          return toolResult(
+            { diaryContext, generatedText: null, generationUnavailable: true },
+            "服务器生成暂不可用，没有写入任何内容。"
+          );
+        }
+        const generatedText = await options.companionAutoplayService.generateReadingArtifact(
+          mode,
+          prompt
+        );
+        return toolResult(
+          { diaryContext, generatedText },
+          generatedText ? "内容已经在小窝里生成。" : "这次没有生成有效内容。"
+        );
+      }
       return toolResult(
         { diaryContext },
         "日记素材已经整理好。请在聊天里把这些素材写成一篇可复制的小窝日记。"

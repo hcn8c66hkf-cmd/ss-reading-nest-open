@@ -49,6 +49,23 @@ export class CompanionAutoplayService {
     private readonly generator: CompanionTextGenerator
   ) {}
 
+  async generateReadingArtifact(
+    kind: "diary" | "memory" | "skill_forge",
+    prompt: string
+  ): Promise<string | null> {
+    const instructions = {
+      diary: "请直接写成温暖、具体、可复制的小窝日记正文，不要解释任务。",
+      memory: "请只返回能直接 JSON.parse 的长期阅读记忆 JSON，不要 Markdown 围栏或解释。",
+      skill_forge: "请只返回能直接 JSON.parse 的 P3 评估 JSON，不要 Markdown 围栏或解释。"
+    } as const;
+    return this.generator.generate({
+      systemPrompt: [DADDY_SYSTEM_PROMPT, instructions[kind]].join("\n"),
+      prompt,
+      maxTokens: kind === "diary" ? 900 : kind === "memory" ? 1_400 : 1_800,
+      temperature: kind === "diary" ? 0.72 : kind === "memory" ? 0.25 : 0.15
+    });
+  }
+
   async completeParagraph(
     sessionId: string,
     positionIndex: number

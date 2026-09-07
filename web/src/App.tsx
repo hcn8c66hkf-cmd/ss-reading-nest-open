@@ -30,7 +30,6 @@ import {
   requestReaderInline,
   requestReaderPip,
   sampleChatGptText,
-  sampleChatGptToolInput,
   setReadingFrameHeight,
   saveReaderWidgetState,
   updateModelContext
@@ -78,10 +77,8 @@ import {
 } from "./features/reading-memory/capture-draft.js";
 import {
   buildChapterSnapshot,
-  buildSkillForgeConversationPrompt,
   buildSkillForgePrompt,
   parseSkillForgeDraft,
-  SKILL_FORGE_SAMPLING_TOOL,
   toPersistedSkillCandidate
 } from "./features/skill-forge/skill-forge.js";
 import {
@@ -208,6 +205,8 @@ export function App() {
   const [userNote, setUserNote] = useState("");
   const [overlay, setOverlay] = useState<Overlay>(null);
   const [diaryContext, setDiaryContext] = useState<any>(null);
+  const [diaryText, setDiaryText] = useState("");
+  const [diaryLoading, setDiaryLoading] = useState(false);
   const [toast, setToast] = useState("");
   const [preferenceSaving, setPreferenceSaving] = useState(false);
   const [companionComments, setCompanionComments] = useState<CompanionComment[]>([]);
@@ -2248,8 +2247,12 @@ export function App() {
         annotation
       ]);
       if (comment) {
-        setToast("评论已保存，Daddy正在书边回复。" );
-        await askDaddyToReply(annotation);
+        if (annotation.messages.at(-1)?.author === "assistant") {
+          setToast("评论已保存，Daddy也回在下面啦。" );
+        } else {
+          setToast("评论已保存，Daddy正在书边回复。" );
+          void askDaddyToReply(annotation);
+        }
       } else {
         setToast("这句话已经划好线。" );
       }
@@ -2285,8 +2288,12 @@ export function App() {
       setAnnotations((current) =>
         current.map((item) => (item.id === annotation.id ? annotation : item))
       );
-      setToast("评论已保存，Daddy正在书边回复。" );
-      await askDaddyToReply(annotation);
+      if (annotation.messages.at(-1)?.author === "assistant") {
+        setToast("评论已保存，Daddy也回在下面啦。" );
+      } else {
+        setToast("评论已保存，Daddy正在书边回复。" );
+        void askDaddyToReply(annotation);
+      }
     } catch {
       setToast("这条回复没有保存成功，请重试。");
     } finally {
@@ -2612,12 +2619,58 @@ export function App() {
 
   async function openDiary() {
     if (!sessionBundle) return;
-    const result = await callTool("generate_diary_context", { sessionId: sessionBundle.session.id });
-    setDiaryContext(result.structuredContent?.diaryContext ?? {
+    setDiaryText("");
+    setDiaryContext({
       ...sessionBundle,
       summaryHints: []
     });
     setOverlay("diary");
+    try {
+      const result = await callTool("generate_diary_context", {
+        sessionId: sessionBundle.session.id
+      });
+      setDiaryContext(result.structuredContent?.diaryContext ?? {
+        ...sessionBundle,
+        summaryHints: []
+      });
+    } catch {
+      setToast("日记素材没刷新成功，先用当前阅读记录写也可以。" );
+    }
+  }
+
+  async function writeDiary() {
+    if (!sessionBundle || !diaryContext || diaryLoading) return;
+    setDiaryLoading(true);
+    try {
+      const quotes = Array.isArray(diaryContext.quotes)
+        ? diaryContext.quotes.map((item: { content?: string }) => item.content).filter(Boolean)
+        : [];
+      const reactions = Array.isArray(diaryContext.reactions)
+        ? diaryContext.reactions.map((item: { content?: string }) => item.content).filter(Boolean)
+        : [];
+      const prompt = [
+        `为小安写一篇今天的共读小窝日记。作品：《${sessionBundle.session.title}》。`,
+        `读到：${sessionBundle.session.userCurrentPosition.label}。`,
+        quotes.length ? `今天留下的摘录：\n${quotes.slice(-8).join("\n")}` : "今天没有单独保存摘录。",
+        reactions.length ? `今天的吐槽与感受：\n${reactions.slice(-8).join("\n")}` : "今天没有单独保存吐槽。",
+        "写得像我们一起读完后留下的温暖记录，具体但不要虚构，约 300–600 字。"
+      ].join("\n\n");
+      const result = await callTool("generate_diary_context", {
+        sessionId: sessionBundle.session.id,
+        mode: "diary",
+        prompt: limitGenerationPrompt(prompt)
+      });
+      const generatedText = result.structuredContent?.generatedText;
+      if (typeof generatedText !== "string" || !generatedText.trim()) {
+        throw new Error("Missing generated diary");
+      }
+      setDiaryText(generatedText.trim());
+      setToast("今天的小窝日记写好啦。" );
+    } catch {
+      setToast("这次日记没有生成成功，按钮已经恢复，可以再试一次。" );
+    } finally {
+      setDiaryLoading(false);
+    }
   }
 
   async function openReadingMemory() {
@@ -2722,92 +2775,19 @@ export function App() {
         setToast("这份快照没有变化，直接用了上次的炼制结果，没有重复耗额度。");
         return;
       }
-      const toolInput = await sampleChatGptToolInput(
-        buildSkillForgePrompt(snapshot, {
-          bodyLimit: 12_000,
-          toolName: SKILL_FORGE_SAMPLING_TOOL.name
-        }),
-        SKILL_FORGE_SAMPLING_TOOL,
-        {
-          systemPrompt: [
-            "你是严格的 Skill 架构审阅者。",
-            "判断标准是可复用、可执行、有明确触发条件；绝不为了迎合而强行炼制。",
-            `只调用 ${SKILL_FORGE_SAMPLING_TOOL.name} 一次提交判定。`
-          ].join("\n"),
-          maxTokens: 1_800,
-          temperature: 0.15
-        }
-      );
-      let draft = toolInput
-        ? parseSkillForgeDraft(JSON.stringify(toolInput))
-        : null;
-      let sampled: string | null = null;
-      if (!draft) sampled = await sampleChatGptText(buildSkillForgePrompt(snapshot), {
-        systemPrompt: [
-          "你是严格的 Skill 架构审阅者。",
-          "判断标准是可复用、可执行、有明确触发条件；绝不为了迎合而强行炼制。",
-          "只输出能直接解析的 JSON，不调用工具。"
-        ].join("\n"),
-        maxTokens: 1_800,
-        temperature: 0.15
+      const generation = await callTool("generate_diary_context", {
+        sessionId: session.id,
+        mode: "skill_forge",
+        prompt: limitGenerationPrompt(
+          buildSkillForgePrompt(snapshot, { bodyLimit: 12_000, compact: true })
+        )
       });
-      if (!draft) draft = sampled ? parseSkillForgeDraft(sampled) : null;
+      const generatedText = generation.structuredContent?.generatedText;
+      const draft = typeof generatedText === "string"
+        ? parseSkillForgeDraft(generatedText)
+        : null;
       if (!draft) {
-        sampled = await sampleChatGptText(
-          buildSkillForgePrompt(snapshot, { bodyLimit: 6_000, compact: true }),
-          {
-            systemPrompt: [
-              "你是严格的 Skill 架构审阅者。",
-              "这是结构修复重试。只返回一个简短、合法、能直接 JSON.parse 的 JSON 对象。",
-              "不得添加 Markdown 围栏、解释、标题或结尾文字。"
-            ].join("\n"),
-            maxTokens: 1_200,
-            temperature: 0
-          }
-        );
-        draft = sampled ? parseSkillForgeDraft(sampled) : null;
-      }
-      if (!draft) {
-        const sent = await askChatGpt(
-          buildSkillForgeConversationPrompt(snapshot),
-          { scrollToBottom: false }
-        );
-        if (!sent) {
-          setToast("当前宿主没有接收评估请求；没有写入半成品，可以稍后重试。");
-          return;
-        }
-        setToast("已经交给当前对话评估，判定写入后会自动出现在这里。");
-        for (let attempt = 0; attempt < 12; attempt += 1) {
-          await new Promise((resolve) => window.setTimeout(resolve, 1_500));
-          const refreshed = await callTool("list_companion_comments", {
-            sessionId: session.id,
-            scope: "recent",
-            limit: 1
-          }).catch(() => ({ structuredContent: {} }));
-          const refreshedContent = refreshed.structuredContent as
-            | Record<string, unknown>
-            | undefined;
-          const candidates = Array.isArray(refreshedContent?.skillCandidates)
-            ? (refreshedContent.skillCandidates as SkillCandidate[])
-            : [];
-          const saved = candidates.find(
-            (candidate) => candidate.analysisFingerprint === snapshot.fingerprint
-          );
-          if (!saved) continue;
-          setSkillCandidates((current) => [
-            saved,
-            ...current.filter((item) => item.id !== saved.id)
-          ]);
-          setToast(
-            saved.verdict === "forge_skill"
-              ? "这段确实有可复用的方法，Skill 候选已经做好，等小安审阅。"
-              : saved.verdict === "knowledge_only"
-                ? "这段更适合留作知识卡，没有硬炼成 Skill。"
-                : "现在材料还不够，先继续读，Daddy没有硬编。"
-          );
-          return;
-        }
-        setToast("评估已在当前对话继续；写入完成后重新打开 P3 就能看到结果。");
+        setToast("这次 P3 没拿到完整判定，没有留下半成品；按钮已经恢复。" );
         return;
       }
       const candidatePayload = toPersistedSkillCandidate(snapshot, draft);
@@ -2895,8 +2875,7 @@ export function App() {
       ? `第 ${start}–${end} 段`
       : session.userCurrentPosition.label;
     try {
-      const sampled = await sampleChatGptText(
-        buildReadingMemoryCapturePrompt({
+      const prompt = buildReadingMemoryCapturePrompt({
           title: session.title,
           chapterLabel,
           rangeStart: start,
@@ -2906,17 +2885,16 @@ export function App() {
           companionComments: rangeComments,
           activeMemories: readingMemories,
           activeFacts: readingFacts
-        }),
-        {
-          systemPrompt: [
-            DADDY_SAMPLING_SYSTEM_PROMPT,
-            "你正在整理长期阅读记忆。输出必须是能直接解析的 JSON，不能调用工具，也不能要求用户确认。"
-          ].join("\n"),
-          maxTokens: 1_400,
-          temperature: 0.25
-        }
-      );
-      const draft = sampled ? parseReadingMemoryCaptureDraft(sampled) : null;
+        });
+      const generated = await callTool("generate_diary_context", {
+        sessionId: session.id,
+        mode: "memory",
+        prompt: limitGenerationPrompt(prompt)
+      });
+      const sampled = generated.structuredContent?.generatedText;
+      const draft = typeof sampled === "string"
+        ? parseReadingMemoryCaptureDraft(sampled)
+        : null;
       if (!draft) {
         setToast("这次卡内整理没有拿到有效内容，没有写入任何东西。再点一次就好。");
         return;
@@ -3357,7 +3335,15 @@ export function App() {
           onClose={() => setOverlay(null)}
         />
       ) : null}
-      {overlay === "diary" && diaryContext ? <DiaryPreview context={diaryContext} onWrite={() => askChatGpt("请根据刚刚整理的小窝日记素材，写一篇温暖、可复制到 Notion 的今日共读日记。")} onClose={() => setOverlay(null)} /> : null}
+      {overlay === "diary" && diaryContext ? (
+        <DiaryPreview
+          context={diaryContext}
+          diaryText={diaryText}
+          loading={diaryLoading}
+          onWrite={() => void writeDiary()}
+          onClose={() => setOverlay(null)}
+        />
+      ) : null}
       {overlay === "memory" && sessionBundle ? (
         <ReadingMemorySheet
           memories={readingMemories}
@@ -3690,6 +3676,11 @@ function trimDaddyText(text: string, maximumLength: number) {
   return normalized.length <= maximumLength
     ? normalized
     : normalized.slice(0, maximumLength).trimEnd();
+}
+
+function limitGenerationPrompt(prompt: string): string {
+  if (prompt.length <= 23_500) return prompt;
+  return `${prompt.slice(0, 14_500)}\n\n【中间材料已压缩】\n\n${prompt.slice(-8_500)}`;
 }
 
 function sourceSyncBlockedMessage(sourceAvailability: SourceAvailability) {

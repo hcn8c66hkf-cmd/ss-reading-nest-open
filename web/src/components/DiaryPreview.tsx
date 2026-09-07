@@ -8,6 +8,8 @@ export function DiaryPreview(props: {
     bookmarks: Bookmark[];
     summaryHints: string[];
   };
+  diaryText: string;
+  loading: boolean;
   onWrite: () => void;
   onClose: () => void;
 }) {
@@ -21,7 +23,19 @@ export function DiaryPreview(props: {
         <ul>{props.context.quotes.map((item) => <li key={item.id}>{item.content}</li>)}</ul>
         <h3>吐槽</h3>
         <ul>{props.context.reactions.map((item) => <li key={item.id}>{item.content}</li>)}</ul>
-        <button className="action-primary wide-button" onClick={props.onWrite}>请Daddy写成小窝日记</button>
+        {props.diaryText ? (
+          <article className="memory-card diary-result">
+            <h3>今日小窝日记</h3>
+            <p>{props.diaryText}</p>
+          </article>
+        ) : null}
+        <button
+          className="action-primary wide-button"
+          disabled={props.loading}
+          onClick={props.onWrite}
+        >
+          {props.loading ? "Daddy正在写…" : props.diaryText ? "重新写一版" : "请Daddy写成小窝日记"}
+        </button>
         <button className="text-button" onClick={props.onClose}>关闭</button>
       </section>
     </div>
