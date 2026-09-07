@@ -62,28 +62,30 @@ async function setup() {
 
 describe("CompanionAutoplayService", () => {
   it("generates diary, memory, and P3 artifacts through the server model", async () => {
-    const { reading, source } = await setup();
+    const { reading, source, session } = await setup();
     const generate = vi.fn().mockResolvedValue('{"ok":true}');
     const autoplay = new CompanionAutoplayService(reading, source, { generate });
 
-    await expect(autoplay.generateReadingArtifact("diary", "日记素材"))
+    await expect(autoplay.generateReadingArtifact(session.id, "diary", "日记素材"))
       .resolves.toBe('{"ok":true}');
-    await expect(autoplay.generateReadingArtifact("memory", "记忆素材"))
+    await expect(autoplay.generateReadingArtifact(session.id, "memory", "记忆素材"))
       .resolves.toBe('{"ok":true}');
-    await expect(autoplay.generateReadingArtifact("skill_forge", "P3 素材"))
+    await expect(autoplay.generateReadingArtifact(session.id, "skill_forge", "P3 素材"))
       .resolves.toBe('{"ok":true}');
 
     expect(generate).toHaveBeenNthCalledWith(1, expect.objectContaining({
-      prompt: "日记素材",
+      prompt: expect.stringContaining("日记素材"),
       maxTokens: 900
     }));
     expect(generate).toHaveBeenNthCalledWith(2, expect.objectContaining({
       prompt: "记忆素材",
-      maxTokens: 1_400
+      maxTokens: 1_400,
+      responseFormat: expect.objectContaining({ type: "json_schema" })
     }));
     expect(generate).toHaveBeenNthCalledWith(3, expect.objectContaining({
       prompt: "P3 素材",
-      maxTokens: 1_800
+      maxTokens: 1_800,
+      responseFormat: expect.objectContaining({ type: "json_schema" })
     }));
   });
 

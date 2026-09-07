@@ -274,7 +274,7 @@ export function parseSkillForgeDraft(raw: string): SkillForgeDraft | null {
 export function toPersistedSkillCandidate(
   snapshot: ChapterSnapshot,
   draft: SkillForgeDraft
-): Omit<SkillCandidate, "id" | "sessionId" | "operationId" | "createdAt" | "updatedAt"> {
+): Omit<SkillCandidate, "id" | "sessionId" | "operationId" | "createdAt" | "updatedAt" | "generatorVersion"> {
   const skillMarkdown = draft.verdict === "forge_skill"
     ? buildSkillMarkdown(draft)
     : undefined;
@@ -299,7 +299,6 @@ export function toPersistedSkillCandidate(
     ],
     ...(skillMarkdown ? { skillMarkdown } : {}),
     analysisFingerprint: snapshot.fingerprint,
-    generatorVersion: "p3-v1",
     status: "draft"
   };
 }

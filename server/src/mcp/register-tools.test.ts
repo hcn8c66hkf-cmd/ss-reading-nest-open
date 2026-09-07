@@ -9,16 +9,16 @@ import {
 } from "./register-tools.js";
 
 describe("tool descriptors", () => {
-  it("binds the current UI resource to the v47 and compatibility render tools", () => {
-    expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v47.html");
-    expect(READING_NEST_TOOL_NAME).toBe("open_reading_nest_v47");
-    expect(TOOL_CONFIGS.open_reading_nest_v47._meta?.ui).toEqual({
+  it("binds the current UI resource to the v48 and compatibility render tools", () => {
+    expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v48.html");
+    expect(READING_NEST_TOOL_NAME).toBe("open_reading_nest_v48");
+    expect(TOOL_CONFIGS.open_reading_nest_v48._meta?.ui).toEqual({
       resourceUri: READING_NEST_URI
     });
-    expect(TOOL_CONFIGS.open_reading_nest_v47._meta?.["ui/resourceUri"]).toBe(
+    expect(TOOL_CONFIGS.open_reading_nest_v48._meta?.["ui/resourceUri"]).toBe(
       READING_NEST_URI
     );
-    expect(TOOL_CONFIGS.open_reading_nest_v47._meta?.["openai/outputTemplate"]).toBe(
+    expect(TOOL_CONFIGS.open_reading_nest_v48._meta?.["openai/outputTemplate"]).toBe(
       READING_NEST_URI
     );
     expect(TOOL_CONFIGS.open_reading_nest._meta?.["openai/outputTemplate"]).toBe(
@@ -26,6 +26,7 @@ describe("tool descriptors", () => {
     );
     for (const [name, config] of Object.entries(TOOL_CONFIGS)) {
       if (
+        name !== "open_reading_nest_v48" &&
         name !== "open_reading_nest_v47" &&
         name !== "open_reading_nest_v46" &&
         name !== "open_reading_nest_v45" &&
@@ -131,7 +132,7 @@ describe("tool descriptors", () => {
     registerReadingTools(server as never, service as never, undefined, {
       sourceEndpointBase: "https://worker.example.test/source/secret"
     });
-    const result = (await handlers.get("open_reading_nest_v47")?.()) as {
+    const result = (await handlers.get("open_reading_nest_v48")?.()) as {
       structuredContent?: Record<string, unknown>;
     };
 
@@ -319,7 +320,7 @@ describe("tool descriptors", () => {
     };
 
     registerReadingTools(server as never, service as never, cloudSource as never);
-    const result = await handlers.get("open_reading_nest_v47")?.();
+    const result = await handlers.get("open_reading_nest_v48")?.();
 
     expect(result.structuredContent).toMatchObject({
       sharedPage: {
@@ -530,7 +531,7 @@ describe("tool descriptors", () => {
   });
 
   it("exposes book management and threaded annotation tools", () => {
-    expect(Object.keys(TOOL_CONFIGS)).toHaveLength(65);
+    expect(Object.keys(TOOL_CONFIGS)).toHaveLength(66);
     expect(TOOL_CONFIGS.create_annotation.annotations).toMatchObject({
       readOnlyHint: false,
       idempotentHint: true
@@ -769,8 +770,17 @@ describe("tool descriptors", () => {
       saveQuote: async () => { throw new Error("must not save a quote"); },
       saveReaction: async () => { throw new Error("must not save a reaction"); }
     };
+    let annotationAutoplayAttempts = 0;
+    const companionAutoplayService = {
+      completeAnnotation: async () => {
+        annotationAutoplayAttempts += 1;
+        return { completed: false, kind: "annotation", reason: "generation_failed" } as const;
+      }
+    };
 
-    registerReadingTools(server as never, service as never);
+    registerReadingTools(server as never, service as never, undefined, {
+      companionAutoplayService: companionAutoplayService as never
+    });
     const created = await handlers.get("save_quote")?.({
       sessionId: "session-1",
       content: "她把信折好",
@@ -878,6 +888,7 @@ describe("tool descriptors", () => {
     });
     expect(created.structuredContent.annotation.messages[0].text).toBe("这里像是在告别。");
     expect(replied.structuredContent.annotation.messages[0].text).toBe("嗯，我也是。");
+    expect(annotationAutoplayAttempts).toBe(2);
     expect(daddyReply.structuredContent.annotation.messages[0]).toMatchObject({
       author: "assistant",
       text: "我也觉得，他是在给自己留最后一点体面。"

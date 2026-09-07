@@ -477,6 +477,28 @@ describe("ReadingService", () => {
     expect(bundle.bookmarks[0]?.label).toBe("今天看到这里 · 2026-06-22");
   });
 
+  it("keeps stale test excerpts out of today's diary material", async () => {
+    const session = await service.startSession("雨夜里的信", "novel");
+    await service.saveQuote({
+      sessionId: session.id,
+      content: "旧测试摘录",
+      position: { kind: "paragraph", index: 2, label: "第 2 段" }
+    });
+    await repository.mutate((database) => {
+      database.quotes[0]!.createdAt = "2026-06-01T00:00:00.000Z";
+    });
+    await service.saveQuote({
+      sessionId: session.id,
+      content: "今天真正留下的摘录",
+      position: { kind: "paragraph", index: 8, label: "第 8 段" }
+    });
+
+    const context = await service.diaryContext(session.id);
+
+    expect(context.quotes.map((item) => item.content))
+      .toEqual(["今天真正留下的摘录"]);
+  });
+
   it("only completes the work through completeSession", async () => {
     const session = await service.startSession("雨夜里的信", "novel");
     const completed = await service.completeSession(session.id);

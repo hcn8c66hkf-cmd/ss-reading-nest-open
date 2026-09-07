@@ -52,8 +52,8 @@ import type { CloudSourceService } from "../services/cloud-source-service.js";
 import type { CompanionAutoplayService } from "../services/companion-autoplay-service.js";
 import { toolResult } from "./tool-result.js";
 
-export const READING_NEST_URI = "ui://ss-reading-nest/app-v47.html";
-export const READING_NEST_TOOL_NAME = "open_reading_nest_v47";
+export const READING_NEST_URI = "ui://ss-reading-nest/app-v48.html";
+export const READING_NEST_TOOL_NAME = "open_reading_nest_v48";
 
 const readLiveReadingContextInputSchema = z
   .object({
@@ -105,10 +105,24 @@ const mutation = {
 };
 
 export const TOOL_CONFIGS = {
-  open_reading_nest_v47: {
+  open_reading_nest_v48: {
     title: "打开 S×S 小窝共读",
     description:
-      "Use this primary v47 tool when the user wants to open the reading nest or continue recent reading. It includes responsive annotation saves and server-generated reading artifacts.",
+      "Use this primary v48 tool when the user wants to open the reading nest or continue recent reading. It completes annotation replies on save and uses grounded structured reading artifacts.",
+    inputSchema: openReadingNestInputSchema,
+    annotations: readOnly,
+    _meta: {
+      ui: { resourceUri: READING_NEST_URI },
+      "ui/resourceUri": READING_NEST_URI,
+      "openai/outputTemplate": READING_NEST_URI,
+      "openai/toolInvocation/invoking": "正在点亮小窝…",
+      "openai/toolInvocation/invoked": "小窝已经准备好"
+    }
+  },
+  open_reading_nest_v47: {
+    title: "打开 S×S 小窝共读（v47 兼容入口）",
+    description:
+      "Legacy compatibility entry. Prefer open_reading_nest_v48 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -122,7 +136,7 @@ export const TOOL_CONFIGS = {
   open_reading_nest_v46: {
     title: "打开 S×S 小窝共读（v46 兼容入口）",
     description:
-      "Legacy compatibility entry. Prefer open_reading_nest_v47 whenever it is available.",
+      "Legacy compatibility entry. Prefer open_reading_nest_v48 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -136,7 +150,7 @@ export const TOOL_CONFIGS = {
   open_reading_nest_v45: {
     title: "打开 S×S 小窝共读（v45 兼容入口）",
     description:
-      "Legacy compatibility entry. Prefer open_reading_nest_v47 whenever it is available.",
+      "Legacy compatibility entry. Prefer open_reading_nest_v48 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -150,7 +164,7 @@ export const TOOL_CONFIGS = {
   open_reading_nest_v44: {
     title: "打开 S×S 小窝共读（v44 兼容入口）",
     description:
-      "Legacy compatibility entry. Prefer open_reading_nest_v47 whenever it is available.",
+      "Legacy compatibility entry. Prefer open_reading_nest_v48 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -164,7 +178,7 @@ export const TOOL_CONFIGS = {
   open_reading_nest_v43: {
     title: "打开 S×S 小窝共读（v43 兼容入口）",
     description:
-      "Legacy compatibility entry. Prefer open_reading_nest_v47 whenever it is available.",
+      "Legacy compatibility entry. Prefer open_reading_nest_v48 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -178,7 +192,7 @@ export const TOOL_CONFIGS = {
   open_reading_nest_v42: {
     title: "打开 S×S 小窝共读（v42 兼容入口）",
     description:
-      "Legacy compatibility entry. Prefer open_reading_nest_v47 whenever it is available.",
+      "Legacy compatibility entry. Prefer open_reading_nest_v48 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -725,8 +739,9 @@ export const TOOL_CONFIGS = {
     annotations: { ...mutation, idempotentHint: true }
   },
   generate_diary_context: {
-    title: "生成小窝日记素材",
-    description: "Use this when the user wants ChatGPT to write today's copyable reading diary.",
+    title: "生成小窝日记与阅读整理",
+    description:
+      "Use this established bridge for today's grounded diary and structured long-term memory or P3 reading artifacts.",
     inputSchema: generateDiaryContextInputSchema,
     annotations: readOnly
   }
@@ -1108,6 +1123,12 @@ export function registerReadingTools(
   registerAppTool(
     server,
     READING_NEST_TOOL_NAME,
+    TOOL_CONFIGS.open_reading_nest_v48,
+    openReadingNest
+  );
+  registerAppTool(
+    server,
+    "open_reading_nest_v47",
     TOOL_CONFIGS.open_reading_nest_v47,
     openReadingNest
   );
@@ -1991,7 +2012,7 @@ export function registerReadingTools(
   server.registerTool("save_quote", TOOL_CONFIGS.save_quote, async (input) => {
     const annotation = decodeAnnotationQuote(input);
     if (annotation) {
-      const saved = await service.createAnnotation({
+      const created = await service.createAnnotation({
         sessionId: input.sessionId,
         position: input.position,
         anchor: annotation.anchor,
@@ -1999,9 +2020,16 @@ export function registerReadingTools(
         ...(annotation.comment ? { comment: annotation.comment } : {}),
         operationId: input.operationId!
       });
+      const { annotation: saved, companionAutoplay } = annotation.comment
+        ? await tryCompleteAnnotation(input.sessionId, created, "user")
+        : { annotation: created, companionAutoplay: undefined };
       return toolResult(
-        { saved: true, annotation: saved },
-        annotation.comment ? "你的划线和评论都留在书边啦。" : "这句话已经划好线。"
+        { saved: true, annotation: saved, companionAutoplay },
+        companionAutoplay?.completed
+          ? "你的划线评论和Daddy回复都留在书边啦。"
+          : annotation.comment
+            ? "你的划线和评论都留在书边啦。"
+            : "这句话已经划好线。"
       );
     }
     const favoriteCompat = decodeCompatJson(
@@ -2077,16 +2105,23 @@ export function registerReadingTools(
   server.registerTool("save_reaction", TOOL_CONFIGS.save_reaction, async (input) => {
     const annotationReply = decodeAnnotationReply(input);
     if (annotationReply) {
-      const saved = await service.replyToAnnotation({
+      const created = await service.replyToAnnotation({
         sessionId: input.sessionId,
         annotationId: annotationReply.annotationId,
         author: "user",
         text: annotationReply.text,
         operationId: input.operationId!
       });
+      const { annotation: saved, companionAutoplay } = await tryCompleteAnnotation(
+        input.sessionId,
+        created,
+        "user"
+      );
       return toolResult(
-        { saved: true, annotation: saved },
-        "回复已经接在这条批注下面。"
+        { saved: true, annotation: saved, companionAutoplay },
+        companionAutoplay?.completed
+          ? "你和Daddy的新回复都接在这条批注下面了。"
+          : "回复已经接在这条批注下面。"
       );
     }
     const reaction = await service.saveReaction(input);
@@ -2132,6 +2167,7 @@ export function registerReadingTools(
           );
         }
         const generatedText = await options.companionAutoplayService.generateReadingArtifact(
+          sessionId,
           mode,
           prompt
         );

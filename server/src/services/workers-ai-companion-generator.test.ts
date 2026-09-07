@@ -7,6 +7,8 @@ import {
 describe("extractWorkersAiText", () => {
   it("reads both Workers AI response shapes", () => {
     expect(extractWorkersAiText({ response: "第一种返回" })).toBe("第一种返回");
+    expect(extractWorkersAiText({ response: { memories: [], facts: [] } }))
+      .toBe('{"memories":[],"facts":[]}');
     expect(extractWorkersAiText({
       choices: [{ message: { content: "第二种返回" } }]
     })).toBe("第二种返回");

@@ -93,6 +93,7 @@ describe("P3 skill forge", () => {
     expect(persisted.skillMarkdown).toContain("name: reflection-prompts");
     expect(persisted.skillMarkdown).toContain("## Workflow");
     expect(persisted.skillMarkdown).not.toContain("session-1");
+    expect(persisted).not.toHaveProperty("generatorVersion");
   });
 
   it("stores a knowledge-only verdict without fabricating a Skill", () => {

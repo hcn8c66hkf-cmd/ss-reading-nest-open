@@ -1047,8 +1047,13 @@ export class ReadingService {
 
   async diaryContext(sessionId: string) {
     const bundle = await this.getSessionBundle(sessionId);
+    const cutoff = this.deps.now().getTime() - 24 * 60 * 60 * 1_000;
+    const fromToday = (createdAt: string) => new Date(createdAt).getTime() >= cutoff;
     return {
       ...bundle,
+      quotes: bundle.quotes.filter((item) => fromToday(item.createdAt)),
+      reactions: bundle.reactions.filter((item) => fromToday(item.createdAt)),
+      bookmarks: bundle.bookmarks.filter((item) => fromToday(item.createdAt)),
       userCurrentPosition: bundle.session.userCurrentPosition,
       assistantSyncedPosition: bundle.session.assistantSyncedPosition,
       summaryHints: [

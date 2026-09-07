@@ -12,6 +12,7 @@ export class WorkersAiCompanionGenerator implements CompanionTextGenerator {
     prompt: string;
     maxTokens: number;
     temperature: number;
+    responseFormat?: Record<string, unknown>;
   }): Promise<string | null> {
     const result = await this.ai.run("@cf/meta/llama-3.1-8b-instruct-fast", {
       messages: [
@@ -19,7 +20,8 @@ export class WorkersAiCompanionGenerator implements CompanionTextGenerator {
         { role: "user", content: input.prompt }
       ],
       max_tokens: input.maxTokens,
-      temperature: input.temperature
+      temperature: input.temperature,
+      ...(input.responseFormat ? { response_format: input.responseFormat } : {})
     });
     return extractWorkersAiText(result);
   }
@@ -29,6 +31,7 @@ export function extractWorkersAiText(result: unknown): string | null {
   if (!result || typeof result !== "object") return null;
   const response = (result as { response?: unknown }).response;
   if (typeof response === "string" && response.trim()) return response.trim();
+  if (response && typeof response === "object") return JSON.stringify(response);
   const choices = (result as { choices?: unknown }).choices;
   if (!Array.isArray(choices)) return null;
   const content = (choices[0] as { message?: { content?: unknown } } | undefined)

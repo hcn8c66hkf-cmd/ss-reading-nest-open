@@ -13,6 +13,7 @@ export interface CompanionTextGenerator {
     prompt: string;
     maxTokens: number;
     temperature: number;
+    responseFormat?: Record<string, unknown>;
   }): Promise<string | null>;
 }
 
@@ -42,6 +43,61 @@ const DADDY_SYSTEM_PROMPT = [
   "不要使用😂。"
 ].join("\n");
 
+const MEMORY_RESPONSE_FORMAT = {
+  type: "json_schema",
+  json_schema: {
+    type: "object",
+    properties: {
+      memories: {
+        type: "array",
+        maxItems: 5,
+        items: {
+          type: "object",
+          properties: {
+            kind: { type: "string", enum: ["chapter_summary", "annotation_summary", "reading_impression", "book_context", "chapter_context"] },
+            scope: { type: "string", enum: ["chapter", "book"] },
+            content: { type: "string" }
+          },
+          required: ["kind", "scope", "content"]
+        }
+      },
+      facts: {
+        type: "array",
+        maxItems: 10,
+        items: {
+          type: "object",
+          properties: {
+            subject: { type: "string" },
+            fact: { type: "string" }
+          },
+          required: ["subject", "fact"]
+        }
+      },
+      message: { type: "string" }
+    },
+    required: ["memories", "facts", "message"]
+  }
+} as const;
+
+const SKILL_FORGE_RESPONSE_FORMAT = {
+  type: "json_schema",
+  json_schema: {
+    type: "object",
+    properties: {
+      verdict: { type: "string", enum: ["forge_skill", "knowledge_only", "insufficient_coverage"] },
+      title: { type: "string" },
+      rationale: { type: "string" },
+      skillName: { type: "string" },
+      description: { type: "string" },
+      triggerExamples: { type: "array", items: { type: "string" } },
+      workflow: { type: "array", items: { type: "string" } },
+      boundaries: { type: "array", items: { type: "string" } },
+      sourceNotes: { type: "array", items: { type: "string" } }
+    },
+    required: ["verdict", "title", "rationale", "skillName", "description", "triggerExamples", "workflow", "boundaries", "sourceNotes"]
+  }
+} as const;
+
 export class CompanionAutoplayService {
   constructor(
     private readonly readingService: ReadingService,
@@ -50,6 +106,7 @@ export class CompanionAutoplayService {
   ) {}
 
   async generateReadingArtifact(
+    sessionId: string,
     kind: "diary" | "memory" | "skill_forge",
     prompt: string
   ): Promise<string | null> {
@@ -58,11 +115,35 @@ export class CompanionAutoplayService {
       memory: "请只返回能直接 JSON.parse 的长期阅读记忆 JSON，不要 Markdown 围栏或解释。",
       skill_forge: "请只返回能直接 JSON.parse 的 P3 评估 JSON，不要 Markdown 围栏或解释。"
     } as const;
+    let groundedPrompt = prompt;
+    if (kind === "diary") {
+      try {
+        const { session } = await this.readingService.getSessionBundle(sessionId);
+        if (session.type === "novel") {
+          const { sourceText, sourceManifest } =
+            await this.cloudSourceService.restoreNovelSource(sessionId);
+          const currentText = splitNovelTextForVersion(
+            sourceText,
+            sourceManifest.segmentationVersion
+          )[session.userCurrentPosition.index - 1];
+          if (currentText) {
+            groundedPrompt = `${prompt}\n\n当前阅读正文（只据此写，不补剧情）：\n${currentText}`;
+          }
+        }
+      } catch {
+        // Existing diary material is still sufficient when the source is unavailable.
+      }
+    }
     return this.generator.generate({
       systemPrompt: [DADDY_SYSTEM_PROMPT, instructions[kind]].join("\n"),
-      prompt,
+      prompt: groundedPrompt,
       maxTokens: kind === "diary" ? 900 : kind === "memory" ? 1_400 : 1_800,
-      temperature: kind === "diary" ? 0.72 : kind === "memory" ? 0.25 : 0.15
+      temperature: kind === "diary" ? 0.72 : kind === "memory" ? 0.25 : 0.15,
+      ...(kind === "memory"
+        ? { responseFormat: MEMORY_RESPONSE_FORMAT }
+        : kind === "skill_forge"
+          ? { responseFormat: SKILL_FORGE_RESPONSE_FORMAT }
+          : {})
     });
   }
 
