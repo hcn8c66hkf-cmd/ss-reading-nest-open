@@ -13,13 +13,12 @@ export class WorkersAiCompanionGenerator implements CompanionTextGenerator {
     maxTokens: number;
     temperature: number;
   }): Promise<string | null> {
-    const result = await this.ai.run("@cf/zai-org/glm-4.7-flash", {
+    const result = await this.ai.run("@cf/meta/llama-3.1-8b-instruct-fast", {
       messages: [
         { role: "system", content: input.systemPrompt },
         { role: "user", content: input.prompt }
       ],
-      max_completion_tokens: input.maxTokens,
-      reasoning_effort: "low",
+      max_tokens: input.maxTokens,
       temperature: input.temperature
     });
     return extractWorkersAiText(result);
