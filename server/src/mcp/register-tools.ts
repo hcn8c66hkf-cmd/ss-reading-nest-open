@@ -921,6 +921,46 @@ export function registerReadingTools(
     companionAutoplayService?: CompanionAutoplayService;
   } = {}
 ) {
+  const tryCompleteParagraph = async (sessionId: string, positionIndex: number) => {
+    if (!options.companionAutoplayService) return undefined;
+    try {
+      return await options.companionAutoplayService.completeParagraph(
+        sessionId,
+        positionIndex
+      );
+    } catch (error) {
+      console.error("Companion paragraph autoplay failed", error);
+      return undefined;
+    }
+  };
+
+  const tryCompleteAnnotation = async (
+    sessionId: string,
+    annotation: ReadingAnnotation,
+    author: string
+  ) => {
+    if (author !== "user" || !options.companionAutoplayService) {
+      return { annotation, companionAutoplay: undefined };
+    }
+    try {
+      const companionAutoplay =
+        await options.companionAutoplayService.completeAnnotation(
+          sessionId,
+          annotation.id
+        );
+      return {
+        annotation:
+          companionAutoplay.kind === "annotation"
+            ? companionAutoplay.annotation ?? annotation
+            : annotation,
+        companionAutoplay
+      };
+    } catch (error) {
+      console.error("Companion annotation autoplay failed", error);
+      return { annotation, companionAutoplay: undefined };
+    }
+  };
+
   const openReadingNest = async () => {
     await service.reconcilePendingWork?.();
     const sessions = await service.listAllSessions();
@@ -1213,15 +1253,38 @@ export function registerReadingTools(
     "update_reading_position",
     TOOL_CONFIGS.update_reading_position,
     async ({ sessionId, userCurrentPosition }) => {
-      const session = await service.updateUserPosition(sessionId, userCurrentPosition);
+      const updatedSession = await service.updateUserPosition(sessionId, userCurrentPosition);
+      const companionAutoplay = userCurrentPosition.kind === "paragraph"
+        ? await tryCompleteParagraph(sessionId, userCurrentPosition.index)
+        : undefined;
+      const pendingAnnotation = updatedSession.pendingAnnotationReplies?.[0];
+      let annotationAutoplay;
+      if (pendingAnnotation && options.companionAutoplayService) {
+        try {
+          annotationAutoplay =
+            await options.companionAutoplayService.completeAnnotation(
+              sessionId,
+              pendingAnnotation.annotationId
+            );
+        } catch (error) {
+          console.error("Pending annotation autoplay failed", error);
+        }
+      }
+      const session = companionAutoplay || annotationAutoplay
+        ? (await service.getSessionBundle(sessionId)).session
+        : updatedSession;
       return toolResult(
         {
           sessionId,
           userCurrentPosition: session.userCurrentPosition,
           ...summarizePendingWork(session),
+          companionAutoplay,
+          annotationAutoplay,
           updatedAt: session.updatedAt
         },
-        `用户进度已更新到${userCurrentPosition.label}。`
+        companionAutoplay?.completed
+          ? `用户进度已更新到${userCurrentPosition.label}，Daddy短评已写回。`
+          : `用户进度已更新到${userCurrentPosition.label}。`
       );
     }
   );
@@ -1658,9 +1721,14 @@ export function registerReadingTools(
     "create_annotation",
     TOOL_CONFIGS.create_annotation,
     async (input) => {
-      const annotation = await service.createAnnotation(input);
+      const created = await service.createAnnotation(input);
+      const { annotation, companionAutoplay } = await tryCompleteAnnotation(
+        input.sessionId,
+        created,
+        input.author
+      );
       return toolResult(
-        { saved: true, annotation },
+        { saved: true, annotation, companionAutoplay },
         input.author === "assistant"
           ? "Daddy的划线批注已写进这本书。"
           : "你的划线批注已写进这本书。"
@@ -1673,8 +1741,18 @@ export function registerReadingTools(
     "create_annotation_v23",
     TOOL_CONFIGS.create_annotation_v23,
     async (input) => {
-      const annotation = await service.createAnnotation(input);
-      return toolResult({ saved: true, annotation }, "你的划线批注已写进这本书。");
+      const created = await service.createAnnotation(input);
+      const { annotation, companionAutoplay } = await tryCompleteAnnotation(
+        input.sessionId,
+        created,
+        input.author
+      );
+      return toolResult(
+        { saved: true, annotation, companionAutoplay },
+        companionAutoplay?.completed
+          ? "你的划线批注和Daddy回复都已写进这本书。"
+          : "你的划线批注已写进这本书。"
+      );
     }
   );
 
@@ -1682,9 +1760,14 @@ export function registerReadingTools(
     "reply_to_annotation",
     TOOL_CONFIGS.reply_to_annotation,
     async (input) => {
-      const annotation = await service.replyToAnnotation(input);
+      const replied = await service.replyToAnnotation(input);
+      const { annotation, companionAutoplay } = await tryCompleteAnnotation(
+        input.sessionId,
+        replied,
+        input.author
+      );
       return toolResult(
-        { saved: true, annotation },
+        { saved: true, annotation, companionAutoplay },
         input.author === "assistant" ? "Daddy已经回复这条批注。" : "你的回复已经保存。"
       );
     }
@@ -1695,8 +1778,18 @@ export function registerReadingTools(
     "reply_to_annotation_v23",
     TOOL_CONFIGS.reply_to_annotation_v23,
     async (input) => {
-      const annotation = await service.replyToAnnotation(input);
-      return toolResult({ saved: true, annotation }, "你的回复已经保存。");
+      const replied = await service.replyToAnnotation(input);
+      const { annotation, companionAutoplay } = await tryCompleteAnnotation(
+        input.sessionId,
+        replied,
+        input.author
+      );
+      return toolResult(
+        { saved: true, annotation, companionAutoplay },
+        companionAutoplay?.completed
+          ? "你的回复和Daddy的接话都已保存。"
+          : "你的回复已经保存。"
+      );
     }
   );
 

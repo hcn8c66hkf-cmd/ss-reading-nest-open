@@ -1,0 +1,4 @@
+release=v46-hotfix1
+approved_at=2026-09-07
+scope=generate-inside-established-write-tools
+base=4c601e1
