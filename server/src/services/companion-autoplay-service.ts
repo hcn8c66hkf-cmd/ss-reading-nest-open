@@ -111,7 +111,11 @@ export class CompanionAutoplayService {
     prompt: string
   ): Promise<string | null> {
     const instructions = {
-      diary: "请直接写成温暖、具体、可复制的小窝日记正文，不要解释任务。",
+      diary: [
+        "请直接写成 Daddy 和小安一起追文后留下的私人共读随笔，不要解释任务。",
+        "别写成起承转合完整、总结中心思想的小学生作文，也不要用‘今天我们读到’‘让我感受到’这类套话。",
+        "从一两个真正有感觉的细节切入，保留吐槽、偏爱、犹疑和口语节奏；可以短句、有留白，别复述整段剧情。"
+      ].join("\n"),
       memory: "请只返回能直接 JSON.parse 的长期阅读记忆 JSON，不要 Markdown 围栏或解释。",
       skill_forge: "请只返回能直接 JSON.parse 的 P3 评估 JSON，不要 Markdown 围栏或解释。"
     } as const;
@@ -134,7 +138,7 @@ export class CompanionAutoplayService {
         // Existing diary material is still sufficient when the source is unavailable.
       }
     }
-    return this.generator.generate({
+    const generated = await this.generator.generate({
       systemPrompt: [DADDY_SYSTEM_PROMPT, instructions[kind]].join("\n"),
       prompt: groundedPrompt,
       maxTokens: kind === "diary" ? 900 : kind === "memory" ? 1_400 : 1_800,
@@ -145,6 +149,9 @@ export class CompanionAutoplayService {
           ? { responseFormat: SKILL_FORGE_RESPONSE_FORMAT }
           : {})
     });
+    return kind === "skill_forge"
+      ? normalizeSkillForgeArtifact(generated)
+      : generated;
   }
 
   async completeParagraph(
@@ -282,6 +289,70 @@ export class CompanionAutoplayService {
     });
     return { completed: true, kind: "annotation", annotation: saved };
   }
+}
+
+function normalizeSkillForgeArtifact(raw: string | null): string | null {
+  if (!raw) return null;
+  try {
+    const start = raw.indexOf("{");
+    const end = raw.lastIndexOf("}");
+    if (start < 0 || end <= start) return null;
+    const parsed = JSON.parse(raw.slice(start, end + 1)) as Record<string, unknown>;
+    const verdict = normalizeSkillVerdict(parsed.verdict);
+    if (!verdict) return null;
+
+    const list = (value: unknown) => Array.isArray(value)
+      ? value.filter((item): item is string => typeof item === "string" && Boolean(item.trim()))
+          .map((item) => item.trim())
+      : [];
+    const text = (value: unknown) => typeof value === "string" ? value.trim() : "";
+    const workflow = list(parsed.workflow);
+    const skillName = text(parsed.skillName)
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+    const description = text(parsed.description);
+    const completeSkill = verdict === "forge_skill" && skillName && description && workflow.length;
+    const safeVerdict = verdict === "forge_skill" && !completeSkill ? "knowledge_only" : verdict;
+    const defaults = safeVerdict === "knowledge_only"
+      ? {
+          title: "更适合留作阅读印象",
+          rationale: "这部分有值得记住的内容，但还没有形成可反复调用的稳定方法。"
+        }
+      : safeVerdict === "insufficient_coverage"
+        ? {
+            title: "目前材料还不够",
+            rationale: "当前已读内容还不足以判断是否存在可复用的方法，继续读后再评估更可靠。"
+          }
+        : {
+            title: "值得炼成可复用方法",
+            rationale: "当前材料已经呈现出可迁移到类似任务中的稳定步骤。"
+          };
+
+    return JSON.stringify({
+      verdict: safeVerdict,
+      title: text(parsed.title) || defaults.title,
+      rationale: text(parsed.rationale) || defaults.rationale,
+      skillName: safeVerdict === "forge_skill" ? skillName : "",
+      description: safeVerdict === "forge_skill" ? description : "",
+      triggerExamples: safeVerdict === "forge_skill" ? list(parsed.triggerExamples) : [],
+      workflow: safeVerdict === "forge_skill" ? workflow : [],
+      boundaries: list(parsed.boundaries),
+      sourceNotes: list(parsed.sourceNotes)
+    });
+  } catch {
+    return null;
+  }
+}
+
+function normalizeSkillVerdict(value: unknown) {
+  if (value === "forge_skill" || value === "knowledge_only" || value === "insufficient_coverage") {
+    return value;
+  }
+  if (value === "值得炼成 Skill" || value === "值得炼成Skill") return "forge_skill";
+  if (value === "更适合知识卡" || value === "知识卡") return "knowledge_only";
+  if (value === "材料还不够" || value === "材料不足") return "insufficient_coverage";
+  return null;
 }
 
 export function normalizeGeneratedText(

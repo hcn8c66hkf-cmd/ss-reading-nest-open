@@ -63,15 +63,16 @@ async function setup() {
 describe("CompanionAutoplayService", () => {
   it("generates diary, memory, and P3 artifacts through the server model", async () => {
     const { reading, source, session } = await setup();
-    const generate = vi.fn().mockResolvedValue('{"ok":true}');
+    const p3Result = '{"verdict":"knowledge_only","title":"只留知识","rationale":"不是工作流","skillName":"","description":"","triggerExamples":[],"workflow":[],"boundaries":[],"sourceNotes":[]}';
+    const generate = vi.fn().mockResolvedValue(p3Result);
     const autoplay = new CompanionAutoplayService(reading, source, { generate });
 
     await expect(autoplay.generateReadingArtifact(session.id, "diary", "日记素材"))
-      .resolves.toBe('{"ok":true}');
+      .resolves.toBe(p3Result);
     await expect(autoplay.generateReadingArtifact(session.id, "memory", "记忆素材"))
-      .resolves.toBe('{"ok":true}');
+      .resolves.toBe(p3Result);
     await expect(autoplay.generateReadingArtifact(session.id, "skill_forge", "P3 素材"))
-      .resolves.toBe('{"ok":true}');
+      .resolves.toBe(p3Result);
 
     expect(generate).toHaveBeenNthCalledWith(1, expect.objectContaining({
       prompt: expect.stringContaining("日记素材"),
@@ -86,6 +87,39 @@ describe("CompanionAutoplayService", () => {
       prompt: "P3 素材",
       maxTokens: 1_800,
       responseFormat: expect.objectContaining({ type: "json_schema" })
+    }));
+  });
+
+  it("normalizes an incomplete P3 verdict into a complete safe result", async () => {
+    const { reading, source, session } = await setup();
+    const autoplay = new CompanionAutoplayService(reading, source, {
+      generate: vi.fn().mockResolvedValue('{"verdict":"材料还不够"}')
+    });
+
+    const generated = await autoplay.generateReadingArtifact(session.id, "skill_forge", "P3 素材");
+
+    expect(JSON.parse(generated!)).toEqual({
+      verdict: "insufficient_coverage",
+      title: "目前材料还不够",
+      rationale: "当前已读内容还不足以判断是否存在可复用的方法，继续读后再评估更可靠。",
+      skillName: "",
+      description: "",
+      triggerExamples: [],
+      workflow: [],
+      boundaries: [],
+      sourceNotes: []
+    });
+  });
+
+  it("uses a private, non-school-essay voice for diary generation", async () => {
+    const { reading, source, session } = await setup();
+    const generate = vi.fn().mockResolvedValue("随笔正文");
+    const autoplay = new CompanionAutoplayService(reading, source, { generate });
+
+    await autoplay.generateReadingArtifact(session.id, "diary", "日记素材");
+
+    expect(generate).toHaveBeenCalledWith(expect.objectContaining({
+      systemPrompt: expect.stringContaining("别写成起承转合完整、总结中心思想的小学生作文")
     }));
   });
 
