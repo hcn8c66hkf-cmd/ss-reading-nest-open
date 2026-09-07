@@ -9,6 +9,9 @@
   "secrets": {
     "required": ["MCP_PATH_TOKEN"]
   },
+  "ai": {
+    "binding": "AI"
+  },
   "d1_databases": [
     {
       "binding": "DB",

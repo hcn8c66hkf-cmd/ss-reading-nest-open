@@ -49,10 +49,11 @@ import type {
 } from "@ss/shared";
 import { ReadingService } from "../services/reading-service.js";
 import type { CloudSourceService } from "../services/cloud-source-service.js";
+import type { CompanionAutoplayService } from "../services/companion-autoplay-service.js";
 import { toolResult } from "./tool-result.js";
 
-export const READING_NEST_URI = "ui://ss-reading-nest/app-v45.html";
-export const READING_NEST_TOOL_NAME = "open_reading_nest_v45";
+export const READING_NEST_URI = "ui://ss-reading-nest/app-v46.html";
+export const READING_NEST_TOOL_NAME = "open_reading_nest_v46";
 
 const readLiveReadingContextInputSchema = z
   .object({
@@ -60,6 +61,23 @@ const readLiveReadingContextInputSchema = z
     positionIndex: z.number().int().min(1)
   })
   .strict();
+
+const completePendingCompanionWorkInputSchema = z
+  .object({
+    sessionId: z.string().min(1),
+    kind: z.enum(["paragraph", "annotation"]),
+    positionIndex: z.number().int().min(1).optional(),
+    annotationId: z.string().min(1).optional()
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (value.kind === "paragraph" && value.positionIndex === undefined) {
+      context.addIssue({ code: "custom", message: "positionIndex is required" });
+    }
+    if (value.kind === "annotation" && !value.annotationId) {
+      context.addIssue({ code: "custom", message: "annotationId is required" });
+    }
+  });
 
 const ANNOTATION_QUOTE_OPERATION_PREFIX = "annotation-v24:";
 const ANNOTATION_QUOTE_NOTE_PREFIX = "__ss_annotation_v24__:";
@@ -87,10 +105,24 @@ const mutation = {
 };
 
 export const TOOL_CONFIGS = {
-  open_reading_nest_v45: {
+  open_reading_nest_v46: {
     title: "打开 S×S 小窝共读",
     description:
-      "Use this primary v45 tool when the user wants to open the reading nest or continue recent reading. It restores the earliest durable paragraph or annotation backlog before the current page.",
+      "Use this primary v46 tool when the user wants to open the reading nest or continue recent reading. It restores durable pending work and supports server-side automatic completion.",
+    inputSchema: openReadingNestInputSchema,
+    annotations: readOnly,
+    _meta: {
+      ui: { resourceUri: READING_NEST_URI },
+      "ui/resourceUri": READING_NEST_URI,
+      "openai/outputTemplate": READING_NEST_URI,
+      "openai/toolInvocation/invoking": "正在点亮小窝…",
+      "openai/toolInvocation/invoked": "小窝已经准备好"
+    }
+  },
+  open_reading_nest_v45: {
+    title: "打开 S×S 小窝共读（v45 兼容入口）",
+    description:
+      "Legacy compatibility entry. Prefer open_reading_nest_v46 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -104,7 +136,7 @@ export const TOOL_CONFIGS = {
   open_reading_nest_v44: {
     title: "打开 S×S 小窝共读（v44 兼容入口）",
     description:
-      "Legacy compatibility entry. Prefer open_reading_nest_v45 whenever it is available.",
+      "Legacy compatibility entry. Prefer open_reading_nest_v46 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -118,7 +150,7 @@ export const TOOL_CONFIGS = {
   open_reading_nest_v43: {
     title: "打开 S×S 小窝共读（v43 兼容入口）",
     description:
-      "Legacy compatibility entry. Prefer open_reading_nest_v45 whenever it is available.",
+      "Legacy compatibility entry. Prefer open_reading_nest_v46 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -132,7 +164,7 @@ export const TOOL_CONFIGS = {
   open_reading_nest_v42: {
     title: "打开 S×S 小窝共读（v42 兼容入口）",
     description:
-      "Legacy compatibility entry. Prefer open_reading_nest_v45 whenever it is available.",
+      "Legacy compatibility entry. Prefer open_reading_nest_v46 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -505,6 +537,14 @@ export const TOOL_CONFIGS = {
     inputSchema: clearCompanionCommentsInputSchema,
     annotations: { ...mutation, idempotentHint: true }
   },
+  complete_pending_companion_work_v46: {
+    title: "页面自动完成陪读待办",
+    description:
+      "App-only v46 bridge that generates and persists one pending paragraph comment or annotation reply on the server.",
+    inputSchema: completePendingCompanionWorkInputSchema,
+    annotations: { ...mutation, idempotentHint: true },
+    _meta: { ui: { visibility: ["app"] } }
+  },
   create_annotation: {
     title: "创建共读划线批注",
     description:
@@ -876,7 +916,10 @@ export function registerReadingTools(
   server: McpServer,
   service: ReadingService,
   cloudSourceService?: CloudSourceService,
-  options: { sourceEndpointBase?: string } = {}
+  options: {
+    sourceEndpointBase?: string;
+    companionAutoplayService?: CompanionAutoplayService;
+  } = {}
 ) {
   const openReadingNest = async () => {
     await service.reconcilePendingWork?.();
@@ -1011,6 +1054,12 @@ export function registerReadingTools(
   registerAppTool(
     server,
     READING_NEST_TOOL_NAME,
+    TOOL_CONFIGS.open_reading_nest_v46,
+    openReadingNest
+  );
+  registerAppTool(
+    server,
+    "open_reading_nest_v45",
     TOOL_CONFIGS.open_reading_nest_v45,
     openReadingNest
   );
@@ -1207,6 +1256,38 @@ export function registerReadingTools(
           updatedAt: session.updatedAt
         },
         enabled ? "实时陪读模式已开启。" : "实时陪读模式已关闭。"
+      );
+    }
+  );
+
+  registerAppTool(
+    server,
+    "complete_pending_companion_work_v46",
+    TOOL_CONFIGS.complete_pending_companion_work_v46,
+    async ({ sessionId, kind, positionIndex, annotationId }) => {
+      if (!options.companionAutoplayService) {
+        return toolResult(
+          { completed: false, kind, reason: "server_generation_unavailable" as const },
+          "服务器自动陪读暂不可用，页面会继续使用宿主回退。"
+        );
+      }
+      const result = kind === "paragraph"
+        ? await options.companionAutoplayService.completeParagraph(
+            sessionId,
+            positionIndex!
+          )
+        : await options.companionAutoplayService.completeAnnotation(
+            sessionId,
+            annotationId!
+          );
+      const { session } = await service.getSessionBundle(sessionId);
+      return toolResult(
+        { ...result, liveReadingState: summarizePendingWork(session) },
+        result.completed
+          ? kind === "paragraph"
+            ? "Daddy短评已由服务器直接写回小窝。"
+            : "Daddy回复已由服务器直接接在书边。"
+          : "这项陪读待办仍保留在服务器。"
       );
     }
   );

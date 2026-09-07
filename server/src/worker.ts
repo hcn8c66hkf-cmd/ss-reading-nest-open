@@ -4,6 +4,10 @@ import { createMcpProbeResponse, normalizeMcpRequest } from "./mcp/request-compa
 import { createMcpServerFromRepository } from "./mcp/server-factory.js";
 import { D1ReadingRepository } from "./repositories/d1-reading-repository.js";
 import { CloudSourceService } from "./services/cloud-source-service.js";
+import {
+  WorkersAiCompanionGenerator,
+  type WorkersAiBinding
+} from "./services/workers-ai-companion-generator.js";
 import { handleSourceRoute } from "./source-routes.js";
 import { D1SourceObjectStorage } from "./storage/d1-source-object-storage.js";
 import { getWorkerRoute } from "./worker-router.js";
@@ -33,7 +37,10 @@ export default {
       }
       const server = createMcpServerFromRepository(repository, widgetHtml, sourceService, {
         sourceEndpointBase: `${url.origin}/source/${env.MCP_PATH_TOKEN}`,
-        workerOrigin: url.origin
+        workerOrigin: url.origin,
+        companionTextGenerator: new WorkersAiCompanionGenerator(
+          (env as Env & { AI: WorkersAiBinding }).AI
+        )
       });
       const probeResponse = createMcpProbeResponse(request);
       if (probeResponse) return probeResponse;
