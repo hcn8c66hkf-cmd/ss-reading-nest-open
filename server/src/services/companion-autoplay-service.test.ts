@@ -76,7 +76,7 @@ describe("CompanionAutoplayService", () => {
 
     expect(generate).toHaveBeenNthCalledWith(1, expect.objectContaining({
       prompt: expect.stringContaining("日记素材"),
-      maxTokens: 900
+      maxTokens: 420
     }));
     expect(generate).toHaveBeenNthCalledWith(2, expect.objectContaining({
       prompt: "记忆素材",
@@ -111,6 +111,21 @@ describe("CompanionAutoplayService", () => {
     });
   });
 
+  it("returns a complete conservative P3 verdict even when generation fails", async () => {
+    const { reading, source, session } = await setup();
+    const autoplay = new CompanionAutoplayService(reading, source, {
+      generate: vi.fn().mockRejectedValue(new Error("model unavailable"))
+    });
+
+    const generated = await autoplay.generateReadingArtifact(session.id, "skill_forge", "P3 素材");
+
+    expect(JSON.parse(generated)).toMatchObject({
+      verdict: "insufficient_coverage",
+      title: "这次先不硬炼",
+      workflow: []
+    });
+  });
+
   it("uses a private, non-school-essay voice for diary generation", async () => {
     const { reading, source, session } = await setup();
     const generate = vi.fn().mockResolvedValue("随笔正文");
@@ -119,12 +134,37 @@ describe("CompanionAutoplayService", () => {
     await autoplay.generateReadingArtifact(session.id, "diary", "日记素材");
 
     expect(generate).toHaveBeenCalledWith(expect.objectContaining({
-      systemPrompt: expect.stringContaining("别写成起承转合完整、总结中心思想的小学生作文")
+      systemPrompt: expect.stringContaining("剧情交代最多一句")
+    }));
+  });
+
+  it("uses chatty reaction prompts for paragraph comments", async () => {
+    const { reading, source, session } = await setup();
+    await reading.updateSessionPreferences(session.id, {
+      readingCommentMode: "cp_talk",
+      commentLength: "normal"
+    });
+    await reading.updateUserPosition(session.id, {
+      kind: "paragraph", index: 2, total: 3, label: "第 2 段"
+    });
+    await reading.setLiveReadingMode(session.id, true);
+    const generate = vi.fn().mockResolvedValue("笑死，这一下也太损了。");
+    const autoplay = new CompanionAutoplayService(reading, source, { generate });
+
+    await autoplay.completeParagraph(session.id, 2);
+
+    expect(generate).toHaveBeenCalledWith(expect.objectContaining({
+      systemPrompt: expect.stringContaining("嗑一下"),
+      prompt: expect.stringContaining("最多 220 字")
     }));
   });
 
   it("generates and persists a pending paragraph without a ChatGPT follow-up", async () => {
     const { reading, source, session } = await setup();
+    await reading.updateSessionPreferences(session.id, {
+      readingCommentMode: "reaction_only",
+      commentLength: "short"
+    });
     await reading.updateUserPosition(session.id, {
       kind: "paragraph",
       index: 2,
@@ -144,7 +184,12 @@ describe("CompanionAutoplayService", () => {
     expect(result).toMatchObject({
       completed: true,
       kind: "paragraph",
-      comment: { text: "这段的笑点来得太准了。", position: { index: 2 } }
+      comment: {
+        text: "这段的笑点来得太准了。",
+        position: { index: 2 },
+        mode: "reaction_only",
+        length: "short"
+      }
     });
     expect(generate).toHaveBeenCalledTimes(1);
     expect((await reading.getSessionBundle(session.id)).session)

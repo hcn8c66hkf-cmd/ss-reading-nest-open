@@ -1,7 +1,9 @@
 import {
   splitNovelTextForVersion,
+  type CommentLength,
   type CompanionComment,
   type ReadingAnnotation,
+  type ReadingCommentMode,
   type ReadingPosition
 } from "@ss/shared";
 import type { CloudSourceService } from "./cloud-source-service.js";
@@ -42,6 +44,30 @@ const DADDY_SYSTEM_PROMPT = [
   "只谈输入里给出的文字，不虚构后续，不解释任务，不提模型、系统、保存或写回。",
   "不要使用😂。"
 ].join("\n");
+
+const READING_MODE_INSTRUCTIONS: Record<ReadingCommentMode, string> = {
+  light_chat: "轻松聊聊：像坐在小安旁边随口接两句，亲近、松弛，可以偏心和开玩笑，不写书评。",
+  reaction_only: "吐槽一下：只给最直接的第一反应，可以笑、骂、震惊或阴阳两句；别冷静分析人物。",
+  cp_talk: "嗑一下：盯住人物之间的暧昧、拉扯和糖点，兴奋一点；没有糖就直说，别硬嗑。",
+  plot_guess: "猜后续：顺着眼前伏笔大胆猜一两步，明确是猜测，不把猜测冒充后文或剧透。",
+  deep_analysis: "认真分析：具体分析这一段的动机、结构或伏笔，但仍像和小安聊天，不用论文腔和空泛套话。",
+  diary_summary: "写读书日记：记住小安和Daddy此刻的反应与气氛，剧情最多带过一句，不做章节复述。"
+};
+
+function reactionSystemPrompt(mode: ReadingCommentMode) {
+  return [
+    DADDY_SYSTEM_PROMPT,
+    "你现在是在和小安追文、接她的话，不是在完成阅读理解。",
+    READING_MODE_INSTRUCTIONS[mode],
+    "用日常口语和短句；除非选了认真分析，否则不要用‘这体现了’‘这说明’‘可以看出’一类分析腔。"
+  ].join("\n");
+}
+
+function commentBudget(length: CommentLength) {
+  if (length === "short") return { sentences: "1–2", characters: 100, tokens: 160 };
+  if (length === "long") return { sentences: "3–6", characters: 420, tokens: 560 };
+  return { sentences: "2–4", characters: 220, tokens: 320 };
+}
 
 const MEMORY_RESPONSE_FORMAT = {
   type: "json_schema",
@@ -112,9 +138,11 @@ export class CompanionAutoplayService {
   ): Promise<string | null> {
     const instructions = {
       diary: [
-        "请直接写成 Daddy 和小安一起追文后留下的私人共读随笔，不要解释任务。",
-        "别写成起承转合完整、总结中心思想的小学生作文，也不要用‘今天我们读到’‘让我感受到’这类套话。",
-        "从一两个真正有感觉的细节切入，保留吐槽、偏爱、犹疑和口语节奏；可以短句、有留白，别复述整段剧情。"
+        "请写 Daddy 和小安今晚一起追文留下的私人日记片段，不要解释任务。",
+        "硬规则：剧情交代最多一句；其余只写小安留下的原话或反应、Daddy当时想接的话，以及两个人读到这里的气氛。",
+        "没有足够的共同反应就宁愿写短，绝对不要拿剧情转述凑字数。",
+        "不要写读后感、书评、章节总结或起承转合作文；禁用‘今天我们读到’‘让我感受到’‘这段情节’‘作者通过’等套话。",
+        "以 Daddy 的第一人称写给小安，像睡前翻到这页随手记两笔：口语、偏心、有停顿，约 120–260 字。"
       ].join("\n"),
       memory: "请只返回能直接 JSON.parse 的长期阅读记忆 JSON，不要 Markdown 围栏或解释。",
       skill_forge: "请只返回能直接 JSON.parse 的 P3 评估 JSON，不要 Markdown 围栏或解释。"
@@ -138,17 +166,22 @@ export class CompanionAutoplayService {
         // Existing diary material is still sufficient when the source is unavailable.
       }
     }
-    const generated = await this.generator.generate({
-      systemPrompt: [DADDY_SYSTEM_PROMPT, instructions[kind]].join("\n"),
-      prompt: groundedPrompt,
-      maxTokens: kind === "diary" ? 900 : kind === "memory" ? 1_400 : 1_800,
-      temperature: kind === "diary" ? 0.72 : kind === "memory" ? 0.25 : 0.15,
-      ...(kind === "memory"
-        ? { responseFormat: MEMORY_RESPONSE_FORMAT }
-        : kind === "skill_forge"
-          ? { responseFormat: SKILL_FORGE_RESPONSE_FORMAT }
-          : {})
-    });
+    let generated: string | null = null;
+    try {
+      generated = await this.generator.generate({
+        systemPrompt: [DADDY_SYSTEM_PROMPT, instructions[kind]].join("\n"),
+        prompt: groundedPrompt,
+        maxTokens: kind === "diary" ? 420 : kind === "memory" ? 1_400 : 1_800,
+        temperature: kind === "diary" ? 0.88 : kind === "memory" ? 0.25 : 0.15,
+        ...(kind === "memory"
+          ? { responseFormat: MEMORY_RESPONSE_FORMAT }
+          : kind === "skill_forge"
+            ? { responseFormat: SKILL_FORGE_RESPONSE_FORMAT }
+            : {})
+      });
+    } catch (error) {
+      if (kind !== "skill_forge") throw error;
+    }
     return kind === "skill_forge"
       ? normalizeSkillForgeArtifact(generated)
       : generated;
@@ -192,16 +225,19 @@ export class CompanionAutoplayService {
     if (!currentText) {
       return { completed: false, kind: "paragraph", reason: "not_found" };
     }
+    const mode = session.sessionPreferences.readingCommentMode;
+    const length = session.sessionPreferences.commentLength;
+    const budget = commentBudget(length);
     const text = normalizeGeneratedText(await this.generator.generate({
-      systemPrompt: DADDY_SYSTEM_PROMPT,
+      systemPrompt: reactionSystemPrompt(mode),
       prompt: [
         `《${session.title}》第 ${positionIndex} 段：`,
         currentText,
-        "请写 1–3 句、最多 200 字的中文即时短评。直接给短评正文。"
+        `按“${READING_MODE_INSTRUCTIONS[mode]}”回应 ${budget.sentences} 句、最多 ${budget.characters} 字。直接给正文。`
       ].join("\n\n"),
-      maxTokens: 180,
+      maxTokens: budget.tokens,
       temperature: 0.82
-    }), 200);
+    }), budget.characters);
     if (!text) {
       return { completed: false, kind: "paragraph", reason: "generation_failed" };
     }
@@ -215,8 +251,8 @@ export class CompanionAutoplayService {
     const comment = await this.readingService.publishCompanionComment({
       sessionId,
       position,
-      mode: "reaction_only",
-      length: "short",
+      mode,
+      length,
       text,
       source: "live_reading",
       operationId: `live-server-v46:${sessionId}:paragraph:${positionIndex}`
@@ -229,7 +265,10 @@ export class CompanionAutoplayService {
     annotationId: string
   ): Promise<CompanionAutoplayResult> {
     await this.readingService.reconcilePendingWork(sessionId);
-    const { annotations } = await this.readingService.listAnnotations({ sessionId });
+    const [{ session }, { annotations }] = await Promise.all([
+      this.readingService.getSessionBundle(sessionId),
+      this.readingService.listAnnotations({ sessionId })
+    ]);
     const annotation = annotations.find((item) => item.id === annotationId);
     if (!annotation) {
       return { completed: false, kind: "annotation", reason: "not_found" };
@@ -259,18 +298,20 @@ export class CompanionAutoplayService {
     const thread = annotation.messages
       .map((message) => `${message.author === "assistant" ? "Daddy" : "小安"}：${message.text}`)
       .join("\n");
+    const mode = session.sessionPreferences.readingCommentMode;
+    const budget = commentBudget(session.sessionPreferences.commentLength);
     const text = normalizeGeneratedText(await this.generator.generate({
-      systemPrompt: DADDY_SYSTEM_PROMPT,
+      systemPrompt: reactionSystemPrompt(mode),
       prompt: [
         `《共读》第 ${annotation.position.index} 段`,
         currentText ? `本段正文：\n${currentText}` : "",
         `小安划线：${annotation.anchor.selectedText}`,
         `当前书边对话：\n${thread}`,
-        "请自然接着小安最后一句回复 1–3 句、最多 260 字。直接给回复正文。"
+        `请贴着小安最后一句直接接话，并带出“${READING_MODE_INSTRUCTIONS[mode]}”的感觉。回 ${budget.sentences} 句、最多 ${budget.characters} 字。直接给正文。`
       ].filter(Boolean).join("\n\n"),
-      maxTokens: 220,
+      maxTokens: budget.tokens,
       temperature: 0.8
-    }), 260);
+    }), budget.characters);
     if (!text) {
       return {
         completed: false,
@@ -291,15 +332,26 @@ export class CompanionAutoplayService {
   }
 }
 
-function normalizeSkillForgeArtifact(raw: string | null): string | null {
-  if (!raw) return null;
+function normalizeSkillForgeArtifact(raw: string | null): string {
+  const fallback = () => JSON.stringify({
+    verdict: "insufficient_coverage",
+    title: "这次先不硬炼",
+    rationale: "这次没有拿到足够完整、可核验的判定，先保守记为材料不足；继续读后可以重新评估。",
+    skillName: "",
+    description: "",
+    triggerExamples: [],
+    workflow: [],
+    boundaries: [],
+    sourceNotes: []
+  });
+  if (!raw) return fallback();
   try {
     const start = raw.indexOf("{");
     const end = raw.lastIndexOf("}");
-    if (start < 0 || end <= start) return null;
+    if (start < 0 || end <= start) return fallback();
     const parsed = JSON.parse(raw.slice(start, end + 1)) as Record<string, unknown>;
     const verdict = normalizeSkillVerdict(parsed.verdict);
-    if (!verdict) return null;
+    if (!verdict) return fallback();
 
     const list = (value: unknown) => Array.isArray(value)
       ? value.filter((item): item is string => typeof item === "string" && Boolean(item.trim()))
@@ -341,7 +393,7 @@ function normalizeSkillForgeArtifact(raw: string | null): string | null {
       sourceNotes: list(parsed.sourceNotes)
     });
   } catch {
-    return null;
+    return fallback();
   }
 }
 
