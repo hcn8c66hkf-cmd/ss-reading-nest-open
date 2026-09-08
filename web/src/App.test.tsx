@@ -1220,7 +1220,8 @@ describe("App", () => {
         })
       );
     });
-    expect(await screen.findByText("这句吐槽值得贴到小窝。")).toBeInTheDocument();
+    expect(await screen.findByRole("article", { name: "Daddy本段吐槽" }))
+      .toHaveTextContent("这句吐槽值得贴到小窝。");
     expect(screen.getByRole("button", { name: "退出全屏" })).toBeInTheDocument();
     expect(screen.getByLabelText("短评内容")).toHaveValue("");
     expect(screen.getByRole("button", { name: "收入Daddy短评" })).toBeInTheDocument();
@@ -1416,7 +1417,8 @@ describe("App", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "进入阅读小窝" }));
 
-    expect(await screen.findByText("这句也太会了。")).toBeInTheDocument();
+    expect(await screen.findByRole("article", { name: "Daddy本段吐槽" }))
+      .toHaveTextContent("这句也太会了。");
     expect(screen.queryByText("别的书的短评")).not.toBeInTheDocument();
     expect(callTool).toHaveBeenCalledWith("list_companion_comments", {
       sessionId: "session-dock",
@@ -2494,7 +2496,8 @@ describe("App", () => {
       await screen.findByRole("button", { name: "继续阅读《A 书》" })
     );
     expect(await screen.findByText("你在：第 2 段")).toBeInTheDocument();
-    expect(await screen.findByText("A 书短评")).toBeInTheDocument();
+    expect(await screen.findByRole("article", { name: "Daddy本段吐槽" }))
+      .toHaveTextContent("A 书短评");
     expect(screen.queryByText("B 书短评")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "更多操作" }));
     expect(screen.getByRole("button", { name: "轻松聊聊" })).toHaveAttribute(
@@ -2508,7 +2511,8 @@ describe("App", () => {
       await screen.findByRole("button", { name: "继续阅读《B 书》" })
     );
     expect(await screen.findByText("你在：第 3 段")).toBeInTheDocument();
-    expect(await screen.findByText("B 书短评")).toBeInTheDocument();
+    expect(await screen.findByRole("article", { name: "Daddy本段吐槽" }))
+      .toHaveTextContent("B 书短评");
     expect(screen.queryByText("A 书短评")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "更多操作" }));
     expect(screen.getByRole("button", { name: "嗑一下" })).toHaveAttribute(
