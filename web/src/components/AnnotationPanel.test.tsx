@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import type { ReadingAnnotation } from "@ss/shared";
+import type { CompanionComment, ReadingAnnotation } from "@ss/shared";
 import { AnnotationPanel } from "./AnnotationPanel.js";
 
 const annotation: ReadingAnnotation = {
@@ -28,6 +28,34 @@ const annotation: ReadingAnnotation = {
 };
 
 describe("AnnotationPanel", () => {
+  it("shows the current paragraph companion comment beside annotations", () => {
+    const companionComment: CompanionComment = {
+      id: "comment-45",
+      sessionId: "session-1",
+      position: { kind: "paragraph", index: 45, label: "第 45 段" },
+      mode: "reaction_only",
+      length: "short",
+      text: "这段也太会藏东西了吧。",
+      source: "live_reading",
+      operationId: "live-45",
+      inRecent: true,
+      inHistory: false,
+      createdAt: "2026-09-09T00:00:00.000Z"
+    };
+    render(
+      <AnnotationPanel
+        annotations={[]}
+        loading={false}
+        saving={false}
+        companionComment={companionComment}
+        onReply={vi.fn()}
+      />
+    );
+
+    expect(screen.getByRole("article", { name: "Daddy本段吐槽" }))
+      .toHaveTextContent("这段也太会藏东西了吧。");
+  });
+
   it("keeps user and Daddy replies in the thread", () => {
     const onReply = vi.fn();
     render(

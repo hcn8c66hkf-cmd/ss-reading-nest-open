@@ -1,11 +1,16 @@
 import { useState } from "react";
-import type { AnnotationFavorite, ReadingAnnotation } from "@ss/shared";
+import type {
+  AnnotationFavorite,
+  CompanionComment,
+  ReadingAnnotation
+} from "@ss/shared";
 
 export function AnnotationPanel(props: {
   annotations: ReadingAnnotation[];
   loading: boolean;
   error?: string;
   saving: boolean;
+  companionComment?: CompanionComment;
   pendingDaddyIds?: ReadonlySet<string>;
   favorites?: AnnotationFavorite[];
   onReply: (annotationId: string, text: string) => void;
@@ -28,6 +33,16 @@ export function AnnotationPanel(props: {
       </header>
 
       <p className="annotation-hint">长按选中文字，选区旁边就能直接划线或评论。</p>
+
+      {props.companionComment ? (
+        <article className="annotation-companion-comment" aria-label="Daddy本段吐槽">
+          <div>
+            <strong>Daddy本段吐槽</strong>
+            <span>{props.companionComment.position.label}</span>
+          </div>
+          <p>{props.companionComment.text}</p>
+        </article>
+      ) : null}
 
       {props.loading ? <p className="annotation-empty">正在翻开书边批注……</p> : null}
       {!props.loading && props.error ? <p className="annotation-empty">{props.error}</p> : null}

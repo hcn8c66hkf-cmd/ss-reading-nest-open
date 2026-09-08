@@ -70,6 +70,7 @@ import {
   buildLiveReadingPrompt,
   buildReadingCommentPrompt
 } from "./features/reading-comments/prompt-policy.js";
+import { matchesParagraphComment } from "./features/reading-comments/comment-match.js";
 import { buildDaddyAnnotationReplyFallbackPrompt } from "./features/annotations/reply-fallback.js";
 import {
   buildReadingMemoryCapturePrompt,
@@ -1766,11 +1767,8 @@ export function App() {
       const length = session.sessionPreferences.commentLength;
       const operationId = buildLiveReadingOperationId(session.id, session.userCurrentPosition.kind, index, mode, length);
       if (
-        companionComments.some(
-          (comment) =>
-            comment.sessionId === session.id &&
-            comment.operationId === operationId &&
-            comment.source === "live_reading"
+        companionComments.some((comment) =>
+          matchesParagraphComment(comment, session.id, index, operationId)
         )
       ) {
         return true;
@@ -1930,7 +1928,9 @@ export function App() {
               : [];
           },
           select: (loaded) => (loaded as CompanionComment[])
-            .find((comment) => comment.operationId === operationId),
+            .find((comment) =>
+              matchesParagraphComment(comment, session.id, index, operationId)
+            ),
           attempts: 20,
           intervalMs: 1_500
         });

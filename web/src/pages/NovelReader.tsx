@@ -73,6 +73,14 @@ export function NovelReader(props: {
     Math.min(props.chunks.length - 1, props.session.userCurrentPosition.index - 1)
   );
   const current = props.chunks[index] ?? "";
+  const currentCompanionComment = props.companionComments
+    .filter(
+      (comment) =>
+        comment.sessionId === props.session.id &&
+        comment.position.kind === "paragraph" &&
+        comment.position.index === index + 1
+    )
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0];
   const [selection, setSelection] = useState<SelectionSnapshot | null>(null);
   const [commentOpen, setCommentOpen] = useState(false);
   const [comment, setComment] = useState("");
@@ -172,6 +180,7 @@ export function NovelReader(props: {
             loading={props.annotationsLoading ?? false}
             error={props.annotationsError}
             saving={props.annotationSaving ?? false}
+            companionComment={currentCompanionComment}
             pendingDaddyIds={props.pendingDaddyAnnotationIds}
             favorites={props.annotationFavorites}
             onReply={(annotationId, text) =>
