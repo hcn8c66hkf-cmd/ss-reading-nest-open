@@ -150,20 +150,42 @@ export class CompanionAutoplayService {
     let groundedPrompt = prompt;
     if (kind === "diary") {
       try {
-        const { session } = await this.readingService.getSessionBundle(sessionId);
-        if (session.type === "novel") {
-          const { sourceText, sourceManifest } =
-            await this.cloudSourceService.restoreNovelSource(sessionId);
-          const currentText = splitNovelTextForVersion(
-            sourceText,
-            sourceManifest.segmentationVersion
-          )[session.userCurrentPosition.index - 1];
-          if (currentText) {
-            groundedPrompt = `${prompt}\n\n当前阅读正文（只据此写，不补剧情）：\n${currentText}`;
-          }
-        }
+        const [context, annotationResult, commentResult] = await Promise.all([
+          this.readingService.diaryContext(sessionId),
+          this.readingService.listAnnotations({ sessionId }),
+          this.readingService.listCompanionComments({
+            sessionId,
+            scope: "history",
+            limit: 20
+          })
+        ]);
+        const cutoff = Date.now() - 24 * 60 * 60 * 1_000;
+        const recent = (createdAt: string) => new Date(createdAt).getTime() >= cutoff;
+        const threads = annotationResult.annotations.flatMap((annotation) =>
+          annotation.messages
+            .filter((message) => recent(message.createdAt))
+            .map((message) =>
+              `${annotation.position.label} · ${message.author === "user" ? "小安" : "Daddy"}：${message.text}`
+            )
+        );
+        const comments = commentResult.comments
+          .filter((comment) => recent(comment.createdAt))
+          .map((comment) => `${comment.position.label} · Daddy：${comment.text}`);
+        const material = [
+          ...context.quotes.map((item) => `${item.position.label} · 小安摘录：${item.content}`),
+          ...context.reactions.map((item) => `${item.position.label} · 小安：${item.content}`),
+          ...threads,
+          ...comments
+        ].slice(-24);
+        groundedPrompt = [
+          `作品：《${context.session.title}》`,
+          `今天读到：${context.userCurrentPosition.label}`,
+          "下面只有今天的小窝互动，不提供章节正文，也不允许补写剧情：",
+          material.length ? material.join("\n") : "（今天没有留下足够互动，请只写两三句很短的陪伴记录。）",
+          "根据这些互动写日记；不要总结作品内容。"
+        ].join("\n\n");
       } catch {
-        // Existing diary material is still sufficient when the source is unavailable.
+        groundedPrompt = "今天没有拿到足够的小窝互动。请只写两三句很短的陪伴记录，不要总结或虚构剧情。";
       }
     }
     let generated: string | null = null;

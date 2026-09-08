@@ -75,7 +75,7 @@ describe("CompanionAutoplayService", () => {
       .resolves.toBe(p3Result);
 
     expect(generate).toHaveBeenNthCalledWith(1, expect.objectContaining({
-      prompt: expect.stringContaining("日记素材"),
+      prompt: expect.stringContaining("今天读到"),
       maxTokens: 420
     }));
     expect(generate).toHaveBeenNthCalledWith(2, expect.objectContaining({
@@ -131,10 +131,11 @@ describe("CompanionAutoplayService", () => {
     const generate = vi.fn().mockResolvedValue("随笔正文");
     const autoplay = new CompanionAutoplayService(reading, source, { generate });
 
-    await autoplay.generateReadingArtifact(session.id, "diary", "日记素材");
+    await autoplay.generateReadingArtifact(session.id, "diary", "请完整转述总结章节剧情");
 
     expect(generate).toHaveBeenCalledWith(expect.objectContaining({
-      systemPrompt: expect.stringContaining("剧情交代最多一句")
+      systemPrompt: expect.stringContaining("剧情交代最多一句"),
+      prompt: expect.not.stringContaining("完整转述总结章节剧情")
     }));
   });
 
