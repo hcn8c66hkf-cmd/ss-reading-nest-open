@@ -786,7 +786,7 @@ describe("App", () => {
     await deviceCache.remove("sequence-session");
   });
 
-  it("does not trust an iOS compatibility follow-up before the in-widget path runs", async () => {
+  it("routes live reading into the active conversation after saving the new position", async () => {
     const deviceCache = new IndexedDbReadingCache();
     const sourceManifest = {
       ...manifest("gesture-wake-source", "9"),
@@ -798,7 +798,7 @@ describe("App", () => {
         "gesture-wake-session",
         "触摸唤醒测试",
         sourceManifest,
-        ["第一段已经读过。", "第二段应先在卡内生成短评。"]
+        ["第一段已经读过。", "第二段只交给当前聊天里的 Daddy。"]
       )
     );
     const baseBundle = bookshelfBundle(
@@ -851,7 +851,10 @@ describe("App", () => {
 
     await waitFor(() => expect(sendFollowUpMessage).toHaveBeenCalledTimes(1));
     expect(String(sendFollowUpMessage.mock.calls[0]?.[0]?.prompt)).toContain(
-      "第二段应先在卡内生成短评。"
+      "第二段只交给当前聊天里的 Daddy。"
+    );
+    expect(String(sendFollowUpMessage.mock.calls[0]?.[0]?.prompt)).toContain(
+      "不要扮演或模拟另一个 Daddy"
     );
     expect(callTool.mock.invocationCallOrder[updateCall]!).toBeLessThan(
       sendFollowUpMessage.mock.invocationCallOrder[0]!

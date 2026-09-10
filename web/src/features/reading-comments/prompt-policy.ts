@@ -74,14 +74,16 @@ export function buildLiveReadingPrompt(input: {
   requestedMode?: ReadingCommentMode;
   requestedLength?: CommentLength;
 }): string {
+  const mode = input.requestedMode ?? "light_chat";
+  const length = normalizeCommentLength(mode, input.requestedLength ?? "short");
   const publication = [
         "先生成最终短评。无论写回工具是否可用，都必须在聊天区回复这段短评，不能让本轮只思考却没有正文输出。",
         "调用 publish_companion_comment 保存完全相同的短评。",
         publishParameters({
           sessionId: input.sessionId,
           operationId: input.operationId,
-          mode: "reaction_only",
-          length: "short",
+          mode,
+          length,
           source: "live_reading",
           position: input.position,
           text: "最终短评全文"
@@ -92,11 +94,12 @@ export function buildLiveReadingPrompt(input: {
     `【实时陪读：${input.position.label}】《${input.title}》`,
     `本段原文：\n${input.text}`,
     "上面的“本段原文”就是这轮唯一要读的正文；请直接依据它回应。",
-    "固定模式：reaction_only；固定长度：short；风格：danmaku。",
-    "只输出 1-3 句弹幕式短评。",
-    "不总结全文，不重复剧情，不写完整书评。",
-    "先说这段真正引起的即时反应；可以喜欢、心疼、笑、嗑、疑惑，也可以在确有槽点时骂或阴阳，但没有槽点绝不硬挑刺。",
+    `当前偏好：${mode}；长度：${length}。偏好只调节表达方向，不能覆盖你在当前聊天里对小安的了解，也不能把你变成固定人设。`,
+    lengthInstruction(mode, length),
+    ...modeInstruction(mode),
+    "先说这段真正引起的反应；没有想骂的地方就不骂，没有需要分析的地方也不硬分析。",
     "分清正文事实、角色误会和猜测；不确定就保留，不把误会写成事实。",
+    "这是当前聊天里你和小安正在继续的共读，不要扮演或模拟另一个 Daddy。",
     "写回 publish_companion_comment 是保存步骤，不是回复正文的前置条件。",
     ...publication
   ].join("\n\n");

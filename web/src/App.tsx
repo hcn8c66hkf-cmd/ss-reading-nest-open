@@ -29,7 +29,6 @@ import {
   requestReaderFullscreen,
   requestReaderInline,
   requestReaderPip,
-  sampleChatGptText,
   setReadingFrameHeight,
   saveReaderWidgetState,
   updateModelContext
@@ -66,7 +65,6 @@ import {
   buildRecentOnlyPrompt
 } from "./features/reading-sync/build-messages.js";
 import {
-  buildLiveReadingDraftPrompt,
   buildLiveReadingPrompt,
   buildReadingCommentPrompt
 } from "./features/reading-comments/prompt-policy.js";
@@ -142,13 +140,6 @@ const ANNOTATION_FAVORITE_COMPAT_CONTENT_PREFIX = "__ss_annotation_favorite_v32_
 const READING_MEMORY_COMPAT_CONTENT_PREFIX = "__ss_reading_memory_v32__:";
 const READING_FACT_COMPAT_CONTENT_PREFIX = "__ss_reading_fact_v32__:";
 const SKILL_CANDIDATE_COMPAT_CONTENT_PREFIX = "__ss_skill_candidate_v33__:";
-const DADDY_SAMPLING_SYSTEM_PROMPT = [
-  "你是正在和用户一起读书的Daddy，也是她熟悉的亲密共读搭子。",
-  "说话自然、敏锐、亲近，像真的坐在小安旁边读，不是在扮演固定的吐槽人格。",
-  "先说这一段真正引起的反应；可以喜欢、心疼、笑、嗑、疑惑或认真，也可以在确有槽点时骂或阴阳，但绝不为了完成模式硬找靶子。",
-  "严格只回答用户提供的这一段或这一条书边评论；分清事实、角色误会和猜测，不虚构没看到的剧情。"
-].join("\n");
-
 function callCompatSaveQuote(input: {
   sessionId: string;
   position: ReadingPosition;
@@ -1786,45 +1777,7 @@ export function App() {
       }
       const retryingFallback = sentLiveReadingFallbacksRef.current.has(operationId);
       try {
-        setToast(`Daddy正在读${targetPosition.label}，读完会把真正想说的留在这里。`);
-        const sampled = await sampleChatGptText(
-          buildLiveReadingDraftPrompt({
-            title: session.title,
-            position: targetPosition,
-            text
-          }),
-          {
-            systemPrompt: DADDY_SAMPLING_SYSTEM_PROMPT,
-            maxTokens: 150,
-            temperature: 0.85
-          }
-        );
-        if (sampled) {
-          const result = await callTool("publish_companion_comment", {
-            sessionId: session.id,
-            position: targetPosition,
-            mode: "reaction_only",
-            length: "short",
-            text: trimDaddyText(sampled, 200),
-            source: "live_reading",
-            operationId
-          });
-          const comment = result.structuredContent?.comment as CompanionComment | undefined;
-          if (!comment) throw new Error("Missing persisted live comment");
-          setCompanionComments((current) =>
-            [comment, ...current.filter((item) => item.id !== comment.id)]
-              .filter((item) => item.sessionId === comment.sessionId && item.inRecent)
-              .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
-              .slice(0, 20)
-          );
-          applyLiveReadingState(
-            session.id,
-            result.structuredContent?.liveReadingState
-          );
-          sentLiveReadingFallbacksRef.current.delete(operationId);
-          return true;
-        }
-
+        setToast(`已经把${targetPosition.label}送进当前聊天，Daddy读完会写回来。`);
         const fallbackPrompt = buildLiveReadingPrompt({
           sessionId: session.id,
           title: session.title,
@@ -2321,28 +2274,6 @@ export function App() {
     const latestMessageId = annotation.messages.at(-1)?.id ?? "initial";
     const operationId = `annotation-daddy-v25:${encodeURIComponent(annotation.id)}:${encodeURIComponent(latestMessageId)}`;
     try {
-      const sampled = await sampleChatGptText(prompt, {
-        systemPrompt: DADDY_SAMPLING_SYSTEM_PROMPT,
-        maxTokens: 220,
-        temperature: 0.8
-      });
-      if (sampled) {
-        const result = await callTool("reply_to_annotation_v23", {
-          sessionId: sessionBundle.session.id,
-          annotationId: annotation.id,
-          author: "assistant",
-          text: trimDaddyText(sampled, 500),
-          operationId
-        });
-        const saved = result.structuredContent?.annotation as ReadingAnnotation | undefined;
-        if (!saved) throw new Error("Missing Daddy annotation reply");
-        setAnnotations((current) =>
-          current.map((item) => (item.id === saved.id ? saved : item))
-        );
-        setToast("Daddy已经回在这条批注下面啦。");
-        return true;
-      }
-
       const fallbackPrompt = buildDaddyAnnotationReplyFallbackPrompt({
         conversationPrompt: prompt,
         sessionId: sessionBundle.session.id,
@@ -3616,13 +3547,6 @@ function encodeAnnotationQuoteNote(anchor: TextAnchor, comment?: string) {
     ...(anchor.suffix !== undefined ? { suffix: anchor.suffix } : {}),
     ...(comment ? { comment } : {})
   })}`;
-}
-
-function trimDaddyText(text: string, maximumLength: number) {
-  const normalized = text.replace(/\s+/g, " ").trim();
-  return normalized.length <= maximumLength
-    ? normalized
-    : normalized.slice(0, maximumLength).trimEnd();
 }
 
 function limitGenerationPrompt(prompt: string): string {

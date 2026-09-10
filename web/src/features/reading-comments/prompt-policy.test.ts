@@ -178,7 +178,7 @@ describe("buildReadingCommentPrompt", () => {
 });
 
 describe("buildLiveReadingPrompt", () => {
-  it("always builds short reaction-only danmaku and publishes first when auto-save is on", () => {
+  it("keeps the chosen preference subordinate to the active conversation", () => {
     const prompt = buildLiveReadingPrompt({
       sessionId: "session-1",
       title: "测试小说",
@@ -190,24 +190,23 @@ describe("buildLiveReadingPrompt", () => {
       requestedLength: "long"
     });
 
-    expect(prompt).toContain("reaction_only");
-    expect(prompt).toContain("short");
-    expect(prompt).toContain("1-3 句弹幕式短评");
+    expect(prompt).toContain("deep_analysis");
+    expect(prompt).toContain("long");
+    expect(prompt).toContain("当前聊天里对小安的了解");
+    expect(prompt).toContain("不要扮演或模拟另一个 Daddy");
     expect(prompt).toContain("本段原文");
     expect(prompt).toContain("他把没说出口的话咽了回去");
     expect(prompt).not.toContain("read_live_reading_context");
     expect(prompt).toContain("不是回复正文的前置条件");
     expect(prompt).toContain("不能让本轮只思考却没有正文输出");
-    expect(prompt).toContain("不总结全文");
-    expect(prompt).toContain("不重复剧情");
-    expect(prompt).toContain("不写完整书评");
+    expect(prompt).toContain("剧情变化");
     expect(prompt).toContain("调用 publish_companion_comment");
     expect(prompt).not.toContain("submit_live_reading_comment_v39");
     expect(prompt).toContain("position.index=12");
     expect(prompt).toContain("text=最终短评全文");
     expect(prompt).toContain("operationId=live-op-1");
     expect(prompt).toContain("短评未同步到 Dock");
-    expect(prompt).not.toMatch(/剧情变化.*人物变化/s);
+    expect(prompt).toMatch(/剧情变化.*人物变化/s);
   });
 
   it("publishes live-reading comments even when the general auto-save preference is off", () => {
