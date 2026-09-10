@@ -24,7 +24,7 @@ describe("Home bookshelf core", () => {
     expect(screen.getAllByText("已完成").length).toBeGreaterThan(0);
     expect(screen.getByText("用户：第 8 段")).toBeInTheDocument();
     expect(screen.getByText("Daddy：第 6 段")).toBeInTheDocument();
-    expect(screen.getAllByText("轻松聊聊").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Daddy自己说").length).toBeGreaterThan(0);
     expect(screen.getByText(/这里像伏笔/)).toBeInTheDocument();
   });
 

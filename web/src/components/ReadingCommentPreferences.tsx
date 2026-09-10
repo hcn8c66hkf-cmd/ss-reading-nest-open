@@ -15,7 +15,7 @@ type PreferencePatch = Partial<
 >;
 
 const MODES: Array<{ value: ReadingCommentMode; label: string }> = [
-  { value: "light_chat", label: "轻松聊聊" },
+  { value: "light_chat", label: "Daddy自己说" },
   { value: "reaction_only", label: "吐槽一下" },
   { value: "cp_talk", label: "嗑一下" },
   { value: "plot_guess", label: "猜后续" },

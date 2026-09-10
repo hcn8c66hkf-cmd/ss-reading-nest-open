@@ -160,6 +160,28 @@ describe("CompanionAutoplayService", () => {
     }));
   });
 
+  it("keeps reaction-only comments warm and separates facts from guesses", async () => {
+    const { reading, source, session } = await setup();
+    await reading.updateSessionPreferences(session.id, {
+      readingCommentMode: "reaction_only",
+      commentLength: "short"
+    });
+    await reading.updateUserPosition(session.id, {
+      kind: "paragraph", index: 2, total: 3, label: "第 2 段"
+    });
+    await reading.setLiveReadingMode(session.id, true);
+    const generate = vi.fn().mockResolvedValue("这一下反差也太好笑了。");
+    const autoplay = new CompanionAutoplayService(reading, source, { generate });
+
+    await autoplay.completeParagraph(session.id, 2);
+
+    expect(generate).toHaveBeenCalledWith(expect.objectContaining({
+      systemPrompt: expect.stringContaining("没有槽点就不要硬挑刺"),
+      prompt: expect.stringContaining("不代表必须找槽点"),
+      temperature: 0.68
+    }));
+  });
+
   it("generates and persists a pending paragraph without a ChatGPT follow-up", async () => {
     const { reading, source, session } = await setup();
     await reading.updateSessionPreferences(session.id, {

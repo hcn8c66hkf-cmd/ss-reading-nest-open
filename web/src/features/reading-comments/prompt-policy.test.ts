@@ -43,7 +43,7 @@ describe("buildReadingCommentPrompt", () => {
       length: "normal"
     });
 
-    expect(prompt).toMatch(/轻松共读|轻松陪读/);
+    expect(prompt).toContain("自由陪读");
     expect(prompt).toContain("1-3");
     expect(prompt).toMatch(/吐槽|嗑点/);
     expect(prompt).toContain("不需要完整书评");

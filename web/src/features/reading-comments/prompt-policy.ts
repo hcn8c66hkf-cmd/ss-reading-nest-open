@@ -95,7 +95,8 @@ export function buildLiveReadingPrompt(input: {
     "固定模式：reaction_only；固定长度：short；风格：danmaku。",
     "只输出 1-3 句弹幕式短评。",
     "不总结全文，不重复剧情，不写完整书评。",
-    "只做即时反应、吐槽、嗑点或伏笔提醒。",
+    "先说这段真正引起的即时反应；可以喜欢、心疼、笑、嗑、疑惑，也可以在确有槽点时骂或阴阳，但没有槽点绝不硬挑刺。",
+    "分清正文事实、角色误会和猜测；不确定就保留，不把误会写成事实。",
     "写回 publish_companion_comment 是保存步骤，不是回复正文的前置条件。",
     ...publication
   ].join("\n\n");
@@ -123,7 +124,8 @@ export function buildLiveReadingModelContext(input: {
       instructions: [
         "只输出 1-3 句弹幕式短评。",
         "不总结全文，不重复剧情，不写完整书评。",
-        "只做即时反应、吐槽、嗑点或伏笔提醒。",
+        "先说这段真正引起的即时反应；可以喜欢、心疼、笑、嗑、疑惑，也可以在确有槽点时骂或阴阳，但没有槽点绝不硬挑刺。",
+        "分清正文事实、角色误会和猜测；不确定就保留，不把误会写成事实。",
         "生成最终短评后，调用 publish_companion_comment 保存完全相同的短评。",
         "工具成功后，再在聊天区回复完全相同的短评。",
         "工具失败时必须明确说明短评未同步到 Dock。"
@@ -171,16 +173,14 @@ export function buildLiveReadingDraftPrompt(input: {
   title: string;
   position: ReadingPosition;
   text: string;
-  longTermContext?: unknown;
 }): string {
   return [
     `【实时陪读：${input.position.label}】《${input.title}》`,
     `本段原文：\n${input.text}`,
-    input.longTermContext
-      ? `可用的轻量长期前情（只作辅助，不得覆盖本段原文）：\n${JSON.stringify(input.longTermContext)}`
-      : "",
     "请写 1–3 句、最多 160 字的弹幕式短评。",
-    "只做即时反应、吐槽、嗑点或伏笔提醒；不总结全文，不复述剧情，不写完整书评。",
+    "先说这一段真正引起的反应；可以喜欢、心疼、笑、嗑、疑惑，也可以在确有槽点时骂或阴阳，但没有槽点绝不硬挑刺。",
+    "分清正文事实、角色误会和猜测；只依据本段，不让旧记忆覆盖本段。",
+    "不总结全文，不复述剧情，不写完整书评。",
     "只返回最终短评正文，不要标题、引号、参数、工具调用说明或保存说明。"
   ].filter(Boolean).join("\n\n");
 }
@@ -246,15 +246,17 @@ function lengthInstruction(mode: ReadingCommentMode, length: CommentLength) {
 function modeInstruction(mode: ReadingCommentMode): string[] {
   if (mode === "light_chat") {
     return [
-      "请用轻松共读模式，只挑最有意思的 1-3 个点回应。",
-      "可以短评、吐槽、嗑点或简单猜一点伏笔。",
+      "请用自由陪读：说这一段让你真正注意到的 1-3 个点，不必表演固定风格。",
+      "可以喜欢、心疼、短评、吐槽、嗑点或简单猜一点伏笔。",
       "不需要完整书评，不需要逐项总结。",
       "只有用户明确要求认真分析、深度分析、写长评或详细说时，才展开完整分析。"
     ];
   }
   if (mode === "reaction_only") {
     return [
-      "像弹幕一样做即时反应，控制在 1-5 句。",
+      "像弹幕一样说最直接的真实反应，控制在 1-5 句。",
+      "‘吐槽’只表示即时、简短，不表示必须挑刺；确有槽点可以骂或阴阳，没有就不要制造靶子。",
+      "遇到角色视角里的说法要保留‘他以为/看起来’，不能当成客观事实。",
       "不总结剧情，不分析结构。"
     ];
   }

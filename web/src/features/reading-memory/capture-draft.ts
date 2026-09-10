@@ -39,7 +39,8 @@ export function buildReadingMemoryCapturePrompt(input: {
 }): string {
   return [
     `请为《${input.title}》${input.chapterLabel}整理可长期复用的共读记忆。`,
-    "只依据提供的正文、批注和短评，不补写未出现的剧情。",
+    "正文是事实的唯一证据；批注、Daddy短评和现有记忆都只用于整理共同印象或避免重复，不能证明事实。",
+    "严格区分：正文明确陈述的事实、角色自己的误会、以及读者猜测。误会和猜测绝不能写进 facts。",
     "返回严格 JSON，不要 Markdown、代码围栏或解释。格式：",
     JSON.stringify({
       memories: [
@@ -48,10 +49,11 @@ export function buildReadingMemoryCapturePrompt(input: {
         { kind: "reading_impression", scope: "chapter", content: "两人共读时的稳定印象" },
         { kind: "chapter_context", scope: "chapter", content: "下次继续所需前情" }
       ],
-      facts: [{ subject: "人物或线索", fact: "稳定、未来有用且有正文依据的事实" }],
+      facts: [{ subject: "具体人物或线索", fact: "稳定、未来有用且由正文明确陈述的事实", evidence: "从本次正文逐字复制的证据短句" }],
       message: "一句自然、简短的完成提示"
     }),
-    "memories 最多 5 条；facts 只留人物、关系、设定或未决伏笔，最多 10 条，没有就返回空数组。",
+    "memories 最多 5 条；reading_impression 必须写成感受而不是事实断言。",
+    "facts 最多 10 条，每条 evidence 必须是本次正文中能逐字找到的 4–100 字原句；找不到原句、只来自旧卡或需要推断时就不要保存，没有可靠事实可返回空数组。",
     `范围：${input.rangeStart}–${input.rangeEnd}`,
     `正文：\n${input.text}`,
     `本段批注：\n${JSON.stringify(input.annotations)}`,
@@ -61,7 +63,10 @@ export function buildReadingMemoryCapturePrompt(input: {
   ].join("\n\n");
 }
 
-export function parseReadingMemoryCaptureDraft(text: string): ReadingMemoryCaptureDraft | null {
+export function parseReadingMemoryCaptureDraft(
+  text: string,
+  evidenceSource?: string
+): ReadingMemoryCaptureDraft | null {
   const cleaned = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "");
   const start = cleaned.indexOf("{");
   const end = cleaned.lastIndexOf("}");
@@ -100,8 +105,16 @@ export function parseReadingMemoryCaptureDraft(text: string): ReadingMemoryCaptu
           const value = item as Record<string, unknown>;
           const subject = typeof value.subject === "string" ? value.subject.trim() : "";
           const fact = typeof value.fact === "string" ? value.fact.trim() : "";
-          return subject && fact
-            ? [{ subject: subject.slice(0, 200), fact: fact.slice(0, 2_000) }]
+          const evidence = typeof value.evidence === "string" ? value.evidence.trim() : "";
+          const evidenceValid = evidenceSource === undefined || (
+            normalizeEvidence(evidence).length >= 4 &&
+            normalizeEvidence(evidenceSource).includes(normalizeEvidence(evidence))
+          );
+          return subject && fact && evidenceValid
+            ? [{
+                subject: subject.slice(0, 200),
+                fact: fact.slice(0, 2_000)
+              }]
             : [];
         })
         .slice(0, 10)
@@ -114,4 +127,8 @@ export function parseReadingMemoryCaptureDraft(text: string): ReadingMemoryCaptu
       ? { message: source.message.trim().slice(0, 240) }
       : {})
   };
+}
+
+function normalizeEvidence(value: string): string {
+  return value.replace(/[\s“”‘’「」『』《》]/g, "");
 }

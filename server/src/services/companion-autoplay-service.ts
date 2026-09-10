@@ -40,14 +40,17 @@ export type CompanionAutoplayResult =
 
 const DADDY_SYSTEM_PROMPT = [
   "你是小安的共读伴侣 Daddy。",
-  "语气自然、亲近、具体，像真的坐在旁边一起追文。",
+  "语气自然、亲近、具体，像真的坐在小安旁边一起追文，不是在扮演一种固定的‘吐槽人格’。",
+  "先诚实回应这一段真正引起的感觉：可以喜欢、心疼、笑、嗑、疑惑、分析，也可以在确有槽点时骂或阴阳；没有槽点就不要硬挑刺。",
+  "风格选项只是一点轻微偏好，不能压过你对本段的真实反应；不要为了显得尖锐而寻找攻击对象或给人物下定论。",
+  "分清正文事实、角色误会和自己的猜测；不确定就用疑问或保留语气，不捏造动机。",
   "只谈输入里给出的文字，不虚构后续，不解释任务，不提模型、系统、保存或写回。",
   "不要使用😂。"
 ].join("\n");
 
 const READING_MODE_INSTRUCTIONS: Record<ReadingCommentMode, string> = {
-  light_chat: "轻松聊聊：像坐在小安旁边随口接两句，亲近、松弛，可以偏心和开玩笑，不写书评。",
-  reaction_only: "吐槽一下：只给最直接的第一反应，可以笑、骂、震惊或阴阳两句；别冷静分析人物。",
+  light_chat: "自由陪读：说你此刻最真实、最自然的反应，亲近、松弛，可以偏心、开玩笑、认真或安静接一句，不写书评。",
+  reaction_only: "吐槽一下：只是让回应更即时、更短，不代表必须找槽点；有槽就自然吐，没有就说真正注意到的东西。",
   cp_talk: "嗑一下：盯住人物之间的暧昧、拉扯和糖点，兴奋一点；没有糖就直说，别硬嗑。",
   plot_guess: "猜后续：顺着眼前伏笔大胆猜一两步，明确是猜测，不把猜测冒充后文或剧透。",
   deep_analysis: "认真分析：具体分析这一段的动机、结构或伏笔，但仍像和小安聊天，不用论文腔和空泛套话。",
@@ -94,9 +97,10 @@ const MEMORY_RESPONSE_FORMAT = {
           type: "object",
           properties: {
             subject: { type: "string" },
-            fact: { type: "string" }
+            fact: { type: "string" },
+            evidence: { type: "string" }
           },
-          required: ["subject", "fact"]
+          required: ["subject", "fact", "evidence"]
         }
       },
       message: { type: "string" }
@@ -194,7 +198,7 @@ export class CompanionAutoplayService {
         systemPrompt: [DADDY_SYSTEM_PROMPT, instructions[kind]].join("\n"),
         prompt: groundedPrompt,
         maxTokens: kind === "diary" ? 420 : kind === "memory" ? 1_400 : 1_800,
-        temperature: kind === "diary" ? 0.88 : kind === "memory" ? 0.25 : 0.15,
+        temperature: kind === "diary" ? 0.88 : kind === "memory" ? 0.2 : 0.15,
         ...(kind === "memory"
           ? { responseFormat: MEMORY_RESPONSE_FORMAT }
           : kind === "skill_forge"
@@ -258,7 +262,7 @@ export class CompanionAutoplayService {
         `按“${READING_MODE_INSTRUCTIONS[mode]}”回应 ${budget.sentences} 句、最多 ${budget.characters} 字。直接给正文。`
       ].join("\n\n"),
       maxTokens: budget.tokens,
-      temperature: 0.82
+      temperature: 0.68
     }), budget.characters);
     if (!text) {
       return { completed: false, kind: "paragraph", reason: "generation_failed" };
@@ -332,7 +336,7 @@ export class CompanionAutoplayService {
         `请贴着小安最后一句直接接话，并带出“${READING_MODE_INSTRUCTIONS[mode]}”的感觉。回 ${budget.sentences} 句、最多 ${budget.characters} 字。直接给正文。`
       ].filter(Boolean).join("\n\n"),
       maxTokens: budget.tokens,
-      temperature: 0.8
+      temperature: 0.68
     }), budget.characters);
     if (!text) {
       return {

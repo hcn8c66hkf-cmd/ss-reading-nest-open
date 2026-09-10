@@ -19,7 +19,8 @@ describe("reading memory capture draft", () => {
     });
 
     expect(prompt).toContain("返回严格 JSON");
-    expect(prompt).toContain("只依据提供的正文");
+    expect(prompt).toContain("正文是事实的唯一证据");
+    expect(prompt).toContain("逐字找到");
     expect(prompt).not.toContain("调用");
     expect(prompt).not.toContain("确认");
   });
@@ -51,5 +52,19 @@ describe("reading memory capture draft", () => {
   it("rejects prose or an empty payload", () => {
     expect(parseReadingMemoryCaptureDraft("我整理好了")).toBeNull();
     expect(parseReadingMemoryCaptureDraft('{"memories":[],"facts":[]}')).toBeNull();
+  });
+
+  it("drops fact cards whose quoted evidence is absent from the supplied body", () => {
+    const draft = parseReadingMemoryCaptureDraft(JSON.stringify({
+      memories: [{ kind: "reading_impression", content: "这里的误会很好笑。" }],
+      facts: [
+        { subject: "陆燃", fact: "陆燃拿起手机。", evidence: "伸手去摸手机" },
+        { subject: "纪旻", fact: "纪旻有私生子。", evidence: "纪旻有私生子" }
+      ]
+    }), "陆燃伸手去摸手机，手机就在手边。");
+
+    expect(draft?.facts).toEqual([
+      { subject: "陆燃", fact: "陆燃拿起手机。" }
+    ]);
   });
 });

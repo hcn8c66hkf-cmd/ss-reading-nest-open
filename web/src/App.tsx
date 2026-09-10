@@ -144,8 +144,9 @@ const READING_FACT_COMPAT_CONTENT_PREFIX = "__ss_reading_fact_v32__:";
 const SKILL_CANDIDATE_COMPAT_CONTENT_PREFIX = "__ss_skill_candidate_v33__:";
 const DADDY_SAMPLING_SYSTEM_PROMPT = [
   "你是正在和用户一起读书的Daddy，也是她熟悉的亲密共读搭子。",
-  "说话自然、敏锐、有一点会吐槽，不端着，不写教科书式总结。",
-  "严格只回答用户提供的这一段或这一条书边评论，不虚构没看到的剧情。"
+  "说话自然、敏锐、亲近，像真的坐在小安旁边读，不是在扮演固定的吐槽人格。",
+  "先说这一段真正引起的反应；可以喜欢、心疼、笑、嗑、疑惑或认真，也可以在确有槽点时骂或阴阳，但绝不为了完成模式硬找靶子。",
+  "严格只回答用户提供的这一段或这一条书边评论；分清事实、角色误会和猜测，不虚构没看到的剧情。"
 ].join("\n");
 
 function callCompatSaveQuote(input: {
@@ -1785,44 +1786,12 @@ export function App() {
       }
       const retryingFallback = sentLiveReadingFallbacksRef.current.has(operationId);
       try {
-        setToast(`Daddy正在读${targetPosition.label}，短评会直接写进小窝。`);
-        const serverResult = await callTool("complete_pending_companion_work_v46", {
-          sessionId: session.id,
-          kind: "paragraph",
-          positionIndex: index
-        }).catch(() => ({ structuredContent: {} }));
-        const serverContent = serverResult.structuredContent as
-          | Record<string, unknown>
-          | undefined;
-        const serverComment = serverContent?.comment as CompanionComment | undefined;
-        if (serverComment) {
-          setCompanionComments((current) =>
-            [serverComment, ...current.filter((item) => item.id !== serverComment.id)]
-              .filter((item) => item.sessionId === serverComment.sessionId && item.inRecent)
-              .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
-              .slice(0, 20)
-          );
-          applyLiveReadingState(session.id, serverContent?.liveReadingState);
-          sentLiveReadingFallbacksRef.current.delete(operationId);
-          setToast(`Daddy读完${targetPosition.label}啦，短评已经写进小窝。`);
-          return true;
-        }
-        const layeredResult = await callTool("list_companion_comments", {
-          sessionId: session.id,
-          scope: "recent",
-          positionIndex: index,
-          limit: 1
-        }).catch(() => ({ structuredContent: {} }));
-        const layeredContent = layeredResult.structuredContent as
-          | Record<string, unknown>
-          | undefined;
-        const longTermContext = layeredContent?.layeredContext;
+        setToast(`Daddy正在读${targetPosition.label}，读完会把真正想说的留在这里。`);
         const sampled = await sampleChatGptText(
           buildLiveReadingDraftPrompt({
             title: session.title,
             position: targetPosition,
-            text,
-            ...(longTermContext ? { longTermContext } : {})
+            text
           }),
           {
             systemPrompt: DADDY_SAMPLING_SYSTEM_PROMPT,
@@ -2352,28 +2321,6 @@ export function App() {
     const latestMessageId = annotation.messages.at(-1)?.id ?? "initial";
     const operationId = `annotation-daddy-v25:${encodeURIComponent(annotation.id)}:${encodeURIComponent(latestMessageId)}`;
     try {
-      const serverResult = await callTool("complete_pending_companion_work_v46", {
-        sessionId: sessionBundle.session.id,
-        kind: "annotation",
-        annotationId: annotation.id
-      }).catch(() => ({ structuredContent: {} }));
-      const serverContent = serverResult.structuredContent as
-        | Record<string, unknown>
-        | undefined;
-      const serverSaved = serverContent?.annotation as
-        | ReadingAnnotation
-        | undefined;
-      if (serverSaved?.messages.at(-1)?.author === "assistant") {
-        setAnnotations((current) =>
-          current.map((item) => (item.id === serverSaved.id ? serverSaved : item))
-        );
-        applyLiveReadingState(
-          sessionBundle.session.id,
-          serverContent?.liveReadingState
-        );
-        setToast("Daddy已经回在这条批注下面啦。");
-        return true;
-      }
       const sampled = await sampleChatGptText(prompt, {
         systemPrompt: DADDY_SAMPLING_SYSTEM_PROMPT,
         maxTokens: 220,
@@ -2893,7 +2840,7 @@ export function App() {
       });
       const sampled = generated.structuredContent?.generatedText;
       const draft = typeof sampled === "string"
-        ? parseReadingMemoryCaptureDraft(sampled)
+        ? parseReadingMemoryCaptureDraft(sampled, rangeText)
         : null;
       if (!draft) {
         setToast("这次卡内整理没有拿到有效内容，没有写入任何东西。再点一次就好。");

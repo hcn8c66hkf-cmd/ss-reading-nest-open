@@ -18,7 +18,7 @@ const FILTERS: Array<{ value: Filter; label: string }> = [
 ];
 
 const MODE_LABELS = {
-  light_chat: "轻松聊聊",
+  light_chat: "Daddy自己说",
   reaction_only: "吐槽一下",
   cp_talk: "嗑一下",
   plot_guess: "猜后续",

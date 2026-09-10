@@ -16,7 +16,7 @@ describe("ReadingCommentPreferences", () => {
     );
 
     for (const label of [
-      "轻松聊聊",
+      "Daddy自己说",
       "吐槽一下",
       "嗑一下",
       "猜后续",
@@ -92,7 +92,7 @@ describe("ReadingCommentPreferences", () => {
       />
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "轻松聊聊" }));
+    fireEvent.click(screen.getByRole("button", { name: "Daddy自己说" }));
     expect(onChange).toHaveBeenCalledWith({
       readingCommentMode: "light_chat",
       commentLength: "normal"
@@ -194,7 +194,7 @@ describe("ReadingCommentPreferences", () => {
       />
     );
 
-    expect(screen.getByRole("button", { name: "轻松聊聊" })).toHaveAttribute(
+    expect(screen.getByRole("button", { name: "Daddy自己说" })).toHaveAttribute(
       "aria-pressed",
       "true"
     );

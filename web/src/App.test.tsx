@@ -1328,7 +1328,7 @@ describe("App", () => {
     fireEvent.click(await screen.findByRole("button", { name: "猜后续" }));
 
     expect(await screen.findByText("陪读偏好没有保存成功，请重试。")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "轻松聊聊" })).toHaveAttribute(
+    expect(screen.getByRole("button", { name: "Daddy自己说" })).toHaveAttribute(
       "aria-pressed",
       "true"
     );
@@ -2500,7 +2500,7 @@ describe("App", () => {
       .toHaveTextContent("A 书短评");
     expect(screen.queryByText("B 书短评")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "更多操作" }));
-    expect(screen.getByRole("button", { name: "轻松聊聊" })).toHaveAttribute(
+    expect(screen.getByRole("button", { name: "Daddy自己说" })).toHaveAttribute(
       "aria-pressed",
       "true"
     );
