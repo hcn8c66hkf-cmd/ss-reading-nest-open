@@ -355,6 +355,74 @@ describe("tool descriptors", () => {
     expect(JSON.stringify(TOOL_CONFIGS)).not.toMatch(/OPENAI_API_KEY|responses|chat completions/i);
   });
 
+  it("keeps live reading work pending for the active chat instead of server generation", async () => {
+    const handlers = new Map<string, (args: any) => Promise<any>>();
+    const server = {
+      registerTool: (name: string, _config: unknown, handler: (args: any) => Promise<any>) => {
+        handlers.set(name, handler);
+      }
+    };
+    const session = {
+      id: "session-active-chat-only",
+      userCurrentPosition: { kind: "paragraph", index: 98, label: "第 98 段" },
+      assistantSyncedPosition: { kind: "paragraph", index: 97, label: "第 97 段" },
+      liveReadingStartIndex: 1,
+      pendingLiveReadingPositions: [
+        { kind: "paragraph", index: 98, label: "第 98 段" }
+      ],
+      pendingAnnotationReplies: [
+        {
+          annotationId: "annotation-98",
+          messageId: "message-98",
+          position: { kind: "paragraph", index: 98, label: "第 98 段" }
+        }
+      ],
+      updatedAt: "2026-09-12T08:00:00.000Z"
+    };
+    const service = {
+      listAllSessions: async () => [],
+      updateUserPosition: async () => session,
+      getSessionBundle: async () => ({ session })
+    };
+    let paragraphGenerations = 0;
+    let annotationGenerations = 0;
+    const companionAutoplayService = {
+      completeParagraph: async () => {
+        paragraphGenerations += 1;
+      },
+      completeAnnotation: async () => {
+        annotationGenerations += 1;
+      }
+    };
+
+    registerReadingTools(server as never, service as never, undefined, {
+      companionAutoplayService: companionAutoplayService as never
+    });
+    const updated = await handlers.get("update_reading_position")?.({
+      sessionId: session.id,
+      userCurrentPosition: session.userCurrentPosition
+    });
+    const legacyCompletion = await handlers.get("complete_pending_companion_work_v46")?.({
+      sessionId: session.id,
+      kind: "paragraph",
+      positionIndex: 98
+    });
+
+    expect(paragraphGenerations).toBe(0);
+    expect(annotationGenerations).toBe(0);
+    expect(updated.structuredContent.pendingLiveReadingPositions).toEqual(
+      session.pendingLiveReadingPositions
+    );
+    expect(updated.structuredContent.pendingAnnotationReplies).toEqual(
+      session.pendingAnnotationReplies
+    );
+    expect(legacyCompletion.structuredContent).toMatchObject({
+      completed: false,
+      kind: "paragraph",
+      reason: "active_chat_required"
+    });
+  });
+
   it("returns actively shared text in model-readable tool content", () => {
     const session = {
       id: "session-model-readable",
@@ -892,7 +960,7 @@ describe("tool descriptors", () => {
     });
     expect(created.structuredContent.annotation.messages[0].text).toBe("这里像是在告别。");
     expect(replied.structuredContent.annotation.messages[0].text).toBe("嗯，我也是。");
-    expect(annotationAutoplayAttempts).toBe(2);
+    expect(annotationAutoplayAttempts).toBe(0);
     expect(daddyReply.structuredContent.annotation.messages[0]).toMatchObject({
       author: "assistant",
       text: "我也觉得，他是在给自己留最后一点体面。"

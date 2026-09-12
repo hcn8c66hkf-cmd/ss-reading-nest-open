@@ -608,11 +608,11 @@ export const TOOL_CONFIGS = {
     annotations: { ...mutation, idempotentHint: true }
   },
   complete_pending_companion_work_v46: {
-    title: "页面自动完成陪读待办",
+    title: "检查页面陪读待办",
     description:
-      "App-only v46 bridge that generates and persists one pending paragraph comment or annotation reply on the server.",
+      "Legacy app-only bridge. It preserves pending work for the active ChatGPT conversation and never generates a server-side substitute.",
     inputSchema: completePendingCompanionWorkInputSchema,
-    annotations: { ...mutation, idempotentHint: true },
+    annotations: readOnly,
     _meta: { ui: { visibility: ["app"] } }
   },
   create_annotation: {
@@ -992,46 +992,6 @@ export function registerReadingTools(
     companionAutoplayService?: CompanionAutoplayService;
   } = {}
 ) {
-  const tryCompleteParagraph = async (sessionId: string, positionIndex: number) => {
-    if (!options.companionAutoplayService) return undefined;
-    try {
-      return await options.companionAutoplayService.completeParagraph(
-        sessionId,
-        positionIndex
-      );
-    } catch (error) {
-      console.error("Companion paragraph autoplay failed", error);
-      return undefined;
-    }
-  };
-
-  const tryCompleteAnnotation = async (
-    sessionId: string,
-    annotation: ReadingAnnotation,
-    author: string
-  ) => {
-    if (author !== "user" || !options.companionAutoplayService) {
-      return { annotation, companionAutoplay: undefined };
-    }
-    try {
-      const companionAutoplay =
-        await options.companionAutoplayService.completeAnnotation(
-          sessionId,
-          annotation.id
-        );
-      return {
-        annotation:
-          companionAutoplay.kind === "annotation"
-            ? companionAutoplay.annotation ?? annotation
-            : annotation,
-        companionAutoplay
-      };
-    } catch (error) {
-      console.error("Companion annotation autoplay failed", error);
-      return { annotation, companionAutoplay: undefined };
-    }
-  };
-
   const openReadingNest = async () => {
     await service.reconcilePendingWork?.();
     const sessions = await service.listAllSessions();
@@ -1354,38 +1314,15 @@ export function registerReadingTools(
     "update_reading_position",
     TOOL_CONFIGS.update_reading_position,
     async ({ sessionId, userCurrentPosition }) => {
-      const updatedSession = await service.updateUserPosition(sessionId, userCurrentPosition);
-      const companionAutoplay = userCurrentPosition.kind === "paragraph"
-        ? await tryCompleteParagraph(sessionId, userCurrentPosition.index)
-        : undefined;
-      const pendingAnnotation = updatedSession.pendingAnnotationReplies?.[0];
-      let annotationAutoplay;
-      if (pendingAnnotation && options.companionAutoplayService) {
-        try {
-          annotationAutoplay =
-            await options.companionAutoplayService.completeAnnotation(
-              sessionId,
-              pendingAnnotation.annotationId
-            );
-        } catch (error) {
-          console.error("Pending annotation autoplay failed", error);
-        }
-      }
-      const session = companionAutoplay || annotationAutoplay
-        ? (await service.getSessionBundle(sessionId)).session
-        : updatedSession;
+      const session = await service.updateUserPosition(sessionId, userCurrentPosition);
       return toolResult(
         {
           sessionId,
           userCurrentPosition: session.userCurrentPosition,
           ...summarizePendingWork(session),
-          companionAutoplay,
-          annotationAutoplay,
           updatedAt: session.updatedAt
         },
-        companionAutoplay?.completed
-          ? `用户进度已更新到${userCurrentPosition.label}，Daddy短评已写回。`
-          : `用户进度已更新到${userCurrentPosition.label}。`
+        `用户进度已更新到${userCurrentPosition.label}，陪读待办将交给当前聊天。`
       );
     }
   );
@@ -1428,30 +1365,16 @@ export function registerReadingTools(
     server,
     "complete_pending_companion_work_v46",
     TOOL_CONFIGS.complete_pending_companion_work_v46,
-    async ({ sessionId, kind, positionIndex, annotationId }) => {
-      if (!options.companionAutoplayService) {
-        return toolResult(
-          { completed: false, kind, reason: "server_generation_unavailable" as const },
-          "服务器自动陪读暂不可用，页面会继续使用宿主回退。"
-        );
-      }
-      const result = kind === "paragraph"
-        ? await options.companionAutoplayService.completeParagraph(
-            sessionId,
-            positionIndex!
-          )
-        : await options.companionAutoplayService.completeAnnotation(
-            sessionId,
-            annotationId!
-          );
+    async ({ sessionId, kind }) => {
       const { session } = await service.getSessionBundle(sessionId);
       return toolResult(
-        { ...result, liveReadingState: summarizePendingWork(session) },
-        result.completed
-          ? kind === "paragraph"
-            ? "Daddy短评已由服务器直接写回小窝。"
-            : "Daddy回复已由服务器直接接在书边。"
-          : "这项陪读待办仍保留在服务器。"
+        {
+          completed: false,
+          kind,
+          reason: "active_chat_required" as const,
+          liveReadingState: summarizePendingWork(session)
+        },
+        "这项陪读待办已保留，必须交给当前聊天里的 Daddy 读取和写回。"
       );
     }
   );
@@ -1822,14 +1745,9 @@ export function registerReadingTools(
     "create_annotation",
     TOOL_CONFIGS.create_annotation,
     async (input) => {
-      const created = await service.createAnnotation(input);
-      const { annotation, companionAutoplay } = await tryCompleteAnnotation(
-        input.sessionId,
-        created,
-        input.author
-      );
+      const annotation = await service.createAnnotation(input);
       return toolResult(
-        { saved: true, annotation, companionAutoplay },
+        { saved: true, annotation },
         input.author === "assistant"
           ? "Daddy的划线批注已写进这本书。"
           : "你的划线批注已写进这本书。"
@@ -1842,17 +1760,10 @@ export function registerReadingTools(
     "create_annotation_v23",
     TOOL_CONFIGS.create_annotation_v23,
     async (input) => {
-      const created = await service.createAnnotation(input);
-      const { annotation, companionAutoplay } = await tryCompleteAnnotation(
-        input.sessionId,
-        created,
-        input.author
-      );
+      const annotation = await service.createAnnotation(input);
       return toolResult(
-        { saved: true, annotation, companionAutoplay },
-        companionAutoplay?.completed
-          ? "你的划线批注和Daddy回复都已写进这本书。"
-          : "你的划线批注已写进这本书。"
+        { saved: true, annotation },
+        "你的划线批注已写进这本书，回复待办将交给当前聊天。"
       );
     }
   );
@@ -1861,14 +1772,9 @@ export function registerReadingTools(
     "reply_to_annotation",
     TOOL_CONFIGS.reply_to_annotation,
     async (input) => {
-      const replied = await service.replyToAnnotation(input);
-      const { annotation, companionAutoplay } = await tryCompleteAnnotation(
-        input.sessionId,
-        replied,
-        input.author
-      );
+      const annotation = await service.replyToAnnotation(input);
       return toolResult(
-        { saved: true, annotation, companionAutoplay },
+        { saved: true, annotation },
         input.author === "assistant" ? "Daddy已经回复这条批注。" : "你的回复已经保存。"
       );
     }
@@ -1879,17 +1785,12 @@ export function registerReadingTools(
     "reply_to_annotation_v23",
     TOOL_CONFIGS.reply_to_annotation_v23,
     async (input) => {
-      const replied = await service.replyToAnnotation(input);
-      const { annotation, companionAutoplay } = await tryCompleteAnnotation(
-        input.sessionId,
-        replied,
-        input.author
-      );
+      const annotation = await service.replyToAnnotation(input);
       return toolResult(
-        { saved: true, annotation, companionAutoplay },
-        companionAutoplay?.completed
-          ? "你的回复和Daddy的接话都已保存。"
-          : "你的回复已经保存。"
+        { saved: true, annotation },
+        input.author === "assistant"
+          ? "Daddy已经回复这条批注。"
+          : "你的回复已经保存，接话待办将交给当前聊天。"
       );
     }
   );
@@ -2080,16 +1981,11 @@ export function registerReadingTools(
         ...(annotation.comment ? { comment: annotation.comment } : {}),
         operationId: input.operationId!
       });
-      const { annotation: saved, companionAutoplay } = annotation.comment
-        ? await tryCompleteAnnotation(input.sessionId, created, "user")
-        : { annotation: created, companionAutoplay: undefined };
       return toolResult(
-        { saved: true, annotation: saved, companionAutoplay },
-        companionAutoplay?.completed
-          ? "你的划线评论和Daddy回复都留在书边啦。"
-          : annotation.comment
-            ? "你的划线和评论都留在书边啦。"
-            : "这句话已经划好线。"
+        { saved: true, annotation: created },
+        annotation.comment
+          ? "你的划线和评论都留在书边啦，回复待办将交给当前聊天。"
+          : "这句话已经划好线。"
       );
     }
     const favoriteCompat = decodeCompatJson(
@@ -2172,16 +2068,9 @@ export function registerReadingTools(
         text: annotationReply.text,
         operationId: input.operationId!
       });
-      const { annotation: saved, companionAutoplay } = await tryCompleteAnnotation(
-        input.sessionId,
-        created,
-        "user"
-      );
       return toolResult(
-        { saved: true, annotation: saved, companionAutoplay },
-        companionAutoplay?.completed
-          ? "你和Daddy的新回复都接在这条批注下面了。"
-          : "回复已经接在这条批注下面。"
+        { saved: true, annotation: created },
+        "回复已经接在这条批注下面，接话待办将交给当前聊天。"
       );
     }
     const reaction = await service.saveReaction(input);
