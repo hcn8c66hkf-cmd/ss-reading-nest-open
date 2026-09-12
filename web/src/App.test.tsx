@@ -661,15 +661,15 @@ describe("App", () => {
     await screen.findByText(/Daddy上次读到：还没有/);
 
     for (let index = 0; index < 27; index += 1) {
-      fireEvent.click(screen.getByRole("button", { name: "下一段" }));
+      fireEvent.click(screen.getByRole("button", { name: "下一章" }));
     }
-    await screen.findByText(/你在：第 28 段/);
+    await screen.findByText(/你在：第 28 章/);
     fireEvent.click(screen.getByRole("button", { name: "陪我看看这里" }));
 
     expect(await screen.findByText("中间有较多剧情，要怎么同步？")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /完整补课后再陪读/ })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "只看当前段" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "补最近 5 段" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "只看当前章节" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "补最近 5 章" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "取消" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /完整补课后再陪读/ }));
@@ -843,7 +843,7 @@ describe("App", () => {
 
     render(<App />);
     fireEvent.click(await screen.findByRole("button", { name: "继续阅读《触摸唤醒测试》" }));
-    fireEvent.click(await screen.findByRole("button", { name: "下一段" }));
+    fireEvent.click(await screen.findByRole("button", { name: "下一章" }));
 
     expect(sendFollowUpMessage).toHaveBeenCalledTimes(1);
     expect(String(sendFollowUpMessage.mock.calls[0]?.[0]?.prompt)).toContain(
@@ -1419,7 +1419,7 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: /小说共读/ }));
     fireEvent.change(screen.getByLabelText("作品名"), { target: { value: "陪读 Dock 测试" } });
     fireEvent.change(screen.getByPlaceholderText("粘贴 TXT 或 Markdown 文本"), {
-      target: { value: `第一段。${"甲".repeat(1_800)}\n\n第二段。${"乙".repeat(1_800)}` }
+      target: { value: `第一章\n第一段。${"甲".repeat(1_800)}\n\n第二章\n第二段。${"乙".repeat(1_800)}` }
     });
     fireEvent.click(screen.getByRole("button", { name: "进入阅读小窝" }));
 
@@ -1441,7 +1441,7 @@ describe("App", () => {
       expect(screen.queryByText("这句也太会了。")).not.toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "下一段" }));
+    fireEvent.click(screen.getByRole("button", { name: "下一章" }));
     await waitFor(() => {
       expect(callTool).toHaveBeenCalledWith(
         "update_reading_position",
@@ -1461,7 +1461,7 @@ describe("App", () => {
         }
       })
     );
-    fireEvent.click(screen.getByRole("button", { name: "上一段" }));
+    fireEvent.click(screen.getByRole("button", { name: "上一章" }));
     await waitFor(() => {
       expect(callTool).toHaveBeenCalledWith(
         "update_reading_position",

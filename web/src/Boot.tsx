@@ -8,7 +8,7 @@ import {
   useState
 } from "react";
 
-const RESOURCE_VERSION = "app-v52";
+const RESOURCE_VERSION = "app-v53";
 const APP_VERSION = "0.4.8";
 const loadDefaultApp = () => import("./App.js");
 

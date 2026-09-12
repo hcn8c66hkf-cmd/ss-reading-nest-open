@@ -6,6 +6,7 @@ import type {
   ReadingSession,
   TextAnchor
 } from "@ss/shared";
+import { novelReadingUnitLabel } from "@ss/shared";
 import { useHorizontalPaging } from "../hooks/useHorizontalPaging.js";
 import type { CompanionLayout } from "../hooks/useReadingHostLayout.js";
 import {
@@ -73,6 +74,7 @@ export function NovelReader(props: {
     Math.min(props.chunks.length - 1, props.session.userCurrentPosition.index - 1)
   );
   const current = props.chunks[index] ?? "";
+  const currentLabel = novelReadingUnitLabel(current, index + 1);
   const currentCompanionComment = props.companionComments
     .filter(
       (comment) =>
@@ -137,7 +139,7 @@ export function NovelReader(props: {
     >
       <ReaderHeader
         title={props.session.title}
-        progress={`第 ${index + 1} 段 / 共 ${props.chunks.length} 段`}
+        progress={`${currentLabel} · ${index + 1}/${props.chunks.length}`}
         fullscreenLabel={props.fullscreenLabel}
         themeMode={props.themeMode}
         onBack={props.onBack}
@@ -189,9 +191,9 @@ export function NovelReader(props: {
             onToggleFavorite={props.onToggleAnnotationFavorite}
           />
           <div className="page-buttons">
-            <button onClick={previous} disabled={index === 0}>上一段</button>
+            <button onClick={previous} disabled={index === 0}>上一章</button>
             <span>{index + 1} / {props.chunks.length}</span>
-            <button onClick={next} disabled={index >= props.chunks.length - 1}>下一段</button>
+            <button onClick={next} disabled={index >= props.chunks.length - 1}>下一章</button>
           </div>
         </section>
         <CompanionDock
@@ -271,7 +273,7 @@ export function NovelReader(props: {
         </div>
       ) : null}
       <ReaderActions
-        primaryLabel={props.session.liveReadingEnabled ? "提醒Daddy看本段" : "陪我看看这里"}
+        primaryLabel={props.session.liveReadingEnabled ? "提醒Daddy看本章" : "陪我看看这里"}
         secondaryLabel="保存这句"
         onPrimary={() => props.onLook(current, selected, selectedAnchor ?? undefined)}
         primaryDisabled={props.syncRequestInFlight}

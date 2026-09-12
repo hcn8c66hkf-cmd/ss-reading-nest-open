@@ -219,6 +219,11 @@ export const getCloudSourceStatusInputSchema = z
     sessionId: sessionIdSchema
   })
   .strict();
+export const migrateNovelSegmentationInputSchema = z
+  .object({
+    sessionId: sessionIdSchema
+  })
+  .strict();
 export const uploadCloudSourceInputSchema = z
   .discriminatedUnion("sourceKind", [
     z

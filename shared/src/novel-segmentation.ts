@@ -1,9 +1,40 @@
 import { NOVEL_SEGMENTATION_VERSION } from "./models.js";
 
-const TARGET_READING_UNIT_CHARS = 1_800;
-const MAX_READING_UNIT_CHARS = 2_000;
+const LEGACY_TARGET_READING_UNIT_CHARS = 1_800;
+const LEGACY_MAX_READING_UNIT_CHARS = 2_000;
+const TARGET_CHAPTER_PART_CHARS = 10_000;
+const MAX_CHAPTER_CHARS = 12_000;
 
 export function splitNovelText(sourceText: string): string[] {
+  const normalized = sourceText.replace(/\r\n?/g, "\n");
+  const lines = normalized.split("\n");
+  const chapters: string[] = [];
+  let current: string[] = [];
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (isChapterHeading(trimmed) && current.some((item) => item.trim())) {
+      chapters.push(normalizeChapterText(current.join("\n")));
+      current = [trimmed];
+      continue;
+    }
+    current.push(line);
+  }
+  if (current.some((item) => item.trim())) chapters.push(normalizeChapterText(current.join("\n")));
+
+  return chapters.filter(Boolean).flatMap((chapter) => splitOversizedChapter(chapter));
+}
+
+function normalizeChapterText(value: string): string {
+  return value
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .join("\n")
+    .trim()
+    .replace(/\n[ \t]*\n+/g, "\n\n");
+}
+
+export function splitNovelTextV3(sourceText: string): string[] {
   const paragraphs = sourceText
     .replace(/\r\n?/g, "\n")
     .split(/\n[ \t]*\n+/)
@@ -22,9 +53,40 @@ export function splitNovelTextLegacy(sourceText: string): string[] {
 }
 
 export function splitNovelTextForVersion(sourceText: string, segmentationVersion: number): string[] {
-  return segmentationVersion < NOVEL_SEGMENTATION_VERSION
-    ? splitNovelTextLegacy(sourceText)
-    : splitNovelText(sourceText);
+  if (segmentationVersion < 3) return splitNovelTextLegacy(sourceText);
+  if (segmentationVersion === 3) return splitNovelTextV3(sourceText);
+  return splitNovelText(sourceText);
+}
+
+export function novelReadingUnitLabel(chunk: string, index: number): string {
+  const heading = chunk.split("\n", 1)[0]?.trim() ?? "";
+  return isChapterHeading(heading) ? heading.slice(0, 60) : `第 ${index} 章`;
+}
+
+export function buildNovelSegmentationIndexMap(
+  sourceText: string,
+  fromVersion: number
+): { oldChunks: string[]; newChunks: string[]; oldToNew: number[] } {
+  const oldChunks = splitNovelTextForVersion(sourceText, fromVersion);
+  const newChunks = splitNovelText(sourceText);
+  const newEnds: number[] = [];
+  let newCursor = 0;
+  for (const chunk of newChunks) {
+    newCursor += meaningfulLength(chunk);
+    newEnds.push(newCursor);
+  }
+
+  let oldCursor = 0;
+  const oldToNew = oldChunks.map((chunk) => {
+    oldCursor += meaningfulLength(chunk);
+    const target = newEnds.findIndex((end) => end >= oldCursor);
+    return Math.max(1, (target < 0 ? newChunks.length - 1 : target) + 1);
+  });
+  return { oldChunks, newChunks, oldToNew };
+}
+
+function meaningfulLength(value: string): number {
+  return value.replace(/\s/g, "").length;
 }
 
 function splitBySectionHeadings(chunk: string): string[] {
@@ -55,6 +117,14 @@ function isSectionHeading(line: string): boolean {
   );
 }
 
+function isChapterHeading(line: string): boolean {
+  return (
+    /^第\s*[0-9０-９一二两三四五六七八九十百千万〇零]+\s*[章卷回部篇集](?!.*[。！？!?]$).{0,60}$/.test(line) ||
+    /^(?:序章|楔子|引子|前言|正文|尾声|后记|番外(?:\s*[0-9０-９一二两三四五六七八九十]*)?)(?:\s|$|[:：·—-]).{0,60}$/.test(line) ||
+    /^(?:chapter|part)\s+[0-9ivxlcdm]+\b.{0,60}$/i.test(line)
+  );
+}
+
 function mergeShortUnits(paragraphs: string[]): string[] {
   const units: string[] = [];
   let current = "";
@@ -72,7 +142,7 @@ function mergeShortUnits(paragraphs: string[]): string[] {
     }
 
     const combined = `${current}\n\n${paragraph}`;
-    if (combined.length <= TARGET_READING_UNIT_CHARS) {
+    if (combined.length <= LEGACY_TARGET_READING_UNIT_CHARS) {
       current = combined;
     } else {
       units.push(current);
@@ -85,13 +155,13 @@ function mergeShortUnits(paragraphs: string[]): string[] {
 }
 
 function splitLongUnit(chunk: string): string[] {
-  if (chunk.length <= MAX_READING_UNIT_CHARS) return [chunk];
+  if (chunk.length <= LEGACY_MAX_READING_UNIT_CHARS) return [chunk];
   const paragraphs = chunk.split(/\n[ \t]*\n+/);
   const units: string[] = [];
   let current = "";
 
   for (const paragraph of paragraphs) {
-    if (paragraph.length > MAX_READING_UNIT_CHARS) {
+    if (paragraph.length > LEGACY_MAX_READING_UNIT_CHARS) {
       if (current) {
         units.push(current);
         current = "";
@@ -100,7 +170,7 @@ function splitLongUnit(chunk: string): string[] {
       continue;
     }
     const next = current ? `${current}\n\n${paragraph}` : paragraph;
-    if (next.length > MAX_READING_UNIT_CHARS && current) {
+    if (next.length > LEGACY_MAX_READING_UNIT_CHARS && current) {
       units.push(current);
       current = paragraph;
     } else {
@@ -114,8 +184,54 @@ function splitLongUnit(chunk: string): string[] {
 
 function splitLongLine(line: string): string[] {
   const chunks: string[] = [];
-  for (let start = 0; start < line.length; start += MAX_READING_UNIT_CHARS) {
-    chunks.push(line.slice(start, start + MAX_READING_UNIT_CHARS));
+  for (let start = 0; start < line.length; start += LEGACY_MAX_READING_UNIT_CHARS) {
+    chunks.push(line.slice(start, start + LEGACY_MAX_READING_UNIT_CHARS));
   }
   return chunks;
+}
+
+function splitOversizedChapter(chapter: string): string[] {
+  if (chapter.length <= MAX_CHAPTER_CHARS) return [chapter];
+  const paragraphs = chapter.split(/\n[ \t]*\n+/).map((item) => item.trim()).filter(Boolean);
+  const parts: string[] = [];
+  let current = "";
+
+  for (const paragraph of paragraphs) {
+    if (paragraph.length > MAX_CHAPTER_CHARS) {
+      if (current) {
+        parts.push(current);
+        current = "";
+      }
+      parts.push(...splitLongChapterParagraph(paragraph));
+      continue;
+    }
+    const next = current ? `${current}\n\n${paragraph}` : paragraph;
+    if (current && (next.length > MAX_CHAPTER_CHARS || current.length >= TARGET_CHAPTER_PART_CHARS)) {
+      parts.push(current);
+      current = paragraph;
+    } else {
+      current = next;
+    }
+  }
+  if (current) parts.push(current);
+  return parts;
+}
+
+function splitLongChapterParagraph(paragraph: string): string[] {
+  const parts: string[] = [];
+  let rest = paragraph;
+  while (rest.length > MAX_CHAPTER_CHARS) {
+    const window = rest.slice(0, MAX_CHAPTER_CHARS);
+    const boundary = Math.max(
+      window.lastIndexOf("。"),
+      window.lastIndexOf("！"),
+      window.lastIndexOf("？"),
+      window.lastIndexOf("…")
+    );
+    const end = boundary >= TARGET_CHAPTER_PART_CHARS ? boundary + 1 : MAX_CHAPTER_CHARS;
+    parts.push(rest.slice(0, end).trim());
+    rest = rest.slice(end).trim();
+  }
+  if (rest) parts.push(rest);
+  return parts;
 }

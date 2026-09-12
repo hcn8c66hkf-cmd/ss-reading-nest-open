@@ -1,10 +1,14 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
+  buildNovelSegmentationIndexMap,
   NOVEL_SEGMENTATION_VERSION,
+  novelReadingUnitLabel,
   splitNovelText,
   splitNovelTextForVersion,
+  type ReadingPosition,
   type SourceKind,
-  type SourceManifest
+  type SourceManifest,
+  type TextAnchor
 } from "@ss/shared";
 import { AppError } from "../errors/app-error.js";
 import type { ReadingRepository } from "../repositories/reading-repository.js";
@@ -115,6 +119,122 @@ export class CloudSourceService {
       throw new AppError("INVALID_OPERATION", "云端正文分段数量校验失败。");
     }
     return { sourceText: normalizedText, sourceManifest };
+  }
+
+  async migrateNovelSegmentation(sessionId: string): Promise<{
+    sessionId: string;
+    sourceManifest: SourceManifest;
+    previousUnitCount: number;
+    unitCount: number;
+    userCurrentPosition: ReadingPosition;
+    assistantSyncedPosition: ReadingPosition | null;
+  }> {
+    const restored = await this.restoreNovelSource(sessionId);
+    const previousVersion = restored.sourceManifest.segmentationVersion;
+    const { oldChunks, newChunks, oldToNew } = buildNovelSegmentationIndexMap(
+      restored.sourceText,
+      previousVersion
+    );
+    if (newChunks.length === 0) {
+      throw new AppError("INVALID_OPERATION", "正文没有识别出可阅读章节。");
+    }
+    const nextManifest: SourceManifest = {
+      ...restored.sourceManifest,
+      segmentationVersion: NOVEL_SEGMENTATION_VERSION,
+      paragraphCount: newChunks.length
+    };
+    const now = this.deps.now().toISOString();
+    const result = await this.repository.mutate((database) => {
+      const session = database.sessions.find((item) => item.id === sessionId);
+      if (!session) throw new AppError("SESSION_NOT_FOUND", `找不到共读 session：${sessionId}`);
+      if (session.type !== "novel") {
+        throw new AppError("INVALID_OPERATION", "只有小说正文可以重新按章节整理。");
+      }
+      const mapPosition = (position: ReadingPosition): ReadingPosition => {
+        if (position.kind !== "paragraph") return position;
+        const mappedIndex = mapNovelUnitIndex(position.index, oldToNew, newChunks.length);
+        return {
+          kind: "paragraph",
+          index: mappedIndex,
+          total: newChunks.length,
+          label: novelReadingUnitLabel(newChunks[mappedIndex - 1] ?? "", mappedIndex)
+        };
+      };
+      const mapRange = (start: number, end: number) => ({
+        rangeStart: mapNovelUnitIndex(start, oldToNew, newChunks.length),
+        rangeEnd: mapNovelUnitIndex(end, oldToNew, newChunks.length)
+      });
+
+      session.userCurrentPosition = mapPosition(session.userCurrentPosition);
+      session.assistantSyncedPosition = session.assistantSyncedPosition
+        ? mapPosition(session.assistantSyncedPosition)
+        : null;
+      session.liveReadingStartIndex = session.liveReadingStartIndex === undefined
+        ? undefined
+        : mapNovelUnitIndex(session.liveReadingStartIndex, oldToNew, newChunks.length);
+      session.pendingLiveReadingPositions = [];
+      session.pendingAnnotationReplies = session.pendingAnnotationReplies?.map((item) => ({
+        ...item,
+        position: mapPosition(item.position)
+      }));
+      session.sourceManifest = nextManifest;
+      session.updatedAt = now;
+
+      for (const collection of [database.quotes, database.reactions, database.bookmarks]) {
+        for (const item of collection) {
+          if (item.sessionId === sessionId) item.position = mapPosition(item.position);
+        }
+      }
+      for (const comment of database.companionComments) {
+        if (comment.sessionId === sessionId) comment.position = mapPosition(comment.position);
+      }
+      for (const annotation of database.annotations) {
+        if (annotation.sessionId !== sessionId) continue;
+        annotation.position = mapPosition(annotation.position);
+        const chapterText = newChunks[annotation.position.index - 1] ?? "";
+        annotation.anchor = relocateTextAnchor(annotation.anchor, chapterText);
+        annotation.updatedAt = now;
+      }
+      for (const favorite of database.annotationFavorites) {
+        if (favorite.sessionId === sessionId) favorite.position = mapPosition(favorite.position);
+      }
+      for (const fact of database.readingFactCards) {
+        if (fact.sessionId === sessionId && fact.position) fact.position = mapPosition(fact.position);
+      }
+      for (const memory of database.readingMemories) {
+        if (memory.sessionId !== sessionId || memory.rangeStart === undefined || memory.rangeEnd === undefined) continue;
+        Object.assign(memory, mapRange(memory.rangeStart, memory.rangeEnd));
+        if (memory.scope === "chapter") {
+          memory.chapterLabel = chapterRangeLabel(newChunks, memory.rangeStart, memory.rangeEnd);
+        }
+        memory.updatedAt = now;
+      }
+      for (const candidate of database.skillCandidates) {
+        if (candidate.sessionId !== sessionId) continue;
+        Object.assign(candidate, mapRange(candidate.rangeStart, candidate.rangeEnd));
+        candidate.chapterLabel = chapterRangeLabel(newChunks, candidate.rangeStart, candidate.rangeEnd);
+        candidate.updatedAt = now;
+      }
+      return {
+        userCurrentPosition: session.userCurrentPosition,
+        assistantSyncedPosition: session.assistantSyncedPosition
+      };
+    });
+
+    if (nextManifest.cloudSync.manifestObjectKey) {
+      await this.storage.putObject({
+        key: nextManifest.cloudSync.manifestObjectKey,
+        bytes: new TextEncoder().encode(JSON.stringify(nextManifest)),
+        contentType: "application/json"
+      });
+    }
+    return {
+      sessionId,
+      sourceManifest: nextManifest,
+      previousUnitCount: oldChunks.length,
+      unitCount: newChunks.length,
+      ...result
+    };
   }
 
   async uploadMangaSource(input: {
@@ -283,6 +403,44 @@ export class CloudSourceService {
     }
     return session.sourceManifest;
   }
+}
+
+function mapNovelUnitIndex(index: number, oldToNew: number[], unitCount: number): number {
+  const safeOldIndex = Math.max(1, Math.min(oldToNew.length, Math.trunc(index || 1)));
+  return oldToNew[safeOldIndex - 1] ?? Math.max(1, unitCount);
+}
+
+function relocateTextAnchor(anchor: TextAnchor, chapterText: string): TextAnchor {
+  const selectedText = anchor.selectedText;
+  if (!selectedText) return anchor;
+  const candidates: number[] = [];
+  let cursor = chapterText.indexOf(selectedText);
+  while (cursor >= 0) {
+    candidates.push(cursor);
+    cursor = chapterText.indexOf(selectedText, cursor + 1);
+  }
+  if (candidates.length === 0) {
+    const { startOffset: _start, endOffset: _end, ...portable } = anchor;
+    return portable;
+  }
+  const startOffset = candidates.find((candidate) => {
+    const prefixMatches = !anchor.prefix || chapterText.slice(Math.max(0, candidate - anchor.prefix.length), candidate) === anchor.prefix;
+    const suffixMatches = !anchor.suffix || chapterText.slice(candidate + selectedText.length, candidate + selectedText.length + anchor.suffix.length) === anchor.suffix;
+    return prefixMatches && suffixMatches;
+  }) ?? candidates[0]!;
+  return {
+    ...anchor,
+    startOffset,
+    endOffset: startOffset + selectedText.length,
+    prefix: chapterText.slice(Math.max(0, startOffset - 60), startOffset),
+    suffix: chapterText.slice(startOffset + selectedText.length, startOffset + selectedText.length + 60)
+  };
+}
+
+function chapterRangeLabel(chunks: string[], start: number, end: number): string {
+  const first = novelReadingUnitLabel(chunks[start - 1] ?? "", start);
+  const last = novelReadingUnitLabel(chunks[end - 1] ?? "", end);
+  return start === end ? first : `${first}–${last}`;
 }
 
 export function normalizeNovelSourceText(sourceText: string): string {

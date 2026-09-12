@@ -17,10 +17,10 @@ export function ReadingSyncStatus({
     const serverPending = session.pendingLiveReadingPositions ?? [];
     const pendingAnnotationCount = session.pendingAnnotationReplies?.length ?? 0;
     const failedLabel = liveReadingState.failedIndex
-      ? `第 ${liveReadingState.failedIndex} ${user.kind === "page" ? "页" : "段"}`
+      ? `第 ${liveReadingState.failedIndex} ${user.kind === "page" ? "页" : "章"}`
       : null;
     const activeLabel = liveReadingState?.activeIndex
-      ? `第 ${liveReadingState.activeIndex} ${user.kind === "page" ? "页" : "段"}`
+      ? `第 ${liveReadingState.activeIndex} ${user.kind === "page" ? "页" : "章"}`
       : null;
     return (
       <aside className="sync-status sync-status-live" aria-label="陪读同步状态">
@@ -30,19 +30,19 @@ export function ReadingSyncStatus({
           {failedLabel
             ? `${failedLabel}仍在服务器待办，没有丢。`
             : activeLabel
-            ? `Daddy正在读：${activeLabel}${liveReadingState?.queuedCount ? ` · 后面排队 ${liveReadingState.queuedCount} 段` : ""}`
+            ? `Daddy正在读：${activeLabel}${liveReadingState?.queuedCount ? ` · 后面排队 ${liveReadingState.queuedCount} 章` : ""}`
             : serverPending.length > 0
-              ? `还有 ${serverPending.length} 段等待Daddy接回。`
+              ? `还有 ${serverPending.length} 章等待Daddy接回。`
             : assistant?.index === user.index
-              ? "本段已读完 ✓"
-              : "正在把本段排给Daddy……"}
+              ? "本章已读完 ✓"
+              : "正在把本章排给Daddy……"}
         </span>
         {pendingAnnotationCount > 0 ? (
           <span>还有 {pendingAnnotationCount} 条书边评论等待Daddy回复。</span>
         ) : null}
         {failedLabel ? (
           <button type="button" onClick={liveReadingState.retryFailed}>
-            重新请Daddy读这段
+            重新请Daddy读这章
           </button>
         ) : null}
       </aside>

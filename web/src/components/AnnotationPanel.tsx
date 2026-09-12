@@ -47,7 +47,7 @@ export function AnnotationPanel(props: {
       {props.loading ? <p className="annotation-empty">正在翻开书边批注……</p> : null}
       {!props.loading && props.error ? <p className="annotation-empty">{props.error}</p> : null}
       {!props.loading && !props.error && props.annotations.length === 0 ? (
-        <p className="annotation-empty">这一段还没有划线，第一笔留给你。</p>
+        <p className="annotation-empty">这一章还没有划线，第一笔留给你。</p>
       ) : null}
 
       <div className="annotation-list">

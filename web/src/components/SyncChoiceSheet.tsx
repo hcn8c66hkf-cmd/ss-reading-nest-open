@@ -15,8 +15,8 @@ export function SyncChoiceSheet(props: {
         <button className="action-primary" onClick={props.onFull}>
           完整补课后再陪读（推荐）
         </button>
-        <button onClick={props.onCurrent}>只看当前段</button>
-        <button onClick={props.onRecent}>{props.recentLabel ?? "补最近 5 段"}</button>
+        <button onClick={props.onCurrent}>只看当前章节</button>
+        <button onClick={props.onRecent}>{props.recentLabel ?? "补最近 5 章"}</button>
         <button className="text-button" onClick={props.onCancel}>取消</button>
       </section>
     </div>

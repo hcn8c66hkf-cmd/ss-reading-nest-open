@@ -19,7 +19,11 @@ import type {
   SourceManifest,
   TextAnchor
 } from "@ss/shared";
-import { DEFAULT_SESSION_PREFERENCES } from "@ss/shared";
+import {
+  DEFAULT_SESSION_PREFERENCES,
+  NOVEL_SEGMENTATION_VERSION,
+  novelReadingUnitLabel
+} from "@ss/shared";
 import {
   askChatGpt,
   callTool,
@@ -629,6 +633,40 @@ export function App() {
     );
     setSourceAvailability(availability);
     if (local && "chunks" in local && (availability === "available_local" || availability === "unknown")) {
+      if (
+        local.metadata.sourceManifest.segmentationVersion < NOVEL_SEGMENTATION_VERSION &&
+        local.metadata.sourceManifest.cloudSync.enabled
+      ) {
+        try {
+          const migration = await callTool("migrate_novel_segmentation", {
+            sessionId: nextItem.session.id
+          });
+          if (migration.structuredContent?.migrated === true) {
+            const migratedChunks = splitNovelText(local.sourceText);
+            const migratedManifest = migration.structuredContent.sourceManifest as SourceManifest;
+            const migratedSession: ReadingSession = {
+              ...nextItem.session,
+              sourceManifest: migratedManifest,
+              userCurrentPosition: migration.structuredContent.userCurrentPosition as ReadingPosition,
+              assistantSyncedPosition:
+                (migration.structuredContent.assistantSyncedPosition as ReadingPosition | null | undefined) ?? null,
+              pendingLiveReadingPositions: []
+            };
+            const migratedBundle = { ...nextItem, session: migratedSession };
+            await rememberNovel(migratedSession, local.sourceText, migratedChunks, migratedManifest);
+            setSessionBundle(migratedBundle);
+            setChunks(migratedChunks);
+            setSourceText(local.sourceText);
+            setRemembered(true);
+            setSourceAvailability("available_local");
+            setScreen("novel");
+            setToast(`已按原章节重新排好：${local.chunks.length} 段变为 ${migratedChunks.length} 章，旧记录都还在。`);
+            return;
+          }
+        } catch {
+          setToast("这次没有自动改动旧书，仍按原来的分段继续读。" );
+        }
+      }
       setChunks(local.chunks);
       setSourceText(local.sourceText);
       setRemembered(true);
@@ -654,30 +692,52 @@ export function App() {
           const restored = await cloudSourceClient.restoreNovelSource({
             sessionId: nextItem.session.id
           });
-          const restoredChunks = splitNovelTextForVersion(
+          let restoredChunks = splitNovelTextForVersion(
             restored.sourceText,
             restored.sourceManifest.segmentationVersion
           );
+          let restoredManifest = restored.sourceManifest;
+          let restoredSession: ReadingSession = {
+            ...nextItem.session,
+            sourceManifest: restoredManifest
+          };
+          if (restoredManifest.segmentationVersion < NOVEL_SEGMENTATION_VERSION) {
+            try {
+              const migration = await callTool("migrate_novel_segmentation", {
+                sessionId: nextItem.session.id
+              });
+              if (migration.structuredContent?.migrated === true) {
+                restoredChunks = splitNovelText(restored.sourceText);
+                restoredManifest = migration.structuredContent.sourceManifest as SourceManifest;
+                restoredSession = {
+                  ...restoredSession,
+                  sourceManifest: restoredManifest,
+                  userCurrentPosition: migration.structuredContent.userCurrentPosition as ReadingPosition,
+                  assistantSyncedPosition:
+                    (migration.structuredContent.assistantSyncedPosition as ReadingPosition | null | undefined) ?? null,
+                  pendingLiveReadingPositions: []
+                };
+              }
+            } catch {
+              // A failed migration must never block restoring the existing book.
+            }
+          }
           const localManifest = {
-            ...restored.sourceManifest,
+            ...restoredManifest,
             paragraphCount: restoredChunks.length
           };
           if (
-            getSourceAvailability(restored.sourceManifest, localManifest) !==
+            getSourceAvailability(restoredManifest, localManifest) !==
             "available_local"
           ) {
             throw new Error("Restored source did not match its manifest");
           }
-          const restoredSession = {
-            ...nextItem.session,
-            sourceManifest: restored.sourceManifest
-          };
           const restoredBundle = { ...nextItem, session: restoredSession };
           await rememberNovel(
             restoredSession,
             restored.sourceText,
             restoredChunks,
-            restored.sourceManifest
+            restoredManifest
           );
           setSessionBundle(restoredBundle);
           setChunks(restoredChunks);
@@ -1341,7 +1401,7 @@ export function App() {
           matchesParagraphComment(comment, session.id, index, operationId)
         )
       ) {
-        const targetPosition = makePosition("novel", index, chunks.length);
+        const targetPosition = makePosition("novel", index, chunks.length, chunks);
         const prompt = buildLiveReadingPrompt({
           sessionId: session.id,
           title: session.title,
@@ -1360,7 +1420,12 @@ export function App() {
       }
     }
     setReaderScrollTop(0);
-    const nextPosition = makePosition(session.type, index, session.type === "novel" ? chunks.length : mangaPages.length);
+    const nextPosition = makePosition(
+      session.type,
+      index,
+      session.type === "novel" ? chunks.length : mangaPages.length,
+      session.type === "novel" ? chunks : undefined
+    );
     setSessionBundle({
       ...sessionBundle,
       session: {
@@ -1472,7 +1537,7 @@ export function App() {
   ) {
     if (!sessionBundle) return;
     if (sessionBundle.session.liveReadingEnabled) {
-      setToast("这一段已经排给Daddy；短评出现就代表他读完啦。");
+      setToast("这一章已经排给Daddy；短评出现就代表他读完啦。");
       return;
     }
     if (syncRequestInFlight || syncJobRef.current) return;
@@ -1671,7 +1736,8 @@ export function App() {
     const confirmedPosition = makePosition(
       syncJob.type,
       batch.rangeEnd,
-      syncJob.type === "novel" ? chunks.length : mangaPages.length
+      syncJob.type === "novel" ? chunks.length : mangaPages.length,
+      syncJob.type === "novel" ? chunks : undefined
     );
     if (syncJob.mode !== "recent_only") {
       await callTool("confirm_assistant_synced_position", {
@@ -1809,7 +1875,7 @@ export function App() {
       ) {
         return true;
       }
-      const targetPosition = makePosition("novel", index, chunks.length);
+      const targetPosition = makePosition("novel", index, chunks.length, chunks);
       const start = index;
       const text = chunks
         .slice(start - 1, index)
@@ -3311,7 +3377,7 @@ export function App() {
         <SyncChoiceSheet
           assistantLabel={sessionBundle.session.assistantSyncedPosition?.label ?? "开头"}
           userLabel={sessionBundle.session.userCurrentPosition.label}
-          recentLabel={sessionBundle.session.type === "manga" ? "补最近 3 页" : "补最近 5 段"}
+          recentLabel={sessionBundle.session.type === "manga" ? "补最近 3 页" : "补最近 5 章"}
           onFull={() =>
             void (sessionBundle.session.type === "manga"
               ? startMangaCatchUp()
@@ -3511,12 +3577,19 @@ function ensureSessionDefaults(session: ReadingSession): ReadingSession {
   };
 }
 
-function makePosition(type: ReadingType, index: number, total?: number): ReadingPosition {
+function makePosition(
+  type: ReadingType,
+  index: number,
+  total?: number,
+  novelChunks?: string[]
+): ReadingPosition {
   return {
     kind: type === "novel" ? "paragraph" : "page",
     index,
     ...(total ? { total } : {}),
-    label: type === "novel" ? `第 ${index} 段` : `第 ${index} 页`
+    label: type === "novel"
+      ? novelReadingUnitLabel(novelChunks?.[index - 1] ?? "", index)
+      : `第 ${index} 页`
   };
 }
 

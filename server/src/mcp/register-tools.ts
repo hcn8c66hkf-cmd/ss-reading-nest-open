@@ -12,6 +12,7 @@ import {
   openReadingNestInputSchema,
   listCompanionCommentsInputSchema,
   listAnnotationsInputSchema,
+  migrateNovelSegmentationInputSchema,
   setAnnotationFavoriteInputSchema,
   listAnnotationFavoritesInputSchema,
   upsertReadingMemoryInputSchema,
@@ -52,8 +53,8 @@ import type { CloudSourceService } from "../services/cloud-source-service.js";
 import type { CompanionAutoplayService } from "../services/companion-autoplay-service.js";
 import { toolResult } from "./tool-result.js";
 
-export const READING_NEST_URI = "ui://ss-reading-nest/app-v52.html";
-export const READING_NEST_TOOL_NAME = "open_reading_nest_v52";
+export const READING_NEST_URI = "ui://ss-reading-nest/app-v53.html";
+export const READING_NEST_TOOL_NAME = "open_reading_nest_v53";
 
 const readLiveReadingContextInputSchema = z
   .object({
@@ -105,10 +106,24 @@ const mutation = {
 };
 
 export const TOOL_CONFIGS = {
-  open_reading_nest_v52: {
+  open_reading_nest_v53: {
     title: "打开 S×S 小窝共读",
     description:
-      "Use this primary v52 tool when the user wants to open the reading nest or continue recent reading. Paragraph navigation wakes the active ChatGPT conversation in the originating mobile gesture.",
+      "Use this primary v53 tool when the user wants to open the reading nest or continue recent reading. Novels use their original chapter structure with safe splitting only for exceptionally long chapters.",
+    inputSchema: openReadingNestInputSchema,
+    annotations: readOnly,
+    _meta: {
+      ui: { resourceUri: READING_NEST_URI },
+      "ui/resourceUri": READING_NEST_URI,
+      "openai/outputTemplate": READING_NEST_URI,
+      "openai/toolInvocation/invoking": "正在点亮小窝…",
+      "openai/toolInvocation/invoked": "小窝已经准备好"
+    }
+  },
+  open_reading_nest_v52: {
+    title: "打开 S×S 小窝共读（v52 兼容入口）",
+    description:
+      "Legacy compatibility entry. Prefer open_reading_nest_v53 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -564,6 +579,13 @@ export const TOOL_CONFIGS = {
       "Use this to check whether a reading source exists in private cloud storage. Returns metadata only.",
     inputSchema: getCloudSourceStatusInputSchema,
     annotations: readOnly
+  },
+  migrate_novel_segmentation: {
+    title: "按原章节重新整理正文",
+    description:
+      "Use this to migrate an existing cloud-backed novel from an older paragraph layout to the current chapter-first layout while preserving positions and reading artifacts.",
+    inputSchema: migrateNovelSegmentationInputSchema,
+    annotations: { ...mutation, idempotentHint: true }
   },
   read_live_reading_context: {
     title: "读取当前实时陪读正文",
@@ -1139,6 +1161,12 @@ export function registerReadingTools(
   registerAppTool(
     server,
     READING_NEST_TOOL_NAME,
+    TOOL_CONFIGS.open_reading_nest_v53,
+    openReadingNest
+  );
+  registerAppTool(
+    server,
+    "open_reading_nest_v52",
     TOOL_CONFIGS.open_reading_nest_v52,
     openReadingNest
   );
@@ -1424,6 +1452,24 @@ export function registerReadingTools(
       }
       const result = await cloudSourceService.getCloudSourceStatus(sessionId);
       return toolResult(result, "已检查这本书的私人云端正文状态。");
+    }
+  );
+
+  server.registerTool(
+    "migrate_novel_segmentation",
+    TOOL_CONFIGS.migrate_novel_segmentation,
+    async ({ sessionId }) => {
+      if (!cloudSourceService) {
+        return toolResult(
+          { migrated: false as const, reason: "cloud_source_disabled" as const },
+          "私人云端正文服务尚未启用，旧书保持原样。"
+        );
+      }
+      const result = await cloudSourceService.migrateNovelSegmentation(sessionId);
+      return toolResult(
+        { migrated: true as const, ...result },
+        `已按原章节整理正文：${result.previousUnitCount} 段变为 ${result.unitCount} 个阅读章节，旧进度与书边记录已迁移。`
+      );
     }
   );
 

@@ -6,6 +6,7 @@ import { CloudSourceService } from "./cloud-source-service.js";
 import {
   DEFAULT_SESSION_PREFERENCES,
   NOVEL_SEGMENTATION_VERSION,
+  splitNovelTextForVersion,
   type ReadingDatabase
 } from "@ss/shared";
 
@@ -56,7 +57,7 @@ describe("CloudSourceService", () => {
     expect(stored).not.toContain("第二段");
   });
 
-  it("counts numbered platform-style novel sections as separate cloud reading units", async () => {
+  it("keeps numbered platform-style sections inside one reading chapter", async () => {
     const { cloudSource, sessionId } = setup();
 
     const result = await cloudSource.uploadNovelSource({
@@ -66,7 +67,79 @@ describe("CloudSourceService", () => {
       title: "平台文"
     });
 
-    expect(result.sourceManifest.paragraphCount).toBe(3);
+    expect(result.sourceManifest.paragraphCount).toBe(1);
+  });
+
+  it("migrates old positions and annotations into chapter-first units", async () => {
+    const { cloudSource, repository, sessionId } = setup();
+    const sourceText = [
+      "第一章 重逢",
+      ...Array.from({ length: 8 }, (_, index) => `${index === 4 ? "独特点" : index}。${"甲".repeat(600)}`),
+      "第二章 回家",
+      ...Array.from({ length: 4 }, (_, index) => `${index}。${"乙".repeat(600)}`)
+    ].join("\n\n");
+    const uploaded = await cloudSource.uploadNovelSource({
+      sessionId,
+      sourceText,
+      sourceKind: "pasted_text",
+      title: "章节迁移测试"
+    });
+    const oldChunks = splitNovelTextForVersion(sourceText, 3);
+    const firstChapterOldIndex = oldChunks.findIndex((chunk) => chunk.includes("独特点")) + 1;
+    const secondChapterOldIndex = oldChunks.findIndex((chunk) => chunk.startsWith("第二章")) + 1;
+
+    await repository.mutate((database) => {
+      const session = database.sessions[0]!;
+      session.sourceManifest = {
+        ...uploaded.sourceManifest,
+        segmentationVersion: 3,
+        paragraphCount: oldChunks.length
+      };
+      session.userCurrentPosition = {
+        kind: "paragraph",
+        index: secondChapterOldIndex,
+        total: oldChunks.length,
+        label: `第 ${secondChapterOldIndex} 段`
+      };
+      database.companionComments.push({
+        id: "comment-old",
+        sessionId,
+        position: { kind: "paragraph", index: firstChapterOldIndex, label: "旧段" },
+        mode: "light_chat",
+        length: "short",
+        text: "旧短评还在",
+        source: "live_reading",
+        inRecent: true,
+        inHistory: true,
+        createdAt: NOW
+      });
+      database.annotations.push({
+        id: "annotation-old",
+        sessionId,
+        position: { kind: "paragraph", index: firstChapterOldIndex, label: "旧段" },
+        anchor: { selectedText: "独特点", startOffset: 0, endOffset: 3 },
+        createdBy: "user",
+        messages: [],
+        createdAt: NOW,
+        updatedAt: NOW
+      });
+    });
+
+    const result = await cloudSource.migrateNovelSegmentation(sessionId);
+    const database = await repository.read();
+
+    expect(result).toMatchObject({
+      previousUnitCount: oldChunks.length,
+      unitCount: 2,
+      userCurrentPosition: { index: 2, label: "第二章 回家" }
+    });
+    expect(database.companionComments[0]?.position).toMatchObject({ index: 1, label: "第一章 重逢" });
+    expect(database.annotations[0]?.position).toMatchObject({ index: 1, label: "第一章 重逢" });
+    expect(database.annotations[0]?.anchor.startOffset).toBeGreaterThan(0);
+    expect(database.sessions[0]?.sourceManifest).toMatchObject({
+      segmentationVersion: NOVEL_SEGMENTATION_VERSION,
+      paragraphCount: 2
+    });
   });
 
   it("restores novel text only after hash and paragraph validation passes", async () => {
