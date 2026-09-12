@@ -35,6 +35,7 @@ const fact = {
 describe("ReadingMemorySheet", () => {
   it("shows source labels and preserves user edits as revisions", () => {
     const onEditFact = vi.fn();
+    const onClose = vi.fn();
     render(
       <ReadingMemorySheet
         memories={[memory]}
@@ -44,7 +45,7 @@ describe("ReadingMemorySheet", () => {
         onCapture={vi.fn()}
         onEditMemory={vi.fn()}
         onEditFact={onEditFact}
-        onClose={vi.fn()}
+        onClose={onClose}
       />
     );
 
@@ -56,5 +57,7 @@ describe("ReadingMemorySheet", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "保存修订" }));
     expect(onEditFact).toHaveBeenCalledWith(fact, "现在已经知道真相。");
+    fireEvent.click(screen.getByRole("button", { name: "关闭长期阅读记忆" }));
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

@@ -29,6 +29,7 @@ import {
   requestReaderFullscreen,
   requestReaderInline,
   requestReaderPip,
+  sendFollowUpFromUserGesture,
   setReadingFrameHeight,
   saveReaderWidgetState,
   updateModelContext
@@ -246,6 +247,7 @@ export function App() {
   const companionVersionRef = useRef<string | null>(null);
   const annotationVersionRef = useRef<string | null>(null);
   const sentLiveReadingFallbacksRef = useRef(new Set<string>());
+  const gestureLiveReadingOperationsRef = useRef(new Set<string>());
   const hostLayout = useReadingHostLayout();
   const manualCompanionDraft = useMemo<PendingCompanionCommentDraft | null>(() => {
     if (!sessionBundle) return null;
@@ -1316,8 +1318,49 @@ export function App() {
 
   async function changePosition(index: number) {
     if (!sessionBundle) return;
+    const session = sessionBundle.session;
+    if (
+      session.type === "novel" &&
+      session.liveReadingEnabled &&
+      sourceAvailability === "available_local"
+    ) {
+      const mode = session.sessionPreferences.readingCommentMode;
+      const length = session.sessionPreferences.commentLength;
+      const operationId = buildLiveReadingOperationId(
+        session.id,
+        "paragraph",
+        index,
+        mode,
+        length
+      );
+      const text = chunks[index - 1];
+      if (
+        text?.trim() &&
+        !gestureLiveReadingOperationsRef.current.has(operationId) &&
+        !companionComments.some((comment) =>
+          matchesParagraphComment(comment, session.id, index, operationId)
+        )
+      ) {
+        const targetPosition = makePosition("novel", index, chunks.length);
+        const prompt = buildLiveReadingPrompt({
+          sessionId: session.id,
+          title: session.title,
+          position: targetPosition,
+          text: `【${targetPosition.label}】\n${text}`,
+          operationId,
+          autoSaveCompanionComments:
+            session.sessionPreferences.autoSaveCompanionComments,
+          requestedMode: mode,
+          requestedLength: length
+        });
+        gestureLiveReadingOperationsRef.current.add(operationId);
+        void sendFollowUpFromUserGesture(prompt, false).then((accepted) => {
+          if (!accepted) gestureLiveReadingOperationsRef.current.delete(operationId);
+        });
+      }
+    }
     setReaderScrollTop(0);
-    const nextPosition = makePosition(sessionBundle.session.type, index, sessionBundle.session.type === "novel" ? chunks.length : mangaPages.length);
+    const nextPosition = makePosition(session.type, index, session.type === "novel" ? chunks.length : mangaPages.length);
     setSessionBundle({
       ...sessionBundle,
       session: {
@@ -1758,6 +1801,7 @@ export function App() {
       const mode = session.sessionPreferences.readingCommentMode;
       const length = session.sessionPreferences.commentLength;
       const operationId = buildLiveReadingOperationId(session.id, session.userCurrentPosition.kind, index, mode, length);
+      const sentFromGesture = gestureLiveReadingOperationsRef.current.delete(operationId);
       if (
         companionComments.some((comment) =>
           matchesParagraphComment(comment, session.id, index, operationId)
@@ -1819,18 +1863,20 @@ export function App() {
             fallbackPrompt
           ].join("\n\n")
           : fallbackPrompt;
-        const fallbackMode = await sendLiveReadingFallback({
-          prompt: directPrompt,
-          sendMessage: (prompt, options) => askChatGpt(prompt, {
-            ...options,
-            // The iOS host can acknowledge ui/message without creating a real
-            // follow-up turn. Prefer ChatGPT's feature-detected compatibility
-            // alias there, then alternate to MCP Apps if writeback verification
-            // proves it was a false positive. Both lanes carry the full body.
-            transport: retryingFallback ? "apps" : "compatibility-first",
-            ...(retryingFallback ? { scrollToBottom: true } : {})
-          })
-        });
+        const fallbackMode = sentFromGesture
+          ? "message"
+          : await sendLiveReadingFallback({
+              prompt: directPrompt,
+              sendMessage: (prompt, options) => askChatGpt(prompt, {
+                ...options,
+                // The iOS host can acknowledge ui/message without creating a real
+                // follow-up turn. Prefer ChatGPT's feature-detected compatibility
+                // alias there, then alternate to MCP Apps if writeback verification
+                // proves it was a false positive. Both lanes carry the full body.
+                transport: retryingFallback ? "apps" : "compatibility-first",
+                ...(retryingFallback ? { scrollToBottom: true } : {})
+              })
+            });
         if (fallbackMode === "failed") {
           sentLiveReadingFallbacksRef.current.delete(operationId);
           throw new Error("Host did not accept follow-up message");

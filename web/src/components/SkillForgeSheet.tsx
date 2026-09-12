@@ -33,7 +33,10 @@ export function SkillForgeSheet(props: {
         onClick={(event) => event.stopPropagation()}
       >
         <div className="sheet-grip" />
-        <h2>读后炼制 P3</h2>
+        <div className="sheet-heading">
+          <h2>读后炼制 P3</h2>
+          <button type="button" className="sheet-close-button" aria-label="关闭读后炼制" onClick={props.onClose}>×</button>
+        </div>
         <p className="memory-intro">
           先做章节快照和价值判定。只有真正能复用的方法，才会生成 Skill 候选。
         </p>

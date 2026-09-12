@@ -31,13 +31,14 @@ const candidate = {
 describe("SkillForgeSheet", () => {
   it("shows the verdict and lets the user copy a forgeable candidate", () => {
     const onCopy = vi.fn();
+    const onClose = vi.fn();
     render(
       <SkillForgeSheet
         candidates={[candidate]}
         loading={false}
         onForge={vi.fn()}
         onCopy={onCopy}
-        onClose={vi.fn()}
+        onClose={onClose}
       />
     );
 
@@ -45,6 +46,8 @@ describe("SkillForgeSheet", () => {
     expect(screen.getByText("第 1–20 段")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "复制候选包" }));
     expect(onCopy).toHaveBeenCalledWith(candidate);
+    fireEvent.click(screen.getByRole("button", { name: "关闭读后炼制" }));
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it("does not offer a package when the verdict is knowledge-only", () => {

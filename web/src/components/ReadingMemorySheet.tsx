@@ -42,7 +42,10 @@ export function ReadingMemorySheet(props: {
         onClick={(event) => event.stopPropagation()}
       >
         <div className="sheet-grip" />
-        <h2>长期阅读记忆</h2>
+        <div className="sheet-heading">
+          <h2>长期阅读记忆</h2>
+          <button type="button" className="sheet-close-button" aria-label="关闭长期阅读记忆" onClick={props.onClose}>×</button>
+        </div>
         <p className="memory-intro">
           摘要、共同余味和事实卡分开保存；来源标签会一直保留。
         </p>

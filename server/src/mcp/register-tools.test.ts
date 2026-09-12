@@ -9,16 +9,16 @@ import {
 } from "./register-tools.js";
 
 describe("tool descriptors", () => {
-  it("binds the current UI resource to the v51 and compatibility render tools", () => {
-    expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v51.html");
-    expect(READING_NEST_TOOL_NAME).toBe("open_reading_nest_v51");
-    expect(TOOL_CONFIGS.open_reading_nest_v51._meta?.ui).toEqual({
+  it("binds the current UI resource to the v52 and compatibility render tools", () => {
+    expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v52.html");
+    expect(READING_NEST_TOOL_NAME).toBe("open_reading_nest_v52");
+    expect(TOOL_CONFIGS.open_reading_nest_v52._meta?.ui).toEqual({
       resourceUri: READING_NEST_URI
     });
-    expect(TOOL_CONFIGS.open_reading_nest_v51._meta?.["ui/resourceUri"]).toBe(
+    expect(TOOL_CONFIGS.open_reading_nest_v52._meta?.["ui/resourceUri"]).toBe(
       READING_NEST_URI
     );
-    expect(TOOL_CONFIGS.open_reading_nest_v51._meta?.["openai/outputTemplate"]).toBe(
+    expect(TOOL_CONFIGS.open_reading_nest_v52._meta?.["openai/outputTemplate"]).toBe(
       READING_NEST_URI
     );
     expect(TOOL_CONFIGS.open_reading_nest._meta?.["openai/outputTemplate"]).toBe(
@@ -26,6 +26,7 @@ describe("tool descriptors", () => {
     );
     for (const [name, config] of Object.entries(TOOL_CONFIGS)) {
       if (
+        name !== "open_reading_nest_v52" &&
         name !== "open_reading_nest_v51" &&
         name !== "open_reading_nest_v50" &&
         name !== "open_reading_nest_v49" &&
@@ -135,7 +136,7 @@ describe("tool descriptors", () => {
     registerReadingTools(server as never, service as never, undefined, {
       sourceEndpointBase: "https://worker.example.test/source/secret"
     });
-    const result = (await handlers.get("open_reading_nest_v51")?.()) as {
+    const result = (await handlers.get("open_reading_nest_v52")?.()) as {
       structuredContent?: Record<string, unknown>;
     };
 
@@ -324,7 +325,7 @@ describe("tool descriptors", () => {
     };
 
     registerReadingTools(server as never, service as never, cloudSource as never);
-    const result = await handlers.get("open_reading_nest_v51")?.();
+    const result = await handlers.get("open_reading_nest_v52")?.();
 
     expect(result.structuredContent).toMatchObject({
       sharedPage: {
@@ -603,7 +604,7 @@ describe("tool descriptors", () => {
   });
 
   it("exposes book management and threaded annotation tools", () => {
-    expect(Object.keys(TOOL_CONFIGS)).toHaveLength(69);
+    expect(Object.keys(TOOL_CONFIGS)).toHaveLength(70);
     expect(TOOL_CONFIGS.create_annotation.annotations).toMatchObject({
       readOnlyHint: false,
       idempotentHint: true

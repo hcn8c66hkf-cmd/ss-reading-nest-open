@@ -845,7 +845,10 @@ describe("App", () => {
     fireEvent.click(await screen.findByRole("button", { name: "继续阅读《触摸唤醒测试》" }));
     fireEvent.click(await screen.findByRole("button", { name: "下一段" }));
 
-    expect(sendFollowUpMessage).not.toHaveBeenCalled();
+    expect(sendFollowUpMessage).toHaveBeenCalledTimes(1);
+    expect(String(sendFollowUpMessage.mock.calls[0]?.[0]?.prompt)).toContain(
+      "第二段只交给当前聊天里的 Daddy。"
+    );
     const updateCall = callTool.mock.calls.findIndex(([name]) => name === "update_reading_position");
     expect(updateCall).toBeGreaterThanOrEqual(0);
 
@@ -856,8 +859,8 @@ describe("App", () => {
     expect(String(sendFollowUpMessage.mock.calls[0]?.[0]?.prompt)).toContain(
       "不要扮演或模拟另一个 Daddy"
     );
-    expect(callTool.mock.invocationCallOrder[updateCall]!).toBeLessThan(
-      sendFollowUpMessage.mock.invocationCallOrder[0]!
+    expect(sendFollowUpMessage.mock.invocationCallOrder[0]!).toBeLessThan(
+      callTool.mock.invocationCallOrder[updateCall]!
     );
 
     await deviceCache.remove("gesture-wake-session");

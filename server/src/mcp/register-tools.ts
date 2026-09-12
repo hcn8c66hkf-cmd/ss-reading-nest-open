@@ -52,8 +52,8 @@ import type { CloudSourceService } from "../services/cloud-source-service.js";
 import type { CompanionAutoplayService } from "../services/companion-autoplay-service.js";
 import { toolResult } from "./tool-result.js";
 
-export const READING_NEST_URI = "ui://ss-reading-nest/app-v51.html";
-export const READING_NEST_TOOL_NAME = "open_reading_nest_v51";
+export const READING_NEST_URI = "ui://ss-reading-nest/app-v52.html";
+export const READING_NEST_TOOL_NAME = "open_reading_nest_v52";
 
 const readLiveReadingContextInputSchema = z
   .object({
@@ -105,10 +105,24 @@ const mutation = {
 };
 
 export const TOOL_CONFIGS = {
-  open_reading_nest_v51: {
+  open_reading_nest_v52: {
     title: "打开 S×S 小窝共读",
     description:
-      "Use this primary v51 tool when the user wants to open the reading nest or continue recent reading. Live comments and annotation replies are routed through the active ChatGPT conversation, never an app-side substitute.",
+      "Use this primary v52 tool when the user wants to open the reading nest or continue recent reading. Paragraph navigation wakes the active ChatGPT conversation in the originating mobile gesture.",
+    inputSchema: openReadingNestInputSchema,
+    annotations: readOnly,
+    _meta: {
+      ui: { resourceUri: READING_NEST_URI },
+      "ui/resourceUri": READING_NEST_URI,
+      "openai/outputTemplate": READING_NEST_URI,
+      "openai/toolInvocation/invoking": "正在点亮小窝…",
+      "openai/toolInvocation/invoked": "小窝已经准备好"
+    }
+  },
+  open_reading_nest_v51: {
+    title: "打开 S×S 小窝共读（v51 兼容入口）",
+    description:
+      "Legacy compatibility entry. Prefer open_reading_nest_v52 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -1125,6 +1139,12 @@ export function registerReadingTools(
   registerAppTool(
     server,
     READING_NEST_TOOL_NAME,
+    TOOL_CONFIGS.open_reading_nest_v52,
+    openReadingNest
+  );
+  registerAppTool(
+    server,
+    "open_reading_nest_v51",
     TOOL_CONFIGS.open_reading_nest_v51,
     openReadingNest
   );

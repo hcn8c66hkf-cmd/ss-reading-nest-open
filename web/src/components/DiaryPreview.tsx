@@ -17,7 +17,10 @@ export function DiaryPreview(props: {
     <div className="sheet-backdrop" role="presentation" onClick={props.onClose}>
       <section className="bottom-sheet diary-sheet" role="dialog" aria-label="小窝日记素材" onClick={(e) => e.stopPropagation()}>
         <div className="sheet-grip" />
-        <h2>今日小窝日记素材</h2>
+        <div className="sheet-heading">
+          <h2>今日小窝日记素材</h2>
+          <button type="button" className="sheet-close-button" aria-label="关闭日记" onClick={props.onClose}>×</button>
+        </div>
         <p><strong>{props.context.session.title}</strong> · {props.context.session.userCurrentPosition.label}</p>
         <h3>摘录</h3>
         <ul>{props.context.quotes.map((item) => <li key={item.id}>{item.content}</li>)}</ul>
