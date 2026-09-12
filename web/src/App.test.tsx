@@ -1229,7 +1229,9 @@ describe("App", () => {
     expect(await screen.findByRole("article", { name: "Daddy本段吐槽" }))
       .toHaveTextContent("这句吐槽值得贴到小窝。");
     expect(screen.getByRole("button", { name: "退出全屏" })).toBeInTheDocument();
-    expect(screen.getByLabelText("短评内容")).toHaveValue("");
+    await waitFor(() => {
+      expect(screen.getByLabelText("短评内容")).toHaveValue("");
+    });
     expect(screen.getByRole("button", { name: "收入Daddy短评" })).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("短评内容"), {
       target: { value: "这句吐槽值得贴到小窝。" }
