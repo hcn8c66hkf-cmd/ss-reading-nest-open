@@ -1,4 +1,5 @@
 import {
+  novelReadingUnitLabel,
   splitNovelTextForVersion,
   type CommentLength,
   type CompanionComment,
@@ -244,10 +245,11 @@ export class CompanionAutoplayService {
 
     const { sourceText, sourceManifest } =
       await this.cloudSourceService.restoreNovelSource(sessionId);
-    const currentText = splitNovelTextForVersion(
+    const currentChunks = splitNovelTextForVersion(
       sourceText,
       sourceManifest.segmentationVersion
-    )[positionIndex - 1];
+    );
+    const currentText = currentChunks[positionIndex - 1];
     if (!currentText) {
       return { completed: false, kind: "paragraph", reason: "not_found" };
     }
@@ -257,7 +259,7 @@ export class CompanionAutoplayService {
     const text = normalizeGeneratedText(await this.generator.generate({
       systemPrompt: reactionSystemPrompt(mode),
       prompt: [
-        `《${session.title}》第 ${positionIndex} 段：`,
+        `《${session.title}》${novelReadingUnitLabel(currentText, positionIndex)}：`,
         currentText,
         `按“${READING_MODE_INSTRUCTIONS[mode]}”回应 ${budget.sentences} 句、最多 ${budget.characters} 字。直接给正文。`
       ].join("\n\n"),
@@ -272,7 +274,7 @@ export class CompanionAutoplayService {
       kind: "paragraph",
       index: positionIndex,
       total: sourceManifest.paragraphCount,
-      label: `第 ${positionIndex} 段`
+      label: novelReadingUnitLabel(currentText, positionIndex)
     };
     const comment = await this.readingService.publishCompanionComment({
       sessionId,

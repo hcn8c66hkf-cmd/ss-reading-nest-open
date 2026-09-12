@@ -53,7 +53,14 @@ async function setup() {
   });
   await source.uploadNovelSource({
     sessionId: session.id,
-    sourceText: ["开场。", "1.", "第二段笑点。", "2.", "第三段反转。"].join("\n"),
+    sourceText: [
+      "第一章 开场",
+      "开场。",
+      "第二章 笑点",
+      "第二段笑点。",
+      "第三章 反转",
+      "第三段反转。"
+    ].join("\n"),
     sourceKind: "pasted_text",
     title: session.title
   });
