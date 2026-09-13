@@ -39,6 +39,8 @@ import {
   uploadCloudSourceInputSchema,
   updateSessionPreferencesInputSchema,
   updateReadingPositionInputSchema,
+  NOVEL_SEGMENTATION_VERSION,
+  novelReadingUnitLabel,
   splitNovelTextForVersion
 } from "@ss/shared";
 import type {
@@ -972,7 +974,7 @@ async function recoverExactSharedPage(
       position: {
         kind: "paragraph" as const,
         index: positionIndex,
-        label: `第 ${positionIndex} 段`
+        label: novelReadingUnitLabel(currentText, positionIndex)
       },
       currentText
     };
@@ -1029,8 +1031,25 @@ export function registerReadingTools(
   } = {}
 ) {
   const openReadingNest = async () => {
+    let sessions = await service.listAllSessions();
+    const migrationCandidate = sessions
+      .filter(
+        (session) =>
+          session.type === "novel" &&
+          session.status === "active" &&
+          session.sourceManifest?.cloudSync.enabled &&
+          session.sourceManifest.segmentationVersion < NOVEL_SEGMENTATION_VERSION
+      )
+      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0];
+    if (
+      migrationCandidate &&
+      cloudSourceService &&
+      typeof cloudSourceService.migrateNovelSegmentation === "function"
+    ) {
+      await cloudSourceService.migrateNovelSegmentation(migrationCandidate.id).catch(() => undefined);
+    }
     await service.reconcilePendingWork?.();
-    const sessions = await service.listAllSessions();
+    sessions = await service.listAllSessions();
     const bookshelfSessions = await Promise.all(
       sessions.map(async (session) => ({
         ...(await service.getSessionBundle(session.id)),

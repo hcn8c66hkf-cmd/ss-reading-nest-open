@@ -632,6 +632,31 @@ export function App() {
       local === null ? null : local?.metadata.sourceManifest
     );
     setSourceAvailability(availability);
+    if (
+      local &&
+      "chunks" in local &&
+      availability === "segmentation_mismatch" &&
+      nextItem.session.sourceManifest &&
+      nextItem.session.sourceManifest.contentHash === local.metadata.sourceManifest.contentHash &&
+      nextItem.session.sourceManifest.segmentationVersion === NOVEL_SEGMENTATION_VERSION
+    ) {
+      const migratedChunks = splitNovelText(local.sourceText);
+      if (migratedChunks.length === nextItem.session.sourceManifest.paragraphCount) {
+        await rememberNovel(
+          nextItem.session,
+          local.sourceText,
+          migratedChunks,
+          nextItem.session.sourceManifest
+        );
+        setChunks(migratedChunks);
+        setSourceText(local.sourceText);
+        setRemembered(true);
+        setSourceAvailability("available_local");
+        setScreen("novel");
+        setToast(`已按原章节重新排好：${local.chunks.length} 段变为 ${migratedChunks.length} 章，旧记录都还在。`);
+        return;
+      }
+    }
     if (local && "chunks" in local && (availability === "available_local" || availability === "unknown")) {
       if (
         local.metadata.sourceManifest.segmentationVersion < NOVEL_SEGMENTATION_VERSION &&

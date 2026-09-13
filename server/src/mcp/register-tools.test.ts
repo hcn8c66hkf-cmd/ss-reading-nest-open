@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   buildCurrentReadingContext,
   buildModelReadableCurrentContext,
@@ -156,6 +156,66 @@ describe("tool descriptors", () => {
     });
   });
 
+  it("migrates the current old cloud novel through the stable open entry", async () => {
+    const handlers = new Map<string, (args?: any) => Promise<any>>();
+    const server = {
+      registerTool: (name: string, _config: unknown, handler: (args?: any) => Promise<any>) => {
+        handlers.set(name, handler);
+      }
+    };
+    let session = {
+      id: "session-auto-migrate",
+      title: "旧分段小说",
+      type: "novel",
+      status: "active",
+      userCurrentPosition: { kind: "paragraph", index: 20, label: "第 20 段" },
+      assistantSyncedPosition: null,
+      liveReadingEnabled: false,
+      sessionPreferences: { autoSaveCompanionComments: false },
+      sourceManifest: {
+        segmentationVersion: 3,
+        paragraphCount: 100,
+        cloudSync: { enabled: true }
+      },
+      createdAt: "2026-09-01T00:00:00.000Z",
+      updatedAt: "2026-09-13T00:00:00.000Z",
+      lastReadAt: "2026-09-13T00:00:00.000Z"
+    };
+    const service = {
+      listAllSessions: async () => [session],
+      getSessionBundle: async () => ({ session, quotes: [], reactions: [], bookmarks: [] }),
+      listAnnotations: async () => ({ annotations: [] }),
+      listCompanionComments: async () => ({ comments: [] })
+    };
+    const migrateNovelSegmentation = vi.fn(async () => {
+      session = {
+        ...session,
+        userCurrentPosition: { kind: "paragraph", index: 6, label: "第六章" },
+        sourceManifest: {
+          ...session.sourceManifest,
+          segmentationVersion: 4,
+          paragraphCount: 30
+        }
+      };
+    });
+    const cloudSource = {
+      migrateNovelSegmentation,
+      restoreNovelSource: async () => ({
+        sourceText: "第一章\n正文。",
+        sourceManifest: session.sourceManifest
+      })
+    };
+
+    registerReadingTools(server as never, service as never, cloudSource as never);
+    const result = await handlers.get("open_reading_nest")?.();
+
+    expect(migrateNovelSegmentation).toHaveBeenCalledWith(session.id);
+    expect(result.structuredContent.bookshelfSessions[0].session).toMatchObject({
+      userCurrentPosition: { index: 6, label: "第六章" },
+      sourceManifest: { segmentationVersion: 4, paragraphCount: 30 }
+    });
+  });
+
   it("preloads the exact current paragraph and comments through the stale generic open entry", async () => {
     const handlers = new Map<string, (args?: any) => Promise<any>>();
     const server = {
@@ -227,7 +287,7 @@ describe("tool descriptors", () => {
     expect(result.structuredContent).toMatchObject({
       sharedPage: {
         sessionId: session.id,
-        position: session.userCurrentPosition,
+        position: { ...session.userCurrentPosition, label: "第 2 章" },
         currentText: "第二段和评论必须直接进入打开工具的结果。"
       },
       annotations: [annotation],
@@ -244,7 +304,7 @@ describe("tool descriptors", () => {
         publishTool: "publish_companion_comment",
         publishArguments: {
           sessionId: session.id,
-          position: { kind: "paragraph", index: 2, label: "第 2 段" },
+          position: { kind: "paragraph", index: 2, label: "第 2 章" },
           mode: "reaction_only",
           length: "short",
           source: "live_reading",
@@ -768,7 +828,7 @@ describe("tool descriptors", () => {
     expect(result.structuredContent).toMatchObject({
       sharedPage: {
         sessionId: session.id,
-        position: session.userCurrentPosition,
+        position: { ...session.userCurrentPosition, label: "第 67 章" },
         currentText: "第六十七段正文会和评论一起恢复。"
       },
       annotations: [annotation]
