@@ -9,16 +9,16 @@ import {
 } from "./register-tools.js";
 
 describe("tool descriptors", () => {
-  it("binds the current UI resource to the v53 and compatibility render tools", () => {
-    expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v53.html");
-    expect(READING_NEST_TOOL_NAME).toBe("open_reading_nest_v53");
-    expect(TOOL_CONFIGS.open_reading_nest_v53._meta?.ui).toEqual({
+  it("binds the current UI resource to the v54 and compatibility render tools", () => {
+    expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v54.html");
+    expect(READING_NEST_TOOL_NAME).toBe("open_reading_nest_v54");
+    expect(TOOL_CONFIGS.open_reading_nest_v54._meta?.ui).toEqual({
       resourceUri: READING_NEST_URI
     });
-    expect(TOOL_CONFIGS.open_reading_nest_v53._meta?.["ui/resourceUri"]).toBe(
+    expect(TOOL_CONFIGS.open_reading_nest_v54._meta?.["ui/resourceUri"]).toBe(
       READING_NEST_URI
     );
-    expect(TOOL_CONFIGS.open_reading_nest_v53._meta?.["openai/outputTemplate"]).toBe(
+    expect(TOOL_CONFIGS.open_reading_nest_v54._meta?.["openai/outputTemplate"]).toBe(
       READING_NEST_URI
     );
     expect(TOOL_CONFIGS.open_reading_nest._meta?.["openai/outputTemplate"]).toBe(
@@ -26,7 +26,7 @@ describe("tool descriptors", () => {
     );
     for (const [name, config] of Object.entries(TOOL_CONFIGS)) {
       if (
-        name !== "open_reading_nest_v53" &&
+        name !== "open_reading_nest_v54" &&
         name !== "open_reading_nest_v52" &&
         name !== "open_reading_nest_v51" &&
         name !== "open_reading_nest_v50" &&
@@ -137,7 +137,7 @@ describe("tool descriptors", () => {
     registerReadingTools(server as never, service as never, undefined, {
       sourceEndpointBase: "https://worker.example.test/source/secret"
     });
-    const result = (await handlers.get("open_reading_nest_v53")?.()) as {
+    const result = (await handlers.get("open_reading_nest_v54")?.()) as {
       structuredContent?: Record<string, unknown>;
     };
 
@@ -386,7 +386,7 @@ describe("tool descriptors", () => {
     };
 
     registerReadingTools(server as never, service as never, cloudSource as never);
-    const result = await handlers.get("open_reading_nest_v53")?.();
+    const result = await handlers.get("open_reading_nest_v54")?.();
 
     expect(result.structuredContent).toMatchObject({
       sharedPage: {

@@ -125,7 +125,9 @@ function BookCard(props: {
   const { item } = props;
   const available = item.sourceAvailability === "available_local";
   const canOpen =
-    available || item.sourceAvailability === "available_cloud";
+    available ||
+    item.sourceAvailability === "available_cloud" ||
+    item.sourceAvailability === "segmentation_mismatch";
   const action = sourceAction(item);
   return (
     <article className="book-card">

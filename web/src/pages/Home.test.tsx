@@ -58,7 +58,7 @@ describe("Home bookshelf core", () => {
     expect(screen.getByText("可继续的小说")).toBeInTheDocument();
   });
 
-  it("opens only available books and routes all unsafe states to reimport", () => {
+  it("opens available books and locally resegments matching old caches", () => {
     const onOpen = vi.fn();
     const onReimport = vi.fn();
     render(<Home bookshelf={items} onNew={vi.fn()} onOpen={onOpen} onReimport={onReimport} onManage={vi.fn()} />);
@@ -70,8 +70,8 @@ describe("Home bookshelf core", () => {
     fireEvent.click(screen.getByRole("button", { name: "重新导入正确版本《版本不一致》" }));
     fireEvent.click(screen.getByRole("button", { name: "重新分段《分段不一致》" }));
     fireEvent.click(screen.getByRole("button", { name: "验证正文《等待校验》" }));
-    expect(onReimport.mock.calls.map(([item]) => item.session.id)).toEqual(["b", "c", "d", "e"]);
-    expect(onOpen).toHaveBeenCalledTimes(1);
+    expect(onReimport.mock.calls.map(([item]) => item.session.id)).toEqual(["b", "c", "e"]);
+    expect(onOpen.mock.calls.map(([item]) => item.session.id)).toEqual(["a", "d"]);
   });
 
   it("shows cloud restore states without exposing storage details", () => {

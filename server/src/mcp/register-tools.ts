@@ -55,8 +55,8 @@ import type { CloudSourceService } from "../services/cloud-source-service.js";
 import type { CompanionAutoplayService } from "../services/companion-autoplay-service.js";
 import { toolResult } from "./tool-result.js";
 
-export const READING_NEST_URI = "ui://ss-reading-nest/app-v53.html";
-export const READING_NEST_TOOL_NAME = "open_reading_nest_v53";
+export const READING_NEST_URI = "ui://ss-reading-nest/app-v54.html";
+export const READING_NEST_TOOL_NAME = "open_reading_nest_v54";
 
 const readLiveReadingContextInputSchema = z
   .object({
@@ -108,10 +108,10 @@ const mutation = {
 };
 
 export const TOOL_CONFIGS = {
-  open_reading_nest_v53: {
+  open_reading_nest_v54: {
     title: "打开 S×S 小窝共读",
     description:
-      "Use this primary v53 tool when the user wants to open the reading nest or continue recent reading. Novels use their original chapter structure with safe splitting only for exceptionally long chapters.",
+      "Use this primary v54 tool when the user wants to open the reading nest or continue recent reading. Novels use their original chapter structure with safe splitting only for exceptionally long chapters.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -125,7 +125,7 @@ export const TOOL_CONFIGS = {
   open_reading_nest_v52: {
     title: "打开 S×S 小窝共读（v52 兼容入口）",
     description:
-      "Legacy compatibility entry. Prefer open_reading_nest_v53 whenever it is available.",
+      "Legacy compatibility entry. Prefer open_reading_nest_v54 whenever it is available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -1180,7 +1180,7 @@ export function registerReadingTools(
   registerAppTool(
     server,
     READING_NEST_TOOL_NAME,
-    TOOL_CONFIGS.open_reading_nest_v53,
+    TOOL_CONFIGS.open_reading_nest_v54,
     openReadingNest
   );
   registerAppTool(
