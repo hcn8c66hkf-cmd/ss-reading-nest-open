@@ -504,7 +504,7 @@ input:focus, textarea:focus { border-color: var(--peach-strong); box-shadow: 0 0
   font-size: clamp(17px, 4.5vw, 20px);
   line-height: 1.86;
   letter-spacing: .015em;
-  text-wrap: pretty;
+  text-wrap: wrap;
 }
 .novel-paper p { margin-bottom: 1.15em; }
 .reading-annotation {
