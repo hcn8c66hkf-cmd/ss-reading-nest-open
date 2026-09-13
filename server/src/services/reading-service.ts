@@ -1248,7 +1248,13 @@ export class ReadingService {
       ...(session.userCurrentPosition.total !== undefined
         ? { total: session.userCurrentPosition.total }
         : {}),
-      label: kind === "page" ? `第 ${index} 页` : `第 ${index} 段`
+      label: kind === "page"
+        ? `第 ${index} 页`
+        : index === session.userCurrentPosition.index
+          ? session.userCurrentPosition.label
+          : (session.sourceManifest?.segmentationVersion ?? 0) >= 4
+            ? `第 ${index} 章`
+            : `第 ${index} 段`
     };
   }
 
