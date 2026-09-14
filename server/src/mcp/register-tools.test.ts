@@ -9,16 +9,16 @@ import {
 } from "./register-tools.js";
 
 describe("tool descriptors", () => {
-  it("binds the current UI resource to the v55 and compatibility render tools", () => {
-    expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v55.html");
-    expect(READING_NEST_TOOL_NAME).toBe("open_reading_nest_v55");
-    expect(TOOL_CONFIGS.open_reading_nest_v55._meta?.ui).toEqual({
+  it("binds the current UI resource to the v56 and compatibility render tools", () => {
+    expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v56.html");
+    expect(READING_NEST_TOOL_NAME).toBe("open_reading_nest_v56");
+    expect(TOOL_CONFIGS.open_reading_nest_v56._meta?.ui).toEqual({
       resourceUri: READING_NEST_URI
     });
-    expect(TOOL_CONFIGS.open_reading_nest_v55._meta?.["ui/resourceUri"]).toBe(
+    expect(TOOL_CONFIGS.open_reading_nest_v56._meta?.["ui/resourceUri"]).toBe(
       READING_NEST_URI
     );
-    expect(TOOL_CONFIGS.open_reading_nest_v55._meta?.["openai/outputTemplate"]).toBe(
+    expect(TOOL_CONFIGS.open_reading_nest_v56._meta?.["openai/outputTemplate"]).toBe(
       READING_NEST_URI
     );
     expect(TOOL_CONFIGS.open_reading_nest._meta?.["openai/outputTemplate"]).toBe(
@@ -26,6 +26,7 @@ describe("tool descriptors", () => {
     );
     for (const [name, config] of Object.entries(TOOL_CONFIGS)) {
       if (
+        name !== "open_reading_nest_v56" &&
         name !== "open_reading_nest_v55" &&
         name !== "open_reading_nest_v52" &&
         name !== "open_reading_nest_v51" &&
@@ -137,7 +138,7 @@ describe("tool descriptors", () => {
     registerReadingTools(server as never, service as never, undefined, {
       sourceEndpointBase: "https://worker.example.test/source/secret"
     });
-    const result = (await handlers.get("open_reading_nest_v55")?.()) as {
+    const result = (await handlers.get("open_reading_nest_v56")?.()) as {
       structuredContent?: Record<string, unknown>;
     };
 
@@ -386,7 +387,7 @@ describe("tool descriptors", () => {
     };
 
     registerReadingTools(server as never, service as never, cloudSource as never);
-    const result = await handlers.get("open_reading_nest_v55")?.();
+    const result = await handlers.get("open_reading_nest_v56")?.();
 
     expect(result.structuredContent).toMatchObject({
       sharedPage: {
