@@ -1,0 +1,1 @@
+2026-09-15: deploy single-shot live-reading delivery; preserve unconfirmed writebacks as server backlog without regenerating the same chapter.
