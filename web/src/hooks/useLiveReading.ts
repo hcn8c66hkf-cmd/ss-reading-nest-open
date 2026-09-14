@@ -87,20 +87,15 @@ export function useLiveReading(input: {
         }
         return;
       }
+      // Host acceptance is the end of this automatic attempt. The sender
+      // verifies the Dock writeback itself; if confirmation is late or the MCP
+      // connection is briefly unavailable, the server backlog keeps the
+      // paragraph recoverable without waking ChatGPT to regenerate it.
       clearTimeoutRef();
-      timeout.current = window.setTimeout(() => {
-        if (activeIndex.current !== next) return;
-        const retries = retryCounts.current.get(next) ?? 0;
-        activeIndex.current = null;
-        if (retries < 1) {
-          retryCounts.current.set(next, retries + 1);
-          queue.current.unshift(next);
-        } else {
-          failedIndex.current = next;
-        }
-        publishState();
-        pump.current();
-      }, input.retryMs ?? 30_000);
+      retryCounts.current.delete(next);
+      activeIndex.current = null;
+      publishState();
+      queueMicrotask(() => pump.current());
     });
   };
 
