@@ -8,7 +8,7 @@ afterEach(() => {
 
 describe("useLiveReading", () => {
   it("queues every paragraph when the user flips faster than Daddy", async () => {
-    const onQueuedPosition = vi.fn().mockResolvedValue(true);
+    const onQueuedPosition = vi.fn().mockResolvedValue(false);
     const { result, rerender } = renderHook(
       (props: { user: number; assistant: number }) =>
         useLiveReading({
@@ -24,15 +24,9 @@ describe("useLiveReading", () => {
 
     await waitFor(() => expect(onQueuedPosition).toHaveBeenCalledWith(2));
     rerender({ user: 4, assistant: 1 });
-    expect(result.current).toMatchObject({ activeIndex: 2, queuedCount: 2, failedIndex: null });
-
-    rerender({ user: 4, assistant: 2 });
     await waitFor(() => expect(onQueuedPosition).toHaveBeenCalledWith(3));
-    expect(result.current).toMatchObject({ activeIndex: 3, queuedCount: 1, failedIndex: null });
-
-    rerender({ user: 4, assistant: 3 });
     await waitFor(() => expect(onQueuedPosition).toHaveBeenCalledWith(4));
-    expect(result.current).toMatchObject({ activeIndex: 4, queuedCount: 0, failedIndex: null });
+    expect(result.current).toMatchObject({ activeIndex: null, queuedCount: 0, failedIndex: null });
   });
 
   it("uses the server backlog as authoritative and does not repeat a completed later paragraph", async () => {
@@ -93,7 +87,7 @@ describe("useLiveReading", () => {
     expect(onQueuedPosition).not.toHaveBeenCalled();
   });
 
-  it("retries once if no persisted short comment arrives", async () => {
+  it("does not regenerate a follow-up after the host accepted it", async () => {
     vi.useFakeTimers();
     const onQueuedPosition = vi.fn().mockResolvedValue(true);
     renderHook(() =>
@@ -111,10 +105,10 @@ describe("useLiveReading", () => {
     await act(async () => Promise.resolve());
     expect(onQueuedPosition).toHaveBeenCalledTimes(1);
     await act(async () => {
-      vi.advanceTimersByTime(1_000);
+      vi.advanceTimersByTime(5_000);
       await Promise.resolve();
     });
-    expect(onQueuedPosition).toHaveBeenCalledTimes(2);
+    expect(onQueuedPosition).toHaveBeenCalledTimes(1);
   });
 
   it("surfaces a failed paragraph after one retry and lets the user retry it", async () => {
