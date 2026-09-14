@@ -8,7 +8,7 @@ afterEach(() => {
 
 describe("useLiveReading", () => {
   it("queues every paragraph when the user flips faster than Daddy", async () => {
-    const onQueuedPosition = vi.fn().mockResolvedValue(false);
+    const onQueuedPosition = vi.fn().mockResolvedValue(true);
     const { result, rerender } = renderHook(
       (props: { user: number; assistant: number }) =>
         useLiveReading({
@@ -113,7 +113,7 @@ describe("useLiveReading", () => {
 
   it("surfaces a failed paragraph after one retry and lets the user retry it", async () => {
     vi.useFakeTimers();
-    const onQueuedPosition = vi.fn().mockResolvedValue(true);
+    const onQueuedPosition = vi.fn().mockResolvedValue(false);
     const { result } = renderHook(() =>
       useLiveReading({
         enabled: true,
