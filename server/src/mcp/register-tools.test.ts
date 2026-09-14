@@ -666,7 +666,7 @@ describe("tool descriptors", () => {
   });
 
   it("exposes book management and threaded annotation tools", () => {
-    expect(Object.keys(TOOL_CONFIGS)).toHaveLength(72);
+    expect(Object.keys(TOOL_CONFIGS)).toHaveLength(73);
     expect(TOOL_CONFIGS.create_annotation.annotations).toMatchObject({
       readOnlyHint: false,
       idempotentHint: true
