@@ -250,7 +250,6 @@ export function App() {
   const syncJobRef = useRef<ReadingSyncJob | null>(null);
   const companionVersionRef = useRef<string | null>(null);
   const annotationVersionRef = useRef<string | null>(null);
-  const sentLiveReadingFallbacksRef = useRef(new Set<string>());
   const gestureLiveReadingOperationsRef = useRef(new Set<string>());
   const hostLayout = useReadingHostLayout();
   const manualCompanionDraft = useMemo<PendingCompanionCommentDraft | null>(() => {
@@ -1910,7 +1909,6 @@ export function App() {
         setToast(`没有取到${targetPosition.label}正文，已停止发送空请求。`);
         return false;
       }
-      const retryingFallback = sentLiveReadingFallbacksRef.current.has(operationId);
       try {
         setToast(`已经把${targetPosition.label}送进当前聊天，Daddy读完会写回来。`);
         const fallbackPrompt = buildLiveReadingPrompt({
@@ -1948,31 +1946,21 @@ export function App() {
             responsePolicy: fallbackPrompt
           }).catch(() => false);
         }
-        const directPrompt = retryingFallback
-          ? [
-            `这是${targetPosition.label}的写回重试；上一轮思考结束后，服务器仍没有收到对应短评。`,
-            fallbackPrompt
-          ].join("\n\n")
-          : fallbackPrompt;
         const fallbackMode = sentFromGesture
           ? "message"
           : await sendLiveReadingFallback({
-              prompt: directPrompt,
+              prompt: fallbackPrompt,
               sendMessage: (prompt, options) => askChatGpt(prompt, {
                 ...options,
-                // The iOS host can acknowledge ui/message without creating a real
-                // follow-up turn. Prefer ChatGPT's feature-detected compatibility
-                // alias there, then alternate to MCP Apps if writeback verification
-                // proves it was a false positive. Both lanes carry the full body.
-                transport: retryingFallback ? "apps" : "compatibility-first",
-                ...(retryingFallback ? { scrollToBottom: true } : {})
+                // A fresh user gesture already uses the synchronous iOS
+                // compatibility lane above. Backlog recovery has no gesture to
+                // preserve, so use the acknowledged MCP Apps lane exactly once.
+                transport: "apps"
               })
             });
         if (fallbackMode === "failed") {
-          sentLiveReadingFallbacksRef.current.delete(operationId);
           throw new Error("Host did not accept follow-up message");
         }
-        sentLiveReadingFallbacksRef.current.add(operationId);
         const persisted = await waitForWriteback<CompanionComment>({
           load: async () => {
             const result = await callTool("list_companion_comments", {
@@ -1994,13 +1982,8 @@ export function App() {
           intervalMs: 1_500
         });
         if (!persisted) {
-          if (retryingFallback) sentLiveReadingFallbacksRef.current.delete(operationId);
-          setToast(
-            retryingFallback
-              ? "这轮思考结束了，但短评没有写回。重读已经解锁，可以再试。"
-              : "这轮没有写回短评，正在自动重试一次。"
-          );
-          return false;
+          setToast("这轮短评暂未写回，已经留在服务器待办；不会重复生成。");
+          return true;
         }
         setCompanionComments((current) =>
           [persisted, ...current.filter((item) => item.id !== persisted.id)]
@@ -2009,7 +1992,6 @@ export function App() {
             .slice(0, 20)
         );
         await loadCompanionComments(session.id, true);
-        sentLiveReadingFallbacksRef.current.delete(operationId);
         return true;
       } catch {
         setToast("这次实时跟读没有发送成功。");
