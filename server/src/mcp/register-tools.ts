@@ -1230,13 +1230,20 @@ export function registerReadingTools(
           preloadedAnnotations.annotations
         )
       : [];
-    const requiredParagraphWriteback = preloadedSharedPage && activeNovel
-      ? buildRequiredParagraphWriteback(
-          activeNovel.session,
-          preloadedSharedPage,
-          preloadedComments.comments.length
-        )
-      : undefined;
+    // The mounted reader card is the sole wake-up lane while live reading is
+    // enabled. Returning another mandatory writeback from the open tool makes
+    // ChatGPT generate the same paragraph once for the tool result and again
+    // for the widget follow-up, even though storage remains idempotent.
+    const requiredParagraphWriteback =
+      preloadedSharedPage &&
+      activeNovel &&
+      !activeNovel.session.liveReadingEnabled
+        ? buildRequiredParagraphWriteback(
+            activeNovel.session,
+            preloadedSharedPage,
+            preloadedComments.comments.length
+          )
+        : undefined;
     return toolResult(
       {
         bookshelfSessions,
@@ -1280,7 +1287,9 @@ export function registerReadingTools(
               : "本段没有待回复的书边评论。",
             requiredParagraphWriteback
               ? "本段还没有 Daddy 短评。必须先按 structuredContent.requiredParagraphWriteback 生成并写回本段短评；书边回复不能替代本段短评。"
-              : "本段 Daddy 短评已存在，或当前设置无需自动保存。",
+              : activeNovel?.session.liveReadingEnabled
+                ? "实时短评只由已打开的页面卡片发送。本次打开工具不要生成、回复或写回段落短评。"
+                : "本段 Daddy 短评已存在，或当前设置无需自动保存。",
             "不要声称没有收到正文。用户稍后询问页面里的新评论时，必须先按 structuredContent.followupRecovery 调用 list_companion_comments 再回答。"
           ].join("\n\n")
         : "已打开 S×S 小窝共读。"
