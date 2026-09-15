@@ -1898,7 +1898,7 @@ export function App() {
           | Record<string, unknown>
           | undefined;
         const deliveryClaim = contextContent?.deliveryClaim as
-          | { claimed?: boolean }
+          | { claimed?: boolean; reason?: string }
           | undefined;
         if (deliveryClaim?.claimed === false) {
           const reason = deliveryClaim.reason;
