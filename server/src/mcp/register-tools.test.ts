@@ -320,21 +320,14 @@ describe("tool descriptors", () => {
           positionIndex: 2,
           limit: 20
         }
-      },
-      requiredParagraphWriteback: {
-        publishTool: "publish_companion_comment",
-        publishArguments: {
-          sessionId: session.id,
-          position: { kind: "paragraph", index: 2, label: "第 2 章" },
-          mode: "reaction_only",
-          length: "short",
-          source: "live_reading",
-          operationId: `live-recovery-v43:${session.id}:paragraph:2`
-        }
       }
     });
     expect(result.content[0].text).toContain("第二段和评论必须直接进入打开工具的结果。");
     expect(result.content[0].text).toContain("Daddy收到这条了吗");
+    expect(result.structuredContent.requiredParagraphWriteback).toBeUndefined();
+    expect(result.content[0].text).toContain(
+      "实时短评只由已打开的页面卡片发送"
+    );
     expect(JSON.stringify(result)).not.toContain("第一段不能预装。");
     expect(JSON.stringify(result)).not.toContain("第三段不能预装。");
     expect(result.structuredContent.sharedPage.title).not.toBe("书架排第一但不是刚读的书");
@@ -422,8 +415,11 @@ describe("tool descriptors", () => {
         pendingAnnotationReplies: [{ annotationId: "annotation-73" }]
       }
     });
-    expect(result.structuredContent.requiredParagraphWriteback).toBeDefined();
+    expect(result.structuredContent.requiredParagraphWriteback).toBeUndefined();
     expect(result.structuredContent.requiredWritebacks).toHaveLength(1);
+    expect(result.content[0].text).toContain(
+      "实时短评只由已打开的页面卡片发送"
+    );
     expect(JSON.stringify(result)).not.toContain("第七十四段盖住。\n\n段落 74");
   });
 
