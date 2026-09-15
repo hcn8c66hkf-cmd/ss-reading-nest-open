@@ -33,7 +33,7 @@ import {
   requestReaderFullscreen,
   requestReaderInline,
   requestReaderPip,
-  sendFollowUpFromUserGesture,
+  stageLiveReadingWriteback,
   setReadingFrameHeight,
   saveReaderWidgetState,
   updateModelContext
@@ -250,7 +250,6 @@ export function App() {
   const syncJobRef = useRef<ReadingSyncJob | null>(null);
   const companionVersionRef = useRef<string | null>(null);
   const annotationVersionRef = useRef<string | null>(null);
-  const gestureLiveReadingOperationsRef = useRef(new Set<string>());
   const hostLayout = useReadingHostLayout();
   const manualCompanionDraft = useMemo<PendingCompanionCommentDraft | null>(() => {
     if (!sessionBundle) return null;
@@ -1403,53 +1402,6 @@ export function App() {
   async function changePosition(index: number) {
     if (!sessionBundle) return;
     const session = sessionBundle.session;
-    if (
-      session.type === "novel" &&
-      session.liveReadingEnabled &&
-      sourceAvailability === "available_local"
-    ) {
-      const mode = session.sessionPreferences.readingCommentMode;
-      const length = session.sessionPreferences.commentLength;
-      const operationId = buildLiveReadingOperationId(
-        session.id,
-        "paragraph",
-        index,
-        mode,
-        length
-      );
-      const text = chunks[index - 1];
-      if (
-        text?.trim() &&
-        !gestureLiveReadingOperationsRef.current.has(operationId) &&
-        !companionComments.some((comment) =>
-          matchesParagraphComment(comment, session.id, index, operationId)
-        )
-      ) {
-        const targetPosition = makePosition("novel", index, chunks.length, chunks);
-        const prompt = buildLiveReadingPrompt({
-          sessionId: session.id,
-          title: session.title,
-          position: targetPosition,
-          text: `【${targetPosition.label}】\n${text}`,
-          operationId,
-          autoSaveCompanionComments:
-            session.sessionPreferences.autoSaveCompanionComments,
-          requestedMode: mode,
-          requestedLength: length
-        });
-        gestureLiveReadingOperationsRef.current.add(operationId);
-        void sendFollowUpFromUserGesture(prompt, false, {
-          kind: "reading_nest_live_reading_v1",
-          sessionId: session.id,
-          title: session.title,
-          position: targetPosition,
-          currentText: `【${targetPosition.label}】\n${text}`,
-          responsePolicy: prompt
-        }).then((accepted) => {
-          if (!accepted) gestureLiveReadingOperationsRef.current.delete(operationId);
-        });
-      }
-    }
     setReaderScrollTop(0);
     const nextPosition = makePosition(
       session.type,
@@ -1898,7 +1850,6 @@ export function App() {
       const mode = session.sessionPreferences.readingCommentMode;
       const length = session.sessionPreferences.commentLength;
       const operationId = buildLiveReadingOperationId(session.id, session.userCurrentPosition.kind, index, mode, length);
-      const sentFromGesture = gestureLiveReadingOperationsRef.current.delete(operationId);
       if (
         companionComments.some((comment) =>
           matchesParagraphComment(comment, session.id, index, operationId)
@@ -1953,18 +1904,23 @@ export function App() {
             responsePolicy: fallbackPrompt
           }).catch(() => false);
         }
-        const fallbackMode = sentFromGesture
-          ? "message"
-          : await sendLiveReadingFallback({
-              prompt: fallbackPrompt,
-              sendMessage: (prompt, options) => askChatGpt(prompt, {
-                ...options,
-                // A fresh user gesture already uses the synchronous iOS
-                // compatibility lane above. Backlog recovery has no gesture to
-                // preserve, so use the acknowledged MCP Apps lane exactly once.
-                transport: "apps"
-              })
-            });
+        stageLiveReadingWriteback({
+          sessionId: session.id,
+          position: targetPosition,
+          mode,
+          length,
+          source: "live_reading",
+          operationId
+        });
+        const fallbackMode = await sendLiveReadingFallback({
+          prompt: fallbackPrompt,
+          sendMessage: (prompt, options) => askChatGpt(prompt, {
+            ...options,
+            // Live reading has one authoritative delivery lane. The server
+            // queue will not advance until this exact position is persisted.
+            transport: "apps"
+          })
+        });
         if (fallbackMode === "failed") {
           throw new Error("Host did not accept follow-up message");
         }
@@ -3550,7 +3506,7 @@ function buildLiveReadingOperationId(
   mode: string,
   length: string
 ): string {
-  return `live-${sessionId}-${positionKind}-${positionIndex}-${mode}-${length}`;
+  return `live-v58-${sessionId}-${positionKind}-${positionIndex}-${mode}-${length}`;
 }
 
 async function restoreMangaPages(

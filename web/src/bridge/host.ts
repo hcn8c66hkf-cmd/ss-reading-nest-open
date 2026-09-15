@@ -14,8 +14,70 @@ let compatibilityStateHost: Window["openai"] | undefined;
 
 const APP_HANDSHAKE_TIMEOUT_MS = 2_000;
 
-export const LIVE_READING_WRITEBACK_TOOL = "submit_live_reading_comment_v39";
+export const LIVE_READING_WRITEBACK_TOOL = "submit_live_reading_comment_v58";
+export const LEGACY_LIVE_READING_WRITEBACK_TOOL = "submit_live_reading_comment_v39";
 export const ANNOTATION_WRITEBACK_TOOL = "submit_annotation_reply_v39";
+
+type LiveReadingWritebackExpectation = {
+  sessionId: string;
+  position: {
+    kind: string;
+    index: number;
+    label: string;
+    total?: number;
+  };
+  mode: string;
+  length: string;
+  source: "live_reading";
+  operationId: string;
+};
+
+let stagedLiveReadingWriteback: LiveReadingWritebackExpectation | undefined;
+
+export function stageLiveReadingWriteback(
+  expected: LiveReadingWritebackExpectation
+): void {
+  stagedLiveReadingWriteback = {
+    ...expected,
+    position: { ...expected.position }
+  };
+}
+
+async function forwardLiveReadingWriteback(
+  bridge: McpApp,
+  args: Record<string, unknown>
+) {
+  const expected = stagedLiveReadingWriteback;
+  const submittedPosition = args.position as
+    | { kind?: unknown; index?: unknown }
+    | undefined;
+  if (!expected) {
+    throw new Error("No live-reading writeback is currently pending.");
+  }
+  if (
+    args.sessionId !== expected.sessionId ||
+    submittedPosition?.kind !== expected.position.kind ||
+    submittedPosition.index !== expected.position.index
+  ) {
+    throw new Error("Rejected a stale live-reading writeback for another position.");
+  }
+  if (typeof args.text !== "string" || !args.text.trim()) {
+    throw new Error("The live-reading comment text is empty.");
+  }
+  const result = await bridge.callServerTool({
+    name: "publish_companion_comment",
+    arguments: {
+      ...args,
+      ...expected,
+      position: { ...expected.position },
+      text: args.text
+    }
+  });
+  if (stagedLiveReadingWriteback?.operationId === expected.operationId) {
+    stagedLiveReadingWriteback = undefined;
+  }
+  return result;
+}
 
 export interface ReadingHostContext {
   displayMode?: "inline" | "pip" | "fullscreen";
@@ -45,7 +107,7 @@ function connectApp() {
   }
   if (!app) {
     const nextApp = new McpApp(
-      { name: "S×S 小窝共读", version: "0.4.6" },
+      { name: "S×S 小窝共读", version: "0.4.7" },
       {},
       {
         // The SDK's default ResizeObserver briefly sets <html> to max-content
@@ -61,19 +123,21 @@ function connectApp() {
     // app-owned writeback tools as well. The host model can submit generated
     // text to the live iframe, and the iframe forwards it to the canonical
     // server tool so storage and idempotency remain unchanged.
-    nextApp.registerTool(
+    for (const toolName of [
       LIVE_READING_WRITEBACK_TOOL,
-      {
-        title: "写回小窝实时陪读短评",
-        description:
-          "Use this for a live-reading request sent by the S×S reading widget. Submit the final short comment with the exact fixed arguments from the request.",
-        inputSchema: publishCompanionCommentInputSchema
-      },
-      async (args) => nextApp.callServerTool({
-        name: "publish_companion_comment",
-        arguments: args
-      })
-    );
+      LEGACY_LIVE_READING_WRITEBACK_TOOL
+    ]) {
+      nextApp.registerTool(
+        toolName,
+        {
+          title: "写回小窝实时陪读短评",
+          description:
+            "Use this for a live-reading request sent by the S×S reading widget. The widget validates the pending chapter and fixes all routing arguments before saving.",
+          inputSchema: publishCompanionCommentInputSchema
+        },
+        async (args) => forwardLiveReadingWriteback(nextApp, args)
+      );
+    }
     nextApp.registerTool(
       ANNOTATION_WRITEBACK_TOOL,
       {

@@ -239,6 +239,18 @@ describe("ReadingService companion comments", () => {
       .toMatchObject({ index: 7, label: "第 7 段" });
   });
 
+  it("rejects reusing an operationId for a different reading position", async () => {
+    const { repository, service } = createService();
+    const session = await startSessionWithHistory(service);
+    await service.publishCompanionComment(commentInput(session.id, "same-operation", 48));
+
+    await expect(
+      service.publishCompanionComment(commentInput(session.id, "same-operation", 102))
+    ).rejects.toThrow("operationId 已属于另一阅读位置");
+    expect(repository.database.companionComments).toHaveLength(1);
+    expect(repository.database.companionComments[0]?.position.index).toBe(48);
+  });
+
   it("publishes idempotently with default recent and history flags", async () => {
     const { repository, service } = createService();
     const session = await startSessionWithHistory(service);
