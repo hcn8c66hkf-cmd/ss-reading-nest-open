@@ -25,16 +25,16 @@ describe("live reading delivery compatibility", () => {
 });
 
 describe("tool descriptors", () => {
-  it("binds the current UI resource to the v61 and compatibility render tools", () => {
-    expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v61.html");
-    expect(READING_NEST_TOOL_NAME).toBe("open_reading_nest_v61");
-    expect(TOOL_CONFIGS.open_reading_nest_v61._meta?.ui).toEqual({
+  it("binds the current UI resource to the v62 and compatibility render tools", () => {
+    expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v62.html");
+    expect(READING_NEST_TOOL_NAME).toBe("open_reading_nest_v62");
+    expect(TOOL_CONFIGS.open_reading_nest_v62._meta?.ui).toEqual({
       resourceUri: READING_NEST_URI
     });
-    expect(TOOL_CONFIGS.open_reading_nest_v61._meta?.["ui/resourceUri"]).toBe(
+    expect(TOOL_CONFIGS.open_reading_nest_v62._meta?.["ui/resourceUri"]).toBe(
       READING_NEST_URI
     );
-    expect(TOOL_CONFIGS.open_reading_nest_v61._meta?.["openai/outputTemplate"]).toBe(
+    expect(TOOL_CONFIGS.open_reading_nest_v62._meta?.["openai/outputTemplate"]).toBe(
       READING_NEST_URI
     );
     expect(TOOL_CONFIGS.open_reading_nest._meta?.["openai/outputTemplate"]).toBe(
@@ -42,6 +42,7 @@ describe("tool descriptors", () => {
     );
     for (const [name, config] of Object.entries(TOOL_CONFIGS)) {
       if (
+        name !== "open_reading_nest_v62" &&
         name !== "open_reading_nest_v61" &&
         name !== "open_reading_nest_v60" &&
         name !== "open_reading_nest_v58" &&
@@ -549,7 +550,8 @@ describe("tool descriptors", () => {
     };
     const service = {
       getSessionBundle: async () => ({ session, quotes: [], reactions: [], bookmarks: [] }),
-      getLayeredReadingContext: async () => ({ memories: [], facts: [] })
+      getLayeredReadingContext: async () => ({ memories: [], facts: [] }),
+      claimLiveReadingDelivery: async () => ({ claimed: true, reason: "claimed" })
     };
 
     registerReadingTools(server as never, service as never);
@@ -567,6 +569,28 @@ describe("tool descriptors", () => {
     );
     expect(result.content[0].text).toContain(
       "这段正文不能只留在 structuredContent。"
+    );
+
+    const claimedResult = await handlers.get("send_current_context")?.({
+      sessionId: session.id,
+      currentPosition: session.userCurrentPosition,
+      currentText: "这段正文只允许唯一消息触发。",
+      mode: "live_reading",
+      readingCommentMode: "reaction_only",
+      commentLength: "short",
+      userNote:
+        '__ss_live_reader_v61__:{"deliveryOperationId":"live:session-current-content:9","readerInstanceId":"reader-one"}'
+    });
+
+    expect(claimedResult.structuredContent.context.currentText).toBe(
+      "这段正文只允许唯一消息触发。"
+    );
+    expect(claimedResult.structuredContent.deliveryClaim.claimed).toBe(true);
+    expect(claimedResult.content[0].text).not.toContain(
+      "这段正文只允许唯一消息触发。"
+    );
+    expect(claimedResult.content[0].text).toContain(
+      "不要在本工具调用后生成、回复或写回短评"
     );
   });
 
@@ -682,7 +706,7 @@ describe("tool descriptors", () => {
   });
 
   it("exposes book management and threaded annotation tools", () => {
-    expect(Object.keys(TOOL_CONFIGS)).toHaveLength(77);
+    expect(Object.keys(TOOL_CONFIGS)).toHaveLength(78);
     expect(TOOL_CONFIGS.create_annotation.annotations).toMatchObject({
       readOnlyHint: false,
       idempotentHint: true

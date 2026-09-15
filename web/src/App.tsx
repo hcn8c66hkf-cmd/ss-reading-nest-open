@@ -1913,16 +1913,9 @@ export function App() {
           | Record<string, unknown>
           | undefined;
         if (!liveContext) throw new Error("Missing claimed live-reading context");
-        {
-          // The server tool result contains the exact paragraph in its
-          // model-readable content. Mirror it into app context as a second
-          // standards-based lane, while the follow-up prompt below carries the
-          // same text for hosts that do not retain widget-initiated results.
-          await updateModelContext({
-            ...liveContext,
-            responsePolicy: fallbackPrompt
-          }).catch(() => false);
-        }
+        // The claimed tool call only reserves this paragraph. Do not mirror
+        // it into model context here: some hosts treat that update as another
+        // conversational wake. The follow-up below is the single delivery lane.
         stageLiveReadingWriteback({
           sessionId: session.id,
           position: targetPosition,
