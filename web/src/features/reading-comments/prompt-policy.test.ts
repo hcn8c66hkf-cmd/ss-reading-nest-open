@@ -219,8 +219,8 @@ describe("buildLiveReadingPrompt", () => {
       autoSaveCompanionComments: false
     });
 
-    expect(prompt).toContain("调用 publish_companion_comment");
-    expect(prompt).not.toContain("submit_live_reading_comment_v39");
+    expect(prompt).toContain("优先调用 submit_live_reading_comment_v58");
+    expect(prompt).toContain("只有专用工具确实不可用时才改用 publish_companion_comment");
     expect(prompt).toContain("source=live_reading");
     expect(prompt).not.toContain("不自动保存短评到 Dock");
   });
@@ -285,7 +285,7 @@ describe("hidden live-reading context", () => {
     expect(prompt).toContain(input.text);
     expect(prompt).not.toContain(input.sessionId);
     expect(prompt).not.toContain(input.operationId);
-    expect(prompt).toContain("publish_companion_comment");
+    expect(prompt).toContain("submit_live_reading_comment_v58");
     expect(prompt).toContain("必须调用");
   });
 
@@ -293,7 +293,7 @@ describe("hidden live-reading context", () => {
     const prompt = buildLiveReadingRetryPrompt(input.position, input.text);
 
     expect(prompt).toContain("上一次");
-    expect(prompt).toContain("publish_companion_comment");
+    expect(prompt).toContain("submit_live_reading_comment_v58");
     expect(prompt).toContain("不要只做口头回复");
     expect(prompt).toContain(input.text);
     expect(prompt).not.toContain(input.sessionId);
