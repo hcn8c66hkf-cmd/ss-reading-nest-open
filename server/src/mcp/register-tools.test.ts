@@ -2,23 +2,39 @@ import { describe, expect, it, vi } from "vitest";
 import {
   buildCurrentReadingContext,
   buildModelReadableCurrentContext,
+  decodeLiveReadingDeliveryNote,
   READING_NEST_TOOL_NAME,
   READING_NEST_URI,
   registerReadingTools,
   TOOL_CONFIGS
 } from "./register-tools.js";
 
+describe("live reading delivery compatibility", () => {
+  it("decodes the ownership envelope carried through legacy userNote schemas", () => {
+    expect(
+      decodeLiveReadingDeliveryNote(
+        '__ss_live_reader_v61__:{"deliveryOperationId":"live:chapter-103","readerInstanceId":"reader-new"}'
+      )
+    ).toEqual({
+      deliveryOperationId: "live:chapter-103",
+      readerInstanceId: "reader-new"
+    });
+    expect(decodeLiveReadingDeliveryNote("an actual reader note")).toBeUndefined();
+    expect(decodeLiveReadingDeliveryNote("__ss_live_reader_v61__:{oops")).toBeUndefined();
+  });
+});
+
 describe("tool descriptors", () => {
-  it("binds the current UI resource to the v60 and compatibility render tools", () => {
-    expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v60.html");
-    expect(READING_NEST_TOOL_NAME).toBe("open_reading_nest_v60");
-    expect(TOOL_CONFIGS.open_reading_nest_v60._meta?.ui).toEqual({
+  it("binds the current UI resource to the v61 and compatibility render tools", () => {
+    expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v61.html");
+    expect(READING_NEST_TOOL_NAME).toBe("open_reading_nest_v61");
+    expect(TOOL_CONFIGS.open_reading_nest_v61._meta?.ui).toEqual({
       resourceUri: READING_NEST_URI
     });
-    expect(TOOL_CONFIGS.open_reading_nest_v60._meta?.["ui/resourceUri"]).toBe(
+    expect(TOOL_CONFIGS.open_reading_nest_v61._meta?.["ui/resourceUri"]).toBe(
       READING_NEST_URI
     );
-    expect(TOOL_CONFIGS.open_reading_nest_v60._meta?.["openai/outputTemplate"]).toBe(
+    expect(TOOL_CONFIGS.open_reading_nest_v61._meta?.["openai/outputTemplate"]).toBe(
       READING_NEST_URI
     );
     expect(TOOL_CONFIGS.open_reading_nest._meta?.["openai/outputTemplate"]).toBe(
@@ -26,6 +42,7 @@ describe("tool descriptors", () => {
     );
     for (const [name, config] of Object.entries(TOOL_CONFIGS)) {
       if (
+        name !== "open_reading_nest_v61" &&
         name !== "open_reading_nest_v60" &&
         name !== "open_reading_nest_v58" &&
         name !== "open_reading_nest_v57" &&
@@ -669,7 +686,7 @@ describe("tool descriptors", () => {
   });
 
   it("exposes book management and threaded annotation tools", () => {
-    expect(Object.keys(TOOL_CONFIGS)).toHaveLength(76);
+    expect(Object.keys(TOOL_CONFIGS)).toHaveLength(77);
     expect(TOOL_CONFIGS.create_annotation.annotations).toMatchObject({
       readOnlyHint: false,
       idempotentHint: true
