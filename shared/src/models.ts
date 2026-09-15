@@ -103,6 +103,12 @@ export interface ReadingSession {
   liveReadingEnabled: boolean;
   liveReadingStartIndex?: number;
   pendingLiveReadingPositions?: ReadingPosition[];
+  liveReadingDeliveryLease?: {
+    positionIndex: number;
+    operationId: string;
+    claimedAt: string;
+    expiresAt: string;
+  };
   pendingAnnotationReplies?: PendingAnnotationReply[];
   sessionPreferences: SessionPreferences;
   sourceManifest: SourceManifest | null;

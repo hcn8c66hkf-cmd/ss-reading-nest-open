@@ -825,7 +825,7 @@ export const TOOL_CONFIGS = {
     description:
       "Use this when the user explicitly asks ChatGPT to look at the current paragraph or current manga page.",
     inputSchema: sendCurrentContextInputSchema,
-    annotations: readOnly,
+    annotations: { ...mutation, idempotentHint: true },
     _meta: {
       "openai/fileParams": ["currentPageImage"]
     }
@@ -2097,8 +2097,14 @@ export function registerReadingTools(
     "send_current_context",
     TOOL_CONFIGS.send_current_context,
     async (input) => {
-      const { session } = await service.getSessionBundle(input.sessionId);
       const currentPosition = input.currentPosition ?? input.position!;
+      const deliveryClaim = input.mode === "live_reading" && input.deliveryOperationId
+        ? await service.claimLiveReadingDelivery(input.sessionId, currentPosition.index, input.deliveryOperationId)
+        : undefined;
+      if (deliveryClaim && !deliveryClaim.claimed) {
+        return toolResult({ deliveryClaim }, "这条实时跟读已由另一张页面卡片接手，不再重复发送。");
+      }
+      const { session } = await service.getSessionBundle(input.sessionId);
       const longTermContext = await service.getLayeredReadingContext({
         sessionId: input.sessionId,
         depth: input.readingCommentMode === "deep_analysis" ? "deep" : "daily",
@@ -2109,7 +2115,7 @@ export function registerReadingTools(
         longTermContext
       };
       return toolResult(
-        { context },
+        { context, ...(deliveryClaim ? { deliveryClaim } : {}) },
         buildModelReadableCurrentContext(session, input)
       );
     }

@@ -196,6 +196,7 @@ export class ReadingService {
     return this.repository.mutate((database) => {
       const session = this.requireSession(database.sessions, sessionId);
       session.liveReadingEnabled = enabled;
+      delete session.liveReadingDeliveryLease;
       if (enabled) {
         session.liveReadingStartIndex = session.userCurrentPosition.index;
         session.pendingLiveReadingPositions = [];
@@ -215,6 +216,43 @@ export class ReadingService {
       this.recomputeContiguousAssistantPosition(database, session);
       session.updatedAt = this.deps.now().toISOString();
       return session;
+    });
+  }
+
+  async claimLiveReadingDelivery(
+    sessionId: string,
+    positionIndex: number,
+    operationId: string
+  ): Promise<{
+    claimed: boolean;
+    reason?: "not_pending" | "not_first_pending" | "already_claimed";
+    expiresAt?: string;
+  }> {
+    return this.repository.mutate((database) => {
+      const session = this.requireSession(database.sessions, sessionId);
+      this.ensurePendingWorkMetadata(database, session);
+      const pending = [...(session.pendingLiveReadingPositions ?? [])]
+        .sort((left, right) => left.index - right.index);
+      const firstPending = pending[0];
+      if (!pending.some((position) => position.index === positionIndex)) {
+        if (session.liveReadingDeliveryLease?.positionIndex === positionIndex) {
+          delete session.liveReadingDeliveryLease;
+        }
+        return { claimed: false, reason: "not_pending" as const };
+      }
+      if (firstPending?.index !== positionIndex) {
+        return { claimed: false, reason: "not_first_pending" as const };
+      }
+      const now = this.deps.now();
+      const lease = session.liveReadingDeliveryLease;
+      if (lease && Date.parse(lease.expiresAt) > now.getTime()) {
+        return { claimed: false, reason: "already_claimed" as const, expiresAt: lease.expiresAt };
+      }
+      const claimedAt = now.toISOString();
+      const expiresAt = new Date(now.getTime() + 90_000).toISOString();
+      session.liveReadingDeliveryLease = { positionIndex, operationId, claimedAt, expiresAt };
+      session.updatedAt = claimedAt;
+      return { claimed: true, expiresAt };
     });
   }
 
@@ -259,6 +297,7 @@ export class ReadingService {
       session.sessionPreferences = nextPreferences;
       if (!nextPreferences.autoSaveCompanionComments) {
         session.pendingLiveReadingPositions = [];
+        delete session.liveReadingDeliveryLease;
       } else if (session.liveReadingEnabled) {
         session.liveReadingStartIndex ??= session.userCurrentPosition.index;
         this.enqueueLiveReadingRange(
@@ -1167,6 +1206,9 @@ export class ReadingService {
   ) {
     session.pendingLiveReadingPositions = (session.pendingLiveReadingPositions ?? [])
       .filter((position) => position.index !== positionIndex);
+    if (session.liveReadingDeliveryLease?.positionIndex === positionIndex) {
+      delete session.liveReadingDeliveryLease;
+    }
   }
 
   private recomputeContiguousAssistantPosition(
