@@ -55,8 +55,8 @@ import type { CloudSourceService } from "../services/cloud-source-service.js";
 import type { CompanionAutoplayService } from "../services/companion-autoplay-service.js";
 import { toolResult } from "./tool-result.js";
 
-export const READING_NEST_URI = "ui://ss-reading-nest/app-v61.html";
-export const READING_NEST_TOOL_NAME = "open_reading_nest_v61";
+export const READING_NEST_URI = "ui://ss-reading-nest/app-v62.html";
+export const READING_NEST_TOOL_NAME = "open_reading_nest_v62";
 
 const readLiveReadingContextInputSchema = z
   .object({
@@ -141,6 +141,20 @@ const mutation = {
 };
 
 export const TOOL_CONFIGS = {
+  open_reading_nest_v62: {
+    title: "打开 S×S 小窝共读",
+    description:
+      "Use this primary v62 tool when the user wants to open the reading nest or continue recent reading. Each paragraph wakes the host through exactly one message lane.",
+    inputSchema: openReadingNestInputSchema,
+    annotations: readOnly,
+    _meta: {
+      ui: { resourceUri: READING_NEST_URI },
+      "ui/resourceUri": READING_NEST_URI,
+      "openai/outputTemplate": READING_NEST_URI,
+      "openai/toolInvocation/invoking": "正在点亮小窝…",
+      "openai/toolInvocation/invoked": "小窝已经准备好"
+    }
+  },
   open_reading_nest_v61: {
     title: "打开 S×S 小窝共读",
     description:
@@ -2225,7 +2239,9 @@ export function registerReadingTools(
       };
       return toolResult(
         { context, ...(deliveryClaim ? { deliveryClaim } : {}) },
-        buildModelReadableCurrentContext(session, normalizedInput)
+        deliveryEnvelope
+          ? "实时跟读正文已经登记给页面卡片。不要在本工具调用后生成、回复或写回短评；等待页面卡片紧接着发送的唯一一条实时陪读消息。"
+          : buildModelReadableCurrentContext(session, normalizedInput)
       );
     }
   );
