@@ -29,6 +29,24 @@ describe("useLiveReading", () => {
     expect(result.current).toMatchObject({ activeIndex: null, queuedCount: 0, failedIndex: null });
   });
 
+  it("does not invent a current-chapter job while the authoritative backlog is empty", async () => {
+    const onQueuedPosition = vi.fn();
+    renderHook(() =>
+      useLiveReading({
+        enabled: true,
+        sessionKey: "session-1:reaction_only:short",
+        userPositionIndex: 100,
+        assistantPositionIndex: 99,
+        pendingPositionIndices: [],
+        sourceVerified: true,
+        onQueuedPosition
+      })
+    );
+
+    await act(async () => Promise.resolve());
+    expect(onQueuedPosition).not.toHaveBeenCalled();
+  });
+
   it("uses the server backlog as authoritative and does not repeat a completed later paragraph", async () => {
     const onQueuedPosition = vi.fn().mockResolvedValue(true);
     renderHook(() =>

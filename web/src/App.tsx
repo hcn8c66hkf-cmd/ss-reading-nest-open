@@ -1438,7 +1438,14 @@ export function App() {
           requestedLength: length
         });
         gestureLiveReadingOperationsRef.current.add(operationId);
-        void sendFollowUpFromUserGesture(prompt, false).then((accepted) => {
+        void sendFollowUpFromUserGesture(prompt, false, {
+          kind: "reading_nest_live_reading_v1",
+          sessionId: session.id,
+          title: session.title,
+          position: targetPosition,
+          currentText: `【${targetPosition.label}】\n${text}`,
+          responsePolicy: prompt
+        }).then((accepted) => {
           if (!accepted) gestureLiveReadingOperationsRef.current.delete(operationId);
         });
       }
@@ -2025,7 +2032,7 @@ export function App() {
     pendingPositionIndices:
       sessionBundle?.session.pendingLiveReadingPositions?.map(
         (position) => position.index
-      ),
+      ) ?? [],
     sourceVerified: sourceAvailability === "available_local",
     retryMs: 15_000,
     onQueuedPosition: sendLiveReading

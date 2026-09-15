@@ -277,16 +277,35 @@ describe("host bridge", () => {
     });
   });
 
-  it("starts a compatibility follow-up in the originating user gesture", async () => {
+  it("starts a compatibility follow-up with the new chapter context in the originating gesture", async () => {
     let resolveFollowUp: (() => void) | undefined;
     const sendFollowUpMessage = vi.fn(() => new Promise<void>((resolve) => {
       resolveFollowUp = resolve;
     }));
-    if (window.openai) window.openai.sendFollowUpMessage = sendFollowUpMessage;
+    const setWidgetState = vi.fn();
+    if (window.openai) {
+      window.openai.sendFollowUpMessage = sendFollowUpMessage;
+      window.openai.setWidgetState = setWidgetState;
+    }
     const { sendFollowUpFromUserGesture } = await import("./host.js");
 
-    const pending = sendFollowUpFromUserGesture("切段后立刻叫醒", false);
+    const pending = sendFollowUpFromUserGesture("切段后立刻叫醒", false, {
+      position: { kind: "paragraph", index: 8, label: "第 8 章" },
+      currentText: "第八章的新正文"
+    });
 
+    expect(setWidgetState).toHaveBeenCalledWith({
+      modelContent: expect.stringContaining("第八章的新正文"),
+      privateContent: {
+        screen: "novel",
+        sessionId: "session-1",
+        positionIndex: 2,
+        scrollTop: 120
+      }
+    });
+    expect(setWidgetState.mock.invocationCallOrder[0]!).toBeLessThan(
+      sendFollowUpMessage.mock.invocationCallOrder[0]!
+    );
     expect(sendFollowUpMessage).toHaveBeenCalledWith({
       prompt: "切段后立刻叫醒",
       scrollToBottom: false
