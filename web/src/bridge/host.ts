@@ -200,6 +200,17 @@ export async function setReadingFrameHeight(height: number): Promise<boolean> {
   }
 }
 
+export async function callAppServerTool(
+  name: string,
+  args: Record<string, unknown>
+): Promise<ToolCallResult> {
+  const bridge = connectApp();
+  if (!bridge || !(await waitForConnectedApp(bridge))) {
+    throw new Error("MCP Apps bridge is not connected");
+  }
+  return (await bridge.callServerTool({ name, arguments: args })) as ToolCallResult;
+}
+
 export async function callTool(
   name: string,
   args: Record<string, unknown>
