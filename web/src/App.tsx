@@ -26,7 +26,6 @@ import {
 } from "@ss/shared";
 import {
   askChatGpt,
-  callAppServerTool,
   callTool,
   fileCapabilities,
   initialToolOutput,
@@ -1878,45 +1877,12 @@ export function App() {
           position: targetPosition,
           text,
           operationId,
+          ...(readerInstanceId ? { readerInstanceId } : {}),
           autoSaveCompanionComments:
             session.sessionPreferences.autoSaveCompanionComments,
           requestedMode: mode,
           requestedLength: length
         });
-        const contextResult = await callAppServerTool("send_current_context", {
-          sessionId: session.id,
-          currentPosition: targetPosition,
-          currentText: text,
-          mode: "live_reading",
-          readingCommentMode: "reaction_only",
-          commentLength: "short",
-          userNote: `__ss_live_reader_v61__:${JSON.stringify({
-            deliveryOperationId: operationId,
-            ...(readerInstanceId ? { readerInstanceId } : {})
-          })}`
-        });
-        const contextContent = contextResult.structuredContent as
-          | Record<string, unknown>
-          | undefined;
-        const deliveryClaim = contextContent?.deliveryClaim as
-          | { claimed?: boolean; reason?: string }
-          | undefined;
-        if (deliveryClaim?.claimed === false) {
-          const reason = deliveryClaim.reason;
-          setToast(
-            reason === "inactive_reader"
-              ? "这张旧卡已经关掉啦，请在最新打开的小窝里继续读。"
-              : "这一段已经由最新的小窝接手，不会重复生成。"
-          );
-          return true;
-        }
-        const liveContext = contextContent?.context as
-          | Record<string, unknown>
-          | undefined;
-        if (!liveContext) throw new Error("Missing claimed live-reading context");
-        // The claimed tool call only reserves this paragraph. Do not mirror
-        // it into model context here: some hosts treat that update as another
-        // conversational wake. The follow-up below is the single delivery lane.
         stageLiveReadingWriteback({
           sessionId: session.id,
           position: targetPosition,
@@ -1975,7 +1941,6 @@ export function App() {
       }
     },
     [
-      applyLiveReadingState,
       chunks,
       companionComments,
       loadCompanionComments,
@@ -3104,7 +3069,7 @@ export function App() {
   return (
     <div className="app">
       <span
-        aria-label="共读小窝版本 v64"
+        aria-label="共读小窝版本 v65"
         style={{
           position: "fixed",
           left: 8,
@@ -3116,7 +3081,7 @@ export function App() {
           opacity: 0.48
         }}
       >
-        v64
+        v65
       </span>
       {screen === "home" || screen === "setup" ? (
         <button

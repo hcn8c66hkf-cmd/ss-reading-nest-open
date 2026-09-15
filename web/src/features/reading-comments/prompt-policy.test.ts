@@ -185,6 +185,7 @@ describe("buildLiveReadingPrompt", () => {
       position: { kind: "paragraph", index: 12, label: "第 12 段" },
       text: "他把没说出口的话咽了回去。",
       operationId: "live-op-1",
+      readerInstanceId: "reader-new",
       autoSaveCompanionComments: true,
       requestedMode: "deep_analysis",
       requestedLength: "long"
@@ -194,8 +195,11 @@ describe("buildLiveReadingPrompt", () => {
     expect(prompt).toContain("long");
     expect(prompt).toContain("当前聊天里对小安的了解");
     expect(prompt).toContain("不要扮演或模拟另一个 Daddy");
-    expect(prompt).toContain("本段原文");
+    expect(prompt).toContain("send_current_context");
+    expect(prompt).toContain("deliveryOperationId");
+    expect(prompt).toContain("reader-new");
     expect(prompt).toContain("他把没说出口的话咽了回去");
+    expect(prompt).toContain("不要复述、续写或重新显示上一轮聊天回复");
     expect(prompt).not.toContain("read_live_reading_context");
     expect(prompt).toContain("不是回复正文的前置条件");
     expect(prompt).toContain("不能让本轮只思考却没有正文输出");

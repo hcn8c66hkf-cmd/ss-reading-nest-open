@@ -72,30 +72,43 @@ export function buildLiveReadingPrompt(input: {
   position: ReadingPosition;
   text: string;
   operationId: string;
+  readerInstanceId?: string;
   autoSaveCompanionComments: boolean;
   requestedMode?: ReadingCommentMode;
   requestedLength?: CommentLength;
 }): string {
   const mode = input.requestedMode ?? "light_chat";
   const length = normalizeCommentLength(mode, input.requestedLength ?? "short");
+  const deliveryArguments = {
+    sessionId: input.sessionId,
+    currentPosition: input.position,
+    currentText: input.text,
+    mode: "live_reading",
+    readingCommentMode: "reaction_only",
+    commentLength: "short",
+    deliveryOperationId: input.operationId,
+    ...(input.readerInstanceId ? { readerInstanceId: input.readerInstanceId } : {})
+  };
   const publication = [
-        "先生成最终短评。无论写回工具是否可用，都必须在聊天区回复这段短评，不能让本轮只思考却没有正文输出。",
-        "优先调用 submit_live_reading_comment_v58 保存完全相同的短评；只有专用工具确实不可用时才改用 publish_companion_comment。",
-        publishParameters({
-          sessionId: input.sessionId,
-          operationId: input.operationId,
-          mode,
-          length,
-          source: "live_reading",
-          position: input.position,
-          text: "最终短评全文"
-        }),
-        "写回成功后在聊天区回复完全相同的短评；写回失败也要正常回复短评，并补充“短评未同步到 Dock”，不要吞掉正文。"
-      ];
+    "先生成最终短评。无论写回工具是否可用，都必须在聊天区回复这段短评，不能让本轮只思考却没有正文输出。",
+    "优先调用 submit_live_reading_comment_v58 保存完全相同的短评；只有专用工具确实不可用时才改用 publish_companion_comment。",
+    publishParameters({
+      sessionId: input.sessionId,
+      operationId: input.operationId,
+      mode,
+      length,
+      source: "live_reading",
+      position: input.position,
+      text: "最终短评全文"
+    }),
+    "写回成功后在聊天区回复完全相同的短评；写回失败也要正常回复短评，并补充“短评未同步到 Dock”，不要吞掉正文。"
+  ];
   return [
     `【实时陪读：${input.position.label}】《${input.title}》`,
-    `本段原文：\n${input.text}`,
-    "上面的“本段原文”就是这轮唯一要读的正文；请直接依据它回应。",
+    "这是页面发给聊天宿主的唯一一次实时陪读消息。不要复述、续写或重新显示上一轮聊天回复。",
+    "第一步必须调用 send_current_context 认领并读取这一章；这一步属于当前这一轮内部，调用前不要生成短评。",
+    `send_current_context.arguments=${JSON.stringify(deliveryArguments)}`,
+    "如果工具返回 deliveryClaim.claimed=false，本轮立即结束且不要输出任何聊天正文；如果认领成功，只依据 structuredContent.context.currentText 生成短评。",
     `当前偏好：${mode}；长度：${length}。偏好只调节表达方向，不能覆盖你在当前聊天里对小安的了解，也不能把你变成固定人设。`,
     lengthInstruction(mode, length),
     ...modeInstruction(mode),
