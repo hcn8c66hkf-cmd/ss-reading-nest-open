@@ -103,6 +103,39 @@ describe("ReadingService companion comments", () => {
       .toEqual({ claimed: false, reason: "not_pending" });
   });
 
+  it("prunes completed chapters from a stale durable queue before another card can replay them", async () => {
+    const { repository, service } = createService();
+    const session = await startSessionWithHistory(service);
+    await service.setLiveReadingMode(session.id, true);
+    await service.publishCompanionComment({
+      ...commentInput(session.id, "live-chapter-1", 1),
+      source: "live_reading"
+    });
+    await service.updateUserPosition(session.id, position(2));
+
+    const storedSession = repository.database.sessions[0]!;
+    storedSession.pendingLiveReadingPositions = [position(1), position(2), position(1)];
+    storedSession.liveReadingDeliveryLease = {
+      positionIndex: 1,
+      operationId: "stale-chapter-1",
+      claimedAt: "2026-06-22T09:59:00.000Z",
+      expiresAt: "2026-06-22T10:10:00.000Z"
+    };
+
+    await service.reconcilePendingWork(session.id);
+
+    expect((await service.getSessionBundle(session.id)).session).toMatchObject({
+      assistantSyncedPosition: { index: 1 },
+      pendingLiveReadingPositions: [{ index: 2 }]
+    });
+    expect((await service.getSessionBundle(session.id)).session)
+      .not.toHaveProperty("liveReadingDeliveryLease");
+    expect(await service.claimLiveReadingDelivery(session.id, 1, "replay-chapter-1"))
+      .toEqual({ claimed: false, reason: "not_pending" });
+    expect(await service.claimLiveReadingDelivery(session.id, 2, "live-chapter-2"))
+      .toMatchObject({ claimed: true });
+  });
+
   it("persists every rapidly crossed paragraph and never skips a missing middle comment", async () => {
     const { service } = createService();
     const session = await startSessionWithHistory(service);

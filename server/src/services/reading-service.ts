@@ -1167,6 +1167,8 @@ export class ReadingService {
       }
     }
 
+    this.pruneCompletedLiveReadingPositions(database, session);
+
     if (session.pendingAnnotationReplies === undefined) {
       const threshold = session.liveReadingStartIndex ?? session.userCurrentPosition.index;
       session.pendingAnnotationReplies = database.annotations
@@ -1178,6 +1180,36 @@ export class ReadingService {
           return annotation.messages.at(-1)?.author === "user";
         })
         .map((annotation) => this.pendingAnnotationReply(annotation));
+    }
+  }
+
+  private pruneCompletedLiveReadingPositions(
+    database: ReadingDatabase,
+    session: ReadingSession
+  ) {
+    const completed = new Set(
+      database.companionComments
+        .filter(
+          (comment) =>
+            comment.sessionId === session.id &&
+            comment.position.kind === session.userCurrentPosition.kind &&
+            (comment.inRecent || comment.inHistory)
+        )
+        .map((comment) => comment.position.index)
+    );
+    const pending = new Map<number, ReadingPosition>();
+    for (const position of session.pendingLiveReadingPositions ?? []) {
+      if (!completed.has(position.index)) {
+        pending.set(position.index, position);
+      }
+    }
+    session.pendingLiveReadingPositions = [...pending.values()]
+      .sort((left, right) => left.index - right.index);
+    if (
+      session.liveReadingDeliveryLease &&
+      !pending.has(session.liveReadingDeliveryLease.positionIndex)
+    ) {
+      delete session.liveReadingDeliveryLease;
     }
   }
 
