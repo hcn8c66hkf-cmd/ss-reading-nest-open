@@ -1108,7 +1108,7 @@ export function registerReadingTools(
       .sort((left, right) =>
         right.session.updatedAt.localeCompare(left.session.updatedAt)
       )[0];
-    const activeReader = activeNovel
+    const activeReader = activeNovel && typeof service.activateLiveReadingReader === "function"
       ? await service.activateLiveReadingReader(activeNovel.session.id)
       : undefined;
     if (activeNovel && activeReader) {
