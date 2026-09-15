@@ -132,6 +132,7 @@ type OpenOutput = {
   bookshelfSessions?: Array<SessionBundle & { cacheState?: string }>;
   recentSessions?: Array<SessionBundle & { cacheState?: string }>;
   sourceEndpointBase?: string;
+  readerInstanceId?: string;
 };
 
 const cache = new IndexedDbReadingCache();
@@ -170,6 +171,7 @@ function callCompatSaveQuote(input: {
 export function App() {
   const initial = initialToolOutput<OpenOutput>();
   const sourceEndpointBase = initial?.sourceEndpointBase ?? deriveSourceEndpointBase();
+  const readerInstanceId = initial?.readerInstanceId;
   const cloudSourceClient = useMemo(
     () => new CloudSourceClient(sourceEndpointBase, undefined, callTool),
     [sourceEndpointBase]
@@ -1887,7 +1889,8 @@ export function App() {
           mode: "live_reading",
           readingCommentMode: "reaction_only",
           commentLength: "short",
-          deliveryOperationId: operationId
+          deliveryOperationId: operationId,
+          ...(readerInstanceId ? { readerInstanceId } : {})
         });
         const contextContent = contextResult.structuredContent as
           | Record<string, unknown>
