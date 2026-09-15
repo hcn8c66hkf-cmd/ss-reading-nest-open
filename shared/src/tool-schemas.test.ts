@@ -235,9 +235,11 @@ describe("v0.2 position schemas", () => {
       currentPosition: { kind: "paragraph", index: 12, label: "第 12 段" },
       currentText: "正文",
       mode: "live_reading",
-      deliveryOperationId: "live-v59-session-1-paragraph-12"
+      deliveryOperationId: "live-v59-session-1-paragraph-12",
+      readerInstanceId: "reader-card-new"
     });
     expect(result.deliveryOperationId).toBe("live-v59-session-1-paragraph-12");
+    expect(result.readerInstanceId).toBe("reader-card-new");
   });
 
   it("requires an operationId for assistant confirmation", () => {
