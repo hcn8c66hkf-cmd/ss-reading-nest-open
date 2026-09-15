@@ -103,6 +103,10 @@ export interface ReadingSession {
   liveReadingEnabled: boolean;
   liveReadingStartIndex?: number;
   pendingLiveReadingPositions?: ReadingPosition[];
+  activeLiveReadingReader?: {
+    instanceId: string;
+    activatedAt: string;
+  };
   liveReadingDeliveryLease?: {
     positionIndex: number;
     operationId: string;
