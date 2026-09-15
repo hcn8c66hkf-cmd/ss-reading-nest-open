@@ -229,6 +229,17 @@ describe("v0.2 position schemas", () => {
     expect(result).not.toHaveProperty("assistantSyncedPosition");
   });
 
+  it("accepts a live-reading delivery operation id for server leasing", () => {
+    const result = sendCurrentContextInputSchema.parse({
+      sessionId: "session-1",
+      currentPosition: { kind: "paragraph", index: 12, label: "第 12 段" },
+      currentText: "正文",
+      mode: "live_reading",
+      deliveryOperationId: "live-v59-session-1-paragraph-12"
+    });
+    expect(result.deliveryOperationId).toBe("live-v59-session-1-paragraph-12");
+  });
+
   it("requires an operationId for assistant confirmation", () => {
     expect(() =>
       confirmAssistantSyncedPositionInputSchema.parse({

@@ -125,6 +125,9 @@ function copySession(session: ReadingSession): ReadingSession {
     ...(session.pendingLiveReadingPositions
       ? { pendingLiveReadingPositions: structuredClone(session.pendingLiveReadingPositions) }
       : {}),
+    ...(session.liveReadingDeliveryLease
+      ? { liveReadingDeliveryLease: structuredClone(session.liveReadingDeliveryLease) }
+      : {}),
     ...(session.pendingAnnotationReplies
       ? { pendingAnnotationReplies: structuredClone(session.pendingAnnotationReplies) }
       : {}),

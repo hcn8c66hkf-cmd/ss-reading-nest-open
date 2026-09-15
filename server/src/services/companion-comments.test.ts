@@ -68,6 +68,20 @@ async function startSessionWithHistory(service: ReadingService, title = "第一�
 }
 
 describe("ReadingService companion comments", () => {
+  it("leases one pending paragraph to only one live widget and clears the lease after writeback", async () => {
+    const { service } = createService();
+    const session = await startSessionWithHistory(service);
+    await service.setLiveReadingMode(session.id, true);
+    const first = await service.claimLiveReadingDelivery(session.id, 1, "live-v59-session-1-paragraph-1");
+    const duplicate = await service.claimLiveReadingDelivery(session.id, 1, "live-v59-session-1-paragraph-1");
+    expect(first).toMatchObject({ claimed: true });
+    expect(duplicate).toMatchObject({ claimed: false, reason: "already_claimed" });
+    await service.publishCompanionComment({ ...commentInput(session.id, "live-v59-session-1-paragraph-1", 1), source: "live_reading" });
+    expect((await service.getSessionBundle(session.id)).session).not.toHaveProperty("liveReadingDeliveryLease");
+    expect(await service.claimLiveReadingDelivery(session.id, 1, "live-v59-session-1-paragraph-1"))
+      .toEqual({ claimed: false, reason: "not_pending" });
+  });
+
   it("persists every rapidly crossed paragraph and never skips a missing middle comment", async () => {
     const { service } = createService();
     const session = await startSessionWithHistory(service);

@@ -169,6 +169,7 @@ export const sendCurrentContextInputSchema = z
     mode: readingSyncModeSchema,
     readingCommentMode: readingCommentModeSchema.optional(),
     commentLength: commentLengthSchema.optional(),
+    deliveryOperationId: z.string().min(1).max(200).optional(),
     sourceContext: sourceContextSchema.optional(),
     batch: z
       .object({

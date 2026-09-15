@@ -1886,15 +1886,21 @@ export function App() {
           currentText: text,
           mode: "live_reading",
           readingCommentMode: "reaction_only",
-          commentLength: "short"
-        }).catch(() => ({ structuredContent: {} }));
+          commentLength: "short",
+          deliveryOperationId: operationId
+        });
         const contextContent = contextResult.structuredContent as
           | Record<string, unknown>
           | undefined;
+        const deliveryClaim = contextContent?.deliveryClaim as
+          | { claimed?: boolean }
+          | undefined;
+        if (deliveryClaim?.claimed === false) return true;
         const liveContext = contextContent?.context as
           | Record<string, unknown>
           | undefined;
-        if (liveContext) {
+        if (!liveContext) throw new Error("Missing claimed live-reading context");
+        {
           // The server tool result contains the exact paragraph in its
           // model-readable content. Mirror it into app context as a second
           // standards-based lane, while the follow-up prompt below carries the
