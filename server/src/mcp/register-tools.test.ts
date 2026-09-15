@@ -9,16 +9,16 @@ import {
 } from "./register-tools.js";
 
 describe("tool descriptors", () => {
-  it("binds the current UI resource to the v58 and compatibility render tools", () => {
-    expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v58.html");
-    expect(READING_NEST_TOOL_NAME).toBe("open_reading_nest_v58");
-    expect(TOOL_CONFIGS.open_reading_nest_v58._meta?.ui).toEqual({
+  it("binds the current UI resource to the v60 and compatibility render tools", () => {
+    expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v60.html");
+    expect(READING_NEST_TOOL_NAME).toBe("open_reading_nest_v60");
+    expect(TOOL_CONFIGS.open_reading_nest_v60._meta?.ui).toEqual({
       resourceUri: READING_NEST_URI
     });
-    expect(TOOL_CONFIGS.open_reading_nest_v58._meta?.["ui/resourceUri"]).toBe(
+    expect(TOOL_CONFIGS.open_reading_nest_v60._meta?.["ui/resourceUri"]).toBe(
       READING_NEST_URI
     );
-    expect(TOOL_CONFIGS.open_reading_nest_v58._meta?.["openai/outputTemplate"]).toBe(
+    expect(TOOL_CONFIGS.open_reading_nest_v60._meta?.["openai/outputTemplate"]).toBe(
       READING_NEST_URI
     );
     expect(TOOL_CONFIGS.open_reading_nest._meta?.["openai/outputTemplate"]).toBe(
@@ -26,6 +26,7 @@ describe("tool descriptors", () => {
     );
     for (const [name, config] of Object.entries(TOOL_CONFIGS)) {
       if (
+        name !== "open_reading_nest_v60" &&
         name !== "open_reading_nest_v58" &&
         name !== "open_reading_nest_v57" &&
         name !== "open_reading_nest_v56" &&
