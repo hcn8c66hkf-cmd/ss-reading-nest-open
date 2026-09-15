@@ -1,0 +1,1 @@
+Deploy v63: live-reading ownership claims use MCP Apps only and never the conversational compatibility bridge.
