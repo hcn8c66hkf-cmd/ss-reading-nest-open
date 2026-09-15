@@ -293,6 +293,15 @@ export class ReadingService {
           item.operationId === input.operationId
       );
       if (existing) {
+        if (
+          existing.position.kind !== input.position.kind ||
+          existing.position.index !== input.position.index
+        ) {
+          throw new AppError(
+            "INVALID_OPERATION",
+            "operationId 已属于另一阅读位置，拒绝把旧短评当成当前短评。"
+          );
+        }
         this.completePendingLiveReadingPosition(session, existing.position.index);
         this.recomputeContiguousAssistantPosition(database, session);
         return existing;

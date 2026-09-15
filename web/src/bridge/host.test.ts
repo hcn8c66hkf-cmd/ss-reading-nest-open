@@ -55,13 +55,14 @@ describe("host bridge", () => {
   });
 
   it("advertises app-owned writeback tools before connecting to the host", async () => {
-    const { askChatGpt, ANNOTATION_WRITEBACK_TOOL, LIVE_READING_WRITEBACK_TOOL } =
+    const { askChatGpt, ANNOTATION_WRITEBACK_TOOL, LEGACY_LIVE_READING_WRITEBACK_TOOL, LIVE_READING_WRITEBACK_TOOL } =
       await import("./host.js");
 
     await askChatGpt("触发连接");
 
     expect(bridge.registerTool.mock.calls.map(([name]) => name)).toEqual([
       LIVE_READING_WRITEBACK_TOOL,
+      LEGACY_LIVE_READING_WRITEBACK_TOOL,
       ANNOTATION_WRITEBACK_TOOL
     ]);
     expect(bridge.registerTool.mock.invocationCallOrder[1]).toBeLessThan(
@@ -75,8 +76,12 @@ describe("host bridge", () => {
       registered.set(name, handler);
     });
     bridge.callServerTool.mockResolvedValue({ structuredContent: { saved: true } });
-    const { askChatGpt, ANNOTATION_WRITEBACK_TOOL, LIVE_READING_WRITEBACK_TOOL } =
-      await import("./host.js");
+    const {
+      askChatGpt,
+      ANNOTATION_WRITEBACK_TOOL,
+      LIVE_READING_WRITEBACK_TOOL,
+      stageLiveReadingWriteback
+    } = await import("./host.js");
     await askChatGpt("触发连接");
 
     const liveArgs = {
@@ -88,7 +93,18 @@ describe("host bridge", () => {
       source: "live_reading",
       operationId: "live-op"
     };
-    await registered.get(LIVE_READING_WRITEBACK_TOOL)?.(liveArgs);
+    stageLiveReadingWriteback({
+      sessionId: "session-1",
+      position: { kind: "paragraph", index: 8, label: "第 8 段" },
+      mode: "reaction_only",
+      length: "short",
+      source: "live_reading",
+      operationId: "live-v58-session-1-paragraph-8-reaction_only-short"
+    });
+    await registered.get(LIVE_READING_WRITEBACK_TOOL)?.({
+      ...liveArgs,
+      operationId: "stale-live-op"
+    });
     const annotationArgs = {
       sessionId: "session-1",
       annotationId: "annotation-1",
@@ -100,12 +116,47 @@ describe("host bridge", () => {
 
     expect(bridge.callServerTool).toHaveBeenNthCalledWith(1, {
       name: "publish_companion_comment",
-      arguments: liveArgs
+      arguments: {
+        ...liveArgs,
+        operationId: "live-v58-session-1-paragraph-8-reaction_only-short"
+      }
     });
     expect(bridge.callServerTool).toHaveBeenNthCalledWith(2, {
       name: "reply_to_annotation_v23",
       arguments: annotationArgs
     });
+  });
+
+  it("rejects a live writeback for a different chapter before it reaches storage", async () => {
+    const registered = new Map<string, (args: Record<string, unknown>) => Promise<unknown>>();
+    bridge.registerTool.mockImplementation((name, _config, handler) => {
+      registered.set(name, handler);
+    });
+    const {
+      askChatGpt,
+      LIVE_READING_WRITEBACK_TOOL,
+      stageLiveReadingWriteback
+    } = await import("./host.js");
+    await askChatGpt("触发连接");
+    stageLiveReadingWriteback({
+      sessionId: "session-1",
+      position: { kind: "paragraph", index: 9, label: "第 9 段" },
+      mode: "reaction_only",
+      length: "short",
+      source: "live_reading",
+      operationId: "live-v58-session-1-paragraph-9-reaction_only-short"
+    });
+
+    await expect(registered.get(LIVE_READING_WRITEBACK_TOOL)?.({
+      sessionId: "session-1",
+      position: { kind: "paragraph", index: 8, label: "第 8 段" },
+      mode: "reaction_only",
+      length: "short",
+      text: "上一章的旧短评",
+      source: "live_reading",
+      operationId: "live-old"
+    })).rejects.toThrow("stale live-reading writeback");
+    expect(bridge.callServerTool).not.toHaveBeenCalled();
   });
 
   it("updates model-visible context through the MCP Apps bridge", async () => {

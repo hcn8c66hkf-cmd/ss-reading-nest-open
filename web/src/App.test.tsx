@@ -786,7 +786,7 @@ describe("App", () => {
     await deviceCache.remove("sequence-session");
   });
 
-  it("routes live reading into the active conversation after saving the new position", async () => {
+  it("queues live reading only after saving the new position and never sends a duplicate gesture follow-up", async () => {
     const deviceCache = new IndexedDbReadingCache();
     const sourceManifest = {
       ...manifest("gesture-wake-source", "9"),
@@ -845,23 +845,16 @@ describe("App", () => {
     fireEvent.click(await screen.findByRole("button", { name: "继续阅读《触摸唤醒测试》" }));
     fireEvent.click(await screen.findByRole("button", { name: "下一章" }));
 
-    expect(sendFollowUpMessage).toHaveBeenCalledTimes(1);
-    expect(String(sendFollowUpMessage.mock.calls[0]?.[0]?.prompt)).toContain(
-      "第二段只交给当前聊天里的 Daddy。"
-    );
-    const updateCall = callTool.mock.calls.findIndex(([name]) => name === "update_reading_position");
-    expect(updateCall).toBeGreaterThanOrEqual(0);
-
-    await waitFor(() => expect(sendFollowUpMessage).toHaveBeenCalledTimes(1));
-    expect(String(sendFollowUpMessage.mock.calls[0]?.[0]?.prompt)).toContain(
-      "第二段只交给当前聊天里的 Daddy。"
-    );
-    expect(String(sendFollowUpMessage.mock.calls[0]?.[0]?.prompt)).toContain(
-      "不要扮演或模拟另一个 Daddy"
-    );
-    expect(sendFollowUpMessage.mock.invocationCallOrder[0]!).toBeLessThan(
-      callTool.mock.invocationCallOrder[updateCall]!
-    );
+    await waitFor(() => {
+      expect(callTool).toHaveBeenCalledWith(
+        "update_reading_position",
+        expect.objectContaining({
+          sessionId: "gesture-wake-session",
+          userCurrentPosition: expect.objectContaining({ index: 2 })
+        })
+      );
+    });
+    expect(sendFollowUpMessage).not.toHaveBeenCalled();
 
     await deviceCache.remove("gesture-wake-session");
   });
