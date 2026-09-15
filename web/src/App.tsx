@@ -1889,8 +1889,10 @@ export function App() {
           mode: "live_reading",
           readingCommentMode: "reaction_only",
           commentLength: "short",
-          deliveryOperationId: operationId,
-          ...(readerInstanceId ? { readerInstanceId } : {})
+          userNote: `__ss_live_reader_v61__:${JSON.stringify({
+            deliveryOperationId: operationId,
+            ...(readerInstanceId ? { readerInstanceId } : {})
+          })}`
         });
         const contextContent = contextResult.structuredContent as
           | Record<string, unknown>
@@ -1898,7 +1900,15 @@ export function App() {
         const deliveryClaim = contextContent?.deliveryClaim as
           | { claimed?: boolean }
           | undefined;
-        if (deliveryClaim?.claimed === false) return true;
+        if (deliveryClaim?.claimed === false) {
+          const reason = deliveryClaim.reason;
+          setToast(
+            reason === "inactive_reader"
+              ? "这张旧卡已经关掉啦，请在最新打开的小窝里继续读。"
+              : "这一段已经由最新的小窝接手，不会重复生成。"
+          );
+          return true;
+        }
         const liveContext = contextContent?.context as
           | Record<string, unknown>
           | undefined;
@@ -1976,7 +1986,8 @@ export function App() {
       companionComments,
       loadCompanionComments,
       sessionBundle,
-      sourceAvailability
+      sourceAvailability,
+      readerInstanceId
     ]
   );
 
