@@ -55,8 +55,8 @@ import type { CloudSourceService } from "../services/cloud-source-service.js";
 import type { CompanionAutoplayService } from "../services/companion-autoplay-service.js";
 import { toolResult } from "./tool-result.js";
 
-export const READING_NEST_URI = "ui://ss-reading-nest/app-v60.html";
-export const READING_NEST_TOOL_NAME = "open_reading_nest_v60";
+export const READING_NEST_URI = "ui://ss-reading-nest/app-v61.html";
+export const READING_NEST_TOOL_NAME = "open_reading_nest_v61";
 
 const readLiveReadingContextInputSchema = z
   .object({
@@ -95,6 +95,39 @@ const ANNOTATION_FAVORITE_COMPAT_CONTENT_PREFIX = "__ss_annotation_favorite_v32_
 const READING_MEMORY_COMPAT_CONTENT_PREFIX = "__ss_reading_memory_v32__:";
 const READING_FACT_COMPAT_CONTENT_PREFIX = "__ss_reading_fact_v32__:";
 const SKILL_CANDIDATE_COMPAT_CONTENT_PREFIX = "__ss_skill_candidate_v33__:";
+const LIVE_READING_DELIVERY_NOTE_PREFIX = "__ss_live_reader_v61__:";
+
+export function decodeLiveReadingDeliveryNote(userNote?: string): {
+  deliveryOperationId: string;
+  readerInstanceId?: string;
+} | undefined {
+  if (!userNote?.startsWith(LIVE_READING_DELIVERY_NOTE_PREFIX)) return undefined;
+  try {
+    const parsed = JSON.parse(userNote.slice(LIVE_READING_DELIVERY_NOTE_PREFIX.length)) as {
+      deliveryOperationId?: unknown;
+      readerInstanceId?: unknown;
+    };
+    if (
+      typeof parsed.deliveryOperationId !== "string" ||
+      !parsed.deliveryOperationId ||
+      parsed.deliveryOperationId.length > 200
+    ) return undefined;
+    if (
+      parsed.readerInstanceId !== undefined &&
+      (typeof parsed.readerInstanceId !== "string" ||
+        !parsed.readerInstanceId ||
+        parsed.readerInstanceId.length > 200)
+    ) return undefined;
+    return {
+      deliveryOperationId: parsed.deliveryOperationId,
+      ...(typeof parsed.readerInstanceId === "string"
+        ? { readerInstanceId: parsed.readerInstanceId }
+        : {})
+    };
+  } catch {
+    return undefined;
+  }
+}
 
 const readOnly = {
   readOnlyHint: true,
@@ -108,6 +141,20 @@ const mutation = {
 };
 
 export const TOOL_CONFIGS = {
+  open_reading_nest_v61: {
+    title: "打开 S×S 小窝共读",
+    description:
+      "Use this primary v61 tool when the user wants to open the reading nest or continue recent reading. Live-reading ownership works through cached host schemas.",
+    inputSchema: openReadingNestInputSchema,
+    annotations: readOnly,
+    _meta: {
+      ui: { resourceUri: READING_NEST_URI },
+      "ui/resourceUri": READING_NEST_URI,
+      "openai/outputTemplate": READING_NEST_URI,
+      "openai/toolInvocation/invoking": "正在点亮小窝…",
+      "openai/toolInvocation/invoked": "小窝已经准备好"
+    }
+  },
   open_reading_nest_v60: {
     title: "打开 S×S 小窝共读",
     description:
@@ -1248,6 +1295,12 @@ export function registerReadingTools(
   );
   registerAppTool(
     server,
+    "open_reading_nest_v60",
+    TOOL_CONFIGS.open_reading_nest_v60,
+    openReadingNest
+  );
+  registerAppTool(
+    server,
     "open_reading_nest_v58",
     TOOL_CONFIGS.open_reading_nest_v58,
     openReadingNest
@@ -2125,12 +2178,27 @@ export function registerReadingTools(
     TOOL_CONFIGS.send_current_context,
     async (input) => {
       const currentPosition = input.currentPosition ?? input.position!;
-      const deliveryClaim = input.mode === "live_reading" && input.deliveryOperationId
+      const deliveryEnvelope = input.mode === "live_reading"
+        ? decodeLiveReadingDeliveryNote(input.userNote)
+        : undefined;
+      const deliveryOperationId =
+        input.deliveryOperationId ?? deliveryEnvelope?.deliveryOperationId;
+      const readerInstanceId =
+        input.readerInstanceId ?? deliveryEnvelope?.readerInstanceId;
+      const normalizedInput = deliveryEnvelope
+        ? {
+            ...input,
+            userNote: undefined,
+            deliveryOperationId,
+            readerInstanceId
+          }
+        : input;
+      const deliveryClaim = input.mode === "live_reading" && deliveryOperationId
         ? await service.claimLiveReadingDelivery(
             input.sessionId,
             currentPosition.index,
-            input.deliveryOperationId,
-            input.readerInstanceId
+            deliveryOperationId,
+            readerInstanceId
           )
         : undefined;
       if (deliveryClaim && !deliveryClaim.claimed) {
@@ -2143,12 +2211,12 @@ export function registerReadingTools(
         positionIndex: currentPosition.index
       });
       const context = {
-        ...buildCurrentReadingContext(session, input),
+        ...buildCurrentReadingContext(session, normalizedInput),
         longTermContext
       };
       return toolResult(
         { context, ...(deliveryClaim ? { deliveryClaim } : {}) },
-        buildModelReadableCurrentContext(session, input)
+        buildModelReadableCurrentContext(session, normalizedInput)
       );
     }
   );
