@@ -219,18 +219,37 @@ export class ReadingService {
     });
   }
 
+  async activateLiveReadingReader(
+    sessionId: string
+  ): Promise<{ readerInstanceId: string; session: ReadingSession }> {
+    const readerInstanceId = this.deps.id();
+    return this.repository.mutate((database) => {
+      const session = this.requireSession(database.sessions, sessionId);
+      const activatedAt = this.deps.now().toISOString();
+      session.activeLiveReadingReader = { instanceId: readerInstanceId, activatedAt };
+      delete session.liveReadingDeliveryLease;
+      session.updatedAt = activatedAt;
+      return { readerInstanceId, session: structuredClone(session) };
+    });
+  }
+
   async claimLiveReadingDelivery(
     sessionId: string,
     positionIndex: number,
-    operationId: string
+    operationId: string,
+    readerInstanceId?: string
   ): Promise<{
     claimed: boolean;
-    reason?: "not_pending" | "not_first_pending" | "already_claimed";
+    reason?: "not_pending" | "not_first_pending" | "already_claimed" | "inactive_reader";
     expiresAt?: string;
   }> {
     return this.repository.mutate((database) => {
       const session = this.requireSession(database.sessions, sessionId);
       this.ensurePendingWorkMetadata(database, session);
+      const activeReader = session.activeLiveReadingReader;
+      if (activeReader && readerInstanceId !== activeReader.instanceId) {
+        return { claimed: false, reason: "inactive_reader" as const };
+      }
       const pending = [...(session.pendingLiveReadingPositions ?? [])]
         .sort((left, right) => left.index - right.index);
       const firstPending = pending[0];

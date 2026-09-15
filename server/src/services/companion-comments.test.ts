@@ -68,6 +68,27 @@ async function startSessionWithHistory(service: ReadingService, title = "第一�
 }
 
 describe("ReadingService companion comments", () => {
+  it("lets the newest reader card retire every older live-reading card", async () => {
+    const { service } = createService();
+    const session = await startSessionWithHistory(service);
+    await service.setLiveReadingMode(session.id, true);
+    const older = await service.activateLiveReadingReader(session.id);
+    const newest = await service.activateLiveReadingReader(session.id);
+
+    expect(await service.claimLiveReadingDelivery(
+      session.id,
+      1,
+      "live-old-card-paragraph-1",
+      older.readerInstanceId
+    )).toEqual({ claimed: false, reason: "inactive_reader" });
+    expect(await service.claimLiveReadingDelivery(
+      session.id,
+      1,
+      "live-new-card-paragraph-1",
+      newest.readerInstanceId
+    )).toMatchObject({ claimed: true });
+  });
+
   it("leases one pending paragraph to only one live widget and clears the lease after writeback", async () => {
     const { service } = createService();
     const session = await startSessionWithHistory(service);

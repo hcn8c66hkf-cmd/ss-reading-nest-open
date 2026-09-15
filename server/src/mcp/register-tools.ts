@@ -1108,6 +1108,12 @@ export function registerReadingTools(
       .sort((left, right) =>
         right.session.updatedAt.localeCompare(left.session.updatedAt)
       )[0];
+    const activeReader = activeNovel && typeof service.activateLiveReadingReader === "function"
+      ? await service.activateLiveReadingReader(activeNovel.session.id)
+      : undefined;
+    if (activeNovel && activeReader) {
+      activeNovel.session = activeReader.session;
+    }
     const preloadPositionIndex = activeNovel
       ? [
           ...(activeNovel.session.pendingLiveReadingPositions ?? []).map(
@@ -1174,6 +1180,7 @@ export function registerReadingTools(
       {
         bookshelfSessions,
         recentSessions: bookshelfSessions.slice(0, 10),
+        ...(activeReader ? { readerInstanceId: activeReader.readerInstanceId } : {}),
         ...(activeNovel
           ? { liveReadingState: summarizePendingWork(activeNovel.session) }
           : {}),
@@ -2099,7 +2106,12 @@ export function registerReadingTools(
     async (input) => {
       const currentPosition = input.currentPosition ?? input.position!;
       const deliveryClaim = input.mode === "live_reading" && input.deliveryOperationId
-        ? await service.claimLiveReadingDelivery(input.sessionId, currentPosition.index, input.deliveryOperationId)
+        ? await service.claimLiveReadingDelivery(
+            input.sessionId,
+            currentPosition.index,
+            input.deliveryOperationId,
+            input.readerInstanceId
+          )
         : undefined;
       if (deliveryClaim && !deliveryClaim.claimed) {
         return toolResult({ deliveryClaim }, "这条实时跟读已由另一张页面卡片接手，不再重复发送。");
