@@ -1,0 +1,1 @@
+Deploy v64 after PR #25: prune already-completed chapters and stale delivery leases from durable live-reading queues before card open, claim, and synchronization.
