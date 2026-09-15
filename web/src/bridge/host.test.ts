@@ -397,6 +397,24 @@ describe("host bridge", () => {
     expect(legacyCallTool).toHaveBeenCalledWith("save_quote", { content: "一句话" });
   });
 
+  it("never falls back to the conversational compatibility bridge for app-only calls", async () => {
+    bridge.callServerTool.mockRejectedValueOnce(new Error("MCP proxy unavailable"));
+    const legacyCallTool = vi.fn().mockResolvedValue({
+      structuredContent: { deliveryClaim: { claimed: true } }
+    });
+    if (window.openai) window.openai.callTool = legacyCallTool;
+    const { callAppServerTool } = await import("./host.js");
+
+    await expect(
+      callAppServerTool("send_current_context", { sessionId: "session-1" })
+    ).rejects.toThrow("MCP proxy unavailable");
+    expect(bridge.callServerTool).toHaveBeenCalledWith({
+      name: "send_current_context",
+      arguments: { sessionId: "session-1" }
+    });
+    expect(legacyCallTool).not.toHaveBeenCalled();
+  });
+
   it("uses the compatibility tool bridge when the MCP handshake times out", async () => {
     vi.useFakeTimers();
     bridge.connect.mockImplementationOnce(() => new Promise(() => undefined));

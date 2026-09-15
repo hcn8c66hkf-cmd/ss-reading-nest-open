@@ -26,6 +26,7 @@ import {
 } from "@ss/shared";
 import {
   askChatGpt,
+  callAppServerTool,
   callTool,
   fileCapabilities,
   initialToolOutput,
@@ -1882,7 +1883,7 @@ export function App() {
           requestedMode: mode,
           requestedLength: length
         });
-        const contextResult = await callTool("send_current_context", {
+        const contextResult = await callAppServerTool("send_current_context", {
           sessionId: session.id,
           currentPosition: targetPosition,
           currentText: text,
