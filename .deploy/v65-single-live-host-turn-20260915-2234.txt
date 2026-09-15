@@ -1,0 +1,1 @@
+Deploy v65 after PR #26: one Apps host message per live-reading chapter; claim and read context within that same assistant turn; never replay the prior assistant reply.
