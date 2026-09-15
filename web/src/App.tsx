@@ -3103,6 +3103,21 @@ export function App() {
 
   return (
     <div className="app">
+      <span
+        aria-label="共读小窝版本 v64"
+        style={{
+          position: "fixed",
+          left: 8,
+          bottom: 6,
+          zIndex: 9999,
+          pointerEvents: "none",
+          fontSize: 10,
+          letterSpacing: "0.08em",
+          opacity: 0.48
+        }}
+      >
+        v64
+      </span>
       {screen === "home" || screen === "setup" ? (
         <button
           type="button"
