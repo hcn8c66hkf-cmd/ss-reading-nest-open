@@ -13,7 +13,8 @@ describe("sendLiveReadingFallback", () => {
 
     expect(mode).toBe("message");
     expect(sendMessage).toHaveBeenCalledWith(prompt, {
-      scrollToBottom: false
+      scrollToBottom: false,
+      transport: "compatibility-first"
     });
   });
 

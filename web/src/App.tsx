@@ -1893,12 +1893,10 @@ export function App() {
         });
         const fallbackMode = await sendLiveReadingFallback({
           prompt: fallbackPrompt,
-          sendMessage: (prompt, options) => askChatGpt(prompt, {
-            ...options,
-            // Live reading has one authoritative delivery lane. The server
-            // queue will not advance until this exact position is persisted.
-            transport: "apps"
-          })
+          // Live reading deliberately prefers the iOS compatibility follow-up.
+          // The standard Apps ui/message path can replay the preceding
+          // assistant bubble while the new chapter reply is being created.
+          sendMessage: askChatGpt
         });
         if (fallbackMode === "failed") {
           throw new Error("Host did not accept follow-up message");
@@ -3069,7 +3067,7 @@ export function App() {
   return (
     <div className="app">
       <span
-        aria-label="共读小窝版本 v65"
+        aria-label="共读小窝版本 v66"
         style={{
           position: "fixed",
           left: 8,
@@ -3081,7 +3079,7 @@ export function App() {
           opacity: 0.48
         }}
       >
-        v65
+        v66
       </span>
       {screen === "home" || screen === "setup" ? (
         <button
