@@ -19,8 +19,9 @@ describe("registerReadingResource", () => {
       "https://reading-nest.example.workers.dev"
     );
 
-    expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v63.html");
+    expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v64.html");
     expect(LEGACY_READING_NEST_URIS).toEqual([
+      "ui://ss-reading-nest/app-v63.html",
       "ui://ss-reading-nest/app-v62.html",
       "ui://ss-reading-nest/app-v61.html",
       "ui://ss-reading-nest/app-v60.html",
