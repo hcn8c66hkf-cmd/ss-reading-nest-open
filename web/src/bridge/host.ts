@@ -46,7 +46,7 @@ export function stageLiveReadingWriteback(
 async function forwardLiveReadingWriteback(
   bridge: McpApp,
   args: Record<string, unknown>
-): Promise<unknown> {
+) {
   const expected = stagedLiveReadingWriteback;
   const submittedPosition = args.position as
     | { kind?: unknown; index?: unknown }
