@@ -63,6 +63,9 @@ async function forwardLiveReadingWriteback(
       submittedPosition.index === candidate.position.index
   );
   if (!expected) {
+    if (stagedLiveReadingWritebacks.size > 0) {
+      throw new Error("Rejected a stale live-reading writeback for another position.");
+    }
     throw new Error("No live-reading writeback is currently pending.");
   }
   if (
