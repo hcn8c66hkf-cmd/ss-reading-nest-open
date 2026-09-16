@@ -786,7 +786,7 @@ describe("App", () => {
     await deviceCache.remove("sequence-session");
   });
 
-  it("wakes the current-chat Daddy exactly once inside the chapter gesture", async () => {
+  it("wakes live reading inside the chapter gesture and never sends a duplicate follow-up", async () => {
     const deviceCache = new IndexedDbReadingCache();
     const sourceManifest = {
       ...manifest("gesture-wake-source", "9"),
@@ -821,28 +821,15 @@ describe("App", () => {
         }
       }
     };
-    let savedComment: Record<string, any> | undefined;
     const callTool = vi.fn(async (name: string) => {
       if (name === "list_companion_comments") {
-        return { structuredContent: { comments: savedComment ? [savedComment] : [] } };
+        return { structuredContent: { comments: [] } };
       }
       return { structuredContent: {} };
     });
-    const sendFollowUpMessage = vi.fn(async () => {
-      savedComment = {
-        id: "gesture-live-comment-2",
-        sessionId: "gesture-wake-session",
-        position: { kind: "paragraph", index: 2, total: 2, label: "第 2 段" },
-        mode: "light_chat",
-        length: "normal",
-        text: "这句一收，前面的情绪一下全拢回来了。",
-        source: "live_reading",
-        operationId: "live-v58-gesture-wake-session-paragraph-2-light_chat-normal",
-        inRecent: true,
-        inHistory: true,
-        createdAt: "2026-09-16T03:30:00.000Z"
-      };
-    });
+    const sendFollowUpMessage = vi.fn((_input: { prompt: string; scrollToBottom?: boolean }) =>
+      new Promise<void>(() => undefined)
+    );
     Object.defineProperty(window, "openai", {
       configurable: true,
       value: {
@@ -867,7 +854,7 @@ describe("App", () => {
         })
       );
     });
-    await waitFor(() => expect(sendFollowUpMessage).toHaveBeenCalledTimes(1));
+    expect(sendFollowUpMessage).toHaveBeenCalledTimes(1);
     expect(sendFollowUpMessage).toHaveBeenCalledWith({
       prompt: expect.stringContaining("第二段只交给当前聊天里的 Daddy。"),
       scrollToBottom: false

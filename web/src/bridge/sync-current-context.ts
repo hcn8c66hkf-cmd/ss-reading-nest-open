@@ -9,12 +9,7 @@ export async function syncCurrentContext(input: {
   ) => Promise<boolean>;
 }) {
   const updated = await input.updateModelContext(input.context);
-  // A successful ui/update-model-context acknowledgement only means the host
-  // accepted the context update. Some mobile hosts still start the follow-up
-  // without that context, so the user message must carry the complete policy
-  // and writeback instructions as well. Otherwise Daddy can reply in chat but
-  // never call publish_companion_comment.
-  const sent = await input.sendMessage(input.fallbackPrompt, {
+  const sent = await input.sendMessage(updated ? input.successPrompt : input.fallbackPrompt, {
     scrollToBottom: false
   });
   if (!sent) return "failed" as const;

@@ -55,8 +55,8 @@ import type { CloudSourceService } from "../services/cloud-source-service.js";
 import type { CompanionAutoplayService } from "../services/companion-autoplay-service.js";
 import { toolResult } from "./tool-result.js";
 
-export const READING_NEST_URI = "ui://ss-reading-nest/app-v72.html";
-export const READING_NEST_TOOL_NAME = "open_reading_nest_v72";
+export const READING_NEST_URI = "ui://ss-reading-nest/app-v68.html";
+export const READING_NEST_TOOL_NAME = "open_reading_nest_v68";
 
 const readLiveReadingContextInputSchema = z
   .object({
@@ -141,62 +141,6 @@ const mutation = {
 };
 
 export const TOOL_CONFIGS = {
-  open_reading_nest_v72: {
-    title: "打开 S×S 小窝共读",
-    description:
-      "Use this primary v72 tool when the user wants to open the reading nest or continue recent reading. Each chapter gesture wakes the current-chat Daddy exactly once; background processing verifies Dock writeback but never creates a duplicate hidden retry.",
-    inputSchema: openReadingNestInputSchema,
-    annotations: readOnly,
-    _meta: {
-      ui: { resourceUri: READING_NEST_URI },
-      "ui/resourceUri": READING_NEST_URI,
-      "openai/outputTemplate": READING_NEST_URI,
-      "openai/toolInvocation/invoking": "正在点亮小窝…",
-      "openai/toolInvocation/invoked": "小窝已经准备好"
-    }
-  },
-  open_reading_nest_v71: {
-    title: "打开 S×S 小窝共读",
-    description:
-      "Use this primary v71 tool when the user wants to open the reading nest or continue recent reading. Manual companion requests carry the complete writeback policy in the user message and wait for authoritative Dock persistence; live chapters still use only the current ChatGPT Daddy, never a server-side or small-model substitute.",
-    inputSchema: openReadingNestInputSchema,
-    annotations: readOnly,
-    _meta: {
-      ui: { resourceUri: READING_NEST_URI },
-      "ui/resourceUri": READING_NEST_URI,
-      "openai/outputTemplate": READING_NEST_URI,
-      "openai/toolInvocation/invoking": "正在点亮小窝…",
-      "openai/toolInvocation/invoked": "小窝已经准备好"
-    }
-  },
-  open_reading_nest_v70: {
-    title: "打开 S×S 小窝共读",
-    description:
-      "Compatibility v70 entry. Use the newest reading widget when available.",
-    inputSchema: openReadingNestInputSchema,
-    annotations: readOnly,
-    _meta: {
-      ui: { resourceUri: READING_NEST_URI },
-      "ui/resourceUri": READING_NEST_URI,
-      "openai/outputTemplate": READING_NEST_URI,
-      "openai/toolInvocation/invoking": "正在点亮小窝…",
-      "openai/toolInvocation/invoked": "小窝已经准备好"
-    }
-  },
-  open_reading_nest_v69: {
-    title: "打开 S×S 小窝共读",
-    description:
-      "Use this primary v69 tool when the user wants to open the reading nest or continue recent reading. Live-reading comments are sampled inside the mounted widget and written directly to the Dock, without creating a host follow-up turn that can replay an older assistant bubble.",
-    inputSchema: openReadingNestInputSchema,
-    annotations: readOnly,
-    _meta: {
-      ui: { resourceUri: READING_NEST_URI },
-      "ui/resourceUri": READING_NEST_URI,
-      "openai/outputTemplate": READING_NEST_URI,
-      "openai/toolInvocation/invoking": "正在点亮小窝…",
-      "openai/toolInvocation/invoked": "小窝已经准备好"
-    }
-  },
   open_reading_nest_v68: {
     title: "打开 S×S 小窝共读",
     description:
@@ -1453,30 +1397,6 @@ export function registerReadingTools(
   registerAppTool(
     server,
     READING_NEST_TOOL_NAME,
-    TOOL_CONFIGS.open_reading_nest_v71,
-    openReadingNest
-  );
-  registerAppTool(
-    server,
-    "open_reading_nest_v70",
-    TOOL_CONFIGS.open_reading_nest_v70,
-    openReadingNest
-  );
-  registerAppTool(
-    server,
-    "open_reading_nest_v69",
-    TOOL_CONFIGS.open_reading_nest_v69,
-    openReadingNest
-  );
-  registerAppTool(
-    server,
-    "open_reading_nest_v68",
-    TOOL_CONFIGS.open_reading_nest_v68,
-    openReadingNest
-  );
-  registerAppTool(
-    server,
-    "open_reading_nest_v67",
     TOOL_CONFIGS.open_reading_nest_v67,
     openReadingNest
   );
