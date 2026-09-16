@@ -19,12 +19,8 @@ describe("registerReadingResource", () => {
       "https://reading-nest.example.workers.dev"
     );
 
-    expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v72.html");
+    expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v68.html");
     expect(LEGACY_READING_NEST_URIS).toEqual([
-      "ui://ss-reading-nest/app-v71.html",
-      "ui://ss-reading-nest/app-v70.html",
-      "ui://ss-reading-nest/app-v69.html",
-      "ui://ss-reading-nest/app-v68.html",
       "ui://ss-reading-nest/app-v67.html",
       "ui://ss-reading-nest/app-v66.html",
       "ui://ss-reading-nest/app-v65.html",
@@ -78,7 +74,7 @@ describe("registerReadingResource", () => {
       "ui://ss-reading-nest/app-v20.html",
       "ui://ss-reading-nest/app-v19.html"
     ]);
-    expect(registerAppResource).toHaveBeenCalledTimes(57);
+    expect(registerAppResource).toHaveBeenCalledTimes(53);
 
     for (const expectedUri of [READING_NEST_URI, ...LEGACY_READING_NEST_URIS]) {
       const call = registerAppResource.mock.calls.find((item) => item[2] === expectedUri);
@@ -92,12 +88,6 @@ describe("registerReadingResource", () => {
       expect(descriptor._meta["openai/widgetCSP"].connect_domains).toContain(
         "https://reading-nest.example.workers.dev"
       );
-      expect(descriptor._meta.ui.domain).toBe(
-        "https://reading-nest.example.workers.dev"
-      );
-      expect(descriptor._meta["openai/widgetDomain"]).toBe(
-        "https://reading-nest.example.workers.dev"
-      );
 
       const loaded = await loader();
       expect(loaded.contents[0]).toMatchObject({
@@ -106,12 +96,6 @@ describe("registerReadingResource", () => {
         text: "<html>latest widget</html>"
       });
       expect(loaded.contents[0]._meta.ui.csp.connectDomains).toContain(
-        "https://reading-nest.example.workers.dev"
-      );
-      expect(loaded.contents[0]._meta.ui.domain).toBe(
-        "https://reading-nest.example.workers.dev"
-      );
-      expect(loaded.contents[0]._meta["openai/widgetDomain"]).toBe(
         "https://reading-nest.example.workers.dev"
       );
     }

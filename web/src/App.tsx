@@ -71,7 +71,6 @@ import {
 } from "./features/reading-sync/build-messages.js";
 import {
   buildLiveReadingModelContext,
-  buildLiveReadingPrompt,
   buildLiveReadingWakePrompt,
   buildReadingCommentPrompt
 } from "./features/reading-comments/prompt-policy.js";
@@ -1403,7 +1402,7 @@ export function App() {
     }
   }
 
-  function beginGestureLiveReading(
+  function beginLiveReadingFromUserGesture(
     session: ReadingSession,
     index: number
   ): Promise<boolean> | undefined {
@@ -1476,16 +1475,16 @@ export function App() {
         updatedAt: new Date().toISOString()
       }
     });
-    // iOS only starts the current-chat Daddy reliably when this call stays
-    // inside the exact chapter tap/swipe gesture. One gesture creates one host
-    // turn; background queue processing may verify it but never creates another.
+    // Start the durable position update, then wake ChatGPT before this exact
+    // tap/swipe loses mobile user activation. The follow-up carries its own
+    // model-visible chapter payload; the server queue remains authoritative.
     const positionUpdate = callTool("update_reading_position", {
       sessionId: sessionBundle.session.id,
       userCurrentPosition: nextPosition
     });
     const gestureDelivery =
       index !== session.userCurrentPosition.index
-        ? beginGestureLiveReading(session, index)
+        ? beginLiveReadingFromUserGesture(session, index)
         : undefined;
     const result = await positionUpdate;
     applyLiveReadingState(sessionBundle.session.id, result.structuredContent);
@@ -1571,76 +1570,17 @@ export function App() {
         setToast("当前宿主没有接收这次共读请求，请再点一次。");
         return;
       }
-      let companionSaved = false;
-      let writebackTimedOut = false;
-      if (
-        !selectedText &&
-        sessionBundle.session.sessionPreferences.autoSaveCompanionComments
-      ) {
-        const persisted = await waitForWriteback<CompanionComment>({
-          load: async () => {
-            const saved = await callTool("list_companion_comments", {
-              sessionId: sessionBundle.session.id,
-              scope: "recent",
-              positionIndex: sessionBundle.session.userCurrentPosition.index,
-              limit: 20
-            }).catch(() => ({ structuredContent: {} }));
-            const content = saved.structuredContent as Record<string, unknown> | undefined;
-            return Array.isArray(content?.comments)
-              ? (content.comments as CompanionComment[])
-              : [];
-          },
-          select: (loaded) => (loaded as CompanionComment[]).find(
-            (comment) => comment.operationId === operationId
-          ),
-          attempts: 8,
-          intervalMs: 1_000
-        });
-        if (persisted) {
-          companionSaved = true;
-          setCompanionComments((current) =>
-            [persisted, ...current.filter((item) => item.id !== persisted.id)]
-              .filter((item) => item.sessionId === persisted.sessionId && item.inRecent)
-              .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
-              .slice(0, 20)
-          );
-          await loadCompanionComments(sessionBundle.session.id, true);
-        } else {
-          writebackTimedOut = true;
-          rememberPendingCommentDraft({
-            position: sessionBundle.session.userCurrentPosition,
-            mode: activePreferences.readingCommentMode,
-            length: activePreferences.commentLength,
-            operationId
-          });
-          setToast("聊天已收到，但这条短评还没写回小窝；可以重试或手动保存。");
-        }
-      }
-      if (
-        !companionSaved &&
-        (!selectedText || !sessionBundle.session.sessionPreferences.autoSaveCompanionComments)
-      ) {
-        rememberPendingCommentDraft({
-          position: sessionBundle.session.userCurrentPosition,
-          mode: activePreferences.readingCommentMode,
-          length: activePreferences.commentLength,
-          operationId
-        });
-      }
-      if (companionSaved) {
-        setToast("这条短评已经收入小窝。");
-      } else if (writebackTimedOut) {
-        setToast("聊天已收到，但这条短评还没写回小窝；可以重试或手动保存。");
-      } else if (
-        !selectedText ||
-        !sessionBundle.session.sessionPreferences.autoSaveCompanionComments
-      ) {
-        setToast(
-          mode === "context"
-            ? `已同步${sessionBundle.session.userCurrentPosition.label}，Daddy正在看这里。`
-            : "已用兼容模式发送当前段落。"
-        );
-      }
+      rememberPendingCommentDraft({
+        position: sessionBundle.session.userCurrentPosition,
+        mode: activePreferences.readingCommentMode,
+        length: activePreferences.commentLength,
+        operationId
+      });
+      setToast(
+        mode === "context"
+          ? `已同步${sessionBundle.session.userCurrentPosition.label}，Daddy正在看这里。`
+          : "已用兼容模式发送当前段落。"
+      );
     } finally {
       setSyncRequestInFlight(false);
     }
@@ -2004,20 +1944,20 @@ export function App() {
         return false;
       }
       try {
-        setToast(`Daddy正在读${targetPosition.label}，写完会直接放进小窝。`);
+        setToast(`已经把${targetPosition.label}送进当前聊天，Daddy读完会写回来。`);
         const gestureDelivery =
           gestureLiveReadingDeliveriesRef.current.get(index) ??
           (deliveryOrigin === "user_gesture"
-            ? beginGestureLiveReading(session, index)
+            ? beginLiveReadingFromUserGesture(session, index)
             : undefined);
         if (!gestureDelivery) {
           setToast(`${targetPosition.label}还在服务器待办；点一下重新请Daddy读这章。`);
           return false;
         }
-        const sent = await gestureDelivery;
+        const accepted = await gestureDelivery;
         gestureLiveReadingDeliveriesRef.current.delete(index);
-        if (!sent) {
-          throw new Error("Host did not accept the gesture live-reading message");
+        if (!accepted) {
+          throw new Error("Host did not accept gesture follow-up message");
         }
         const persisted = await waitForWriteback<CompanionComment>({
           load: async () => {
@@ -2040,7 +1980,7 @@ export function App() {
           intervalMs: 1_500
         });
         if (!persisted) {
-          setToast("当前聊天没有把这章短评写回来；点一下可以重试。");
+          setToast("这轮短评暂未写回，已经留在服务器待办；点一下即可重试。");
           return false;
         }
         setCompanionComments((current) =>
@@ -3184,7 +3124,7 @@ export function App() {
   return (
     <div className="app">
       <span
-        aria-label="共读小窝版本 v72"
+        aria-label="共读小窝版本 v67"
         style={{
           position: "fixed",
           left: 8,
@@ -3196,7 +3136,7 @@ export function App() {
           opacity: 0.48
         }}
       >
-        v71
+        v67
       </span>
       {screen === "home" || screen === "setup" ? (
         <button

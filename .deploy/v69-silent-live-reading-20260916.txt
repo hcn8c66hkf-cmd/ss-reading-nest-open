@@ -1,1 +1,0 @@
-Deploy v69: generate live-reading comments through in-card sampling and save them directly to the Dock, avoiding replay-prone host follow-up turns; declare the widget domain for mobile refreshes.

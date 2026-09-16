@@ -6,10 +6,6 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { READING_NEST_URI } from "./register-tools.js";
 
 export const LEGACY_READING_NEST_URIS = [
-  "ui://ss-reading-nest/app-v71.html",
-  "ui://ss-reading-nest/app-v70.html",
-  "ui://ss-reading-nest/app-v69.html",
-  "ui://ss-reading-nest/app-v68.html",
   "ui://ss-reading-nest/app-v67.html",
   "ui://ss-reading-nest/app-v66.html",
   "ui://ss-reading-nest/app-v65.html",
@@ -68,7 +64,6 @@ export const READING_NEST_MIME_TYPE = RESOURCE_MIME_TYPE;
 
 export function registerReadingResource(server: McpServer, widgetHtml: string, workerOrigin?: string) {
   const connectDomains = [workerOrigin ?? "http://localhost:8787"];
-  const widgetDomain = workerOrigin ?? "http://localhost:8787";
   const resourceCsp = {
     connectDomains,
     resourceDomains: []
@@ -82,11 +77,9 @@ export function registerReadingResource(server: McpServer, widgetHtml: string, w
     _meta: {
       ui: {
         csp: resourceCsp,
-        domain: widgetDomain,
         prefersBorder: true
       },
       "openai/widgetCSP": openaiWidgetCsp,
-      "openai/widgetDomain": widgetDomain,
       "openai/widgetDescription":
         "一个温暖的移动端共读小窝，用于阅读用户自己粘贴的小说文本或导入的漫画图片。"
     }
@@ -109,11 +102,9 @@ export function registerReadingResource(server: McpServer, widgetHtml: string, w
               _meta: {
                 ui: {
                   csp: resourceCsp,
-                  domain: widgetDomain,
                   prefersBorder: true
                 },
                 "openai/widgetCSP": openaiWidgetCsp,
-                "openai/widgetDomain": widgetDomain,
                 "openai/widgetDescription":
                   "一个温暖的移动端共读小窝，用于阅读用户自己粘贴的小说文本或导入的漫画图片。",
                 "openai/widgetPrefersBorder": true
