@@ -36,6 +36,7 @@ import {
   stageLiveReadingWriteback,
   setReadingFrameHeight,
   saveReaderWidgetState,
+  sendFollowUpFromUserGesture,
   updateModelContext
 } from "./bridge/host.js";
 import { syncCurrentContext } from "./bridge/sync-current-context.js";
@@ -69,7 +70,9 @@ import {
   buildRecentOnlyPrompt
 } from "./features/reading-sync/build-messages.js";
 import {
+  buildLiveReadingModelContext,
   buildLiveReadingPrompt,
+  buildLiveReadingWakePrompt,
   buildReadingCommentPrompt
 } from "./features/reading-comments/prompt-policy.js";
 import { matchesParagraphComment } from "./features/reading-comments/comment-match.js";
@@ -250,7 +253,7 @@ export function App() {
   const syncJobRef = useRef<ReadingSyncJob | null>(null);
   const companionVersionRef = useRef<string | null>(null);
   const annotationVersionRef = useRef<string | null>(null);
-  const standardLiveReadingDeliveriesRef = useRef(new Map<number, Promise<boolean>>());
+  const gestureLiveReadingDeliveriesRef = useRef(new Map<number, Promise<boolean>>());
   const hostLayout = useReadingHostLayout();
   const manualCompanionDraft = useMemo<PendingCompanionCommentDraft | null>(() => {
     if (!sessionBundle) return null;
@@ -1400,7 +1403,7 @@ export function App() {
     }
   }
 
-  function beginStandardLiveReading(
+  function beginGestureLiveReading(
     session: ReadingSession,
     index: number
   ): Promise<boolean> | undefined {
@@ -1410,7 +1413,7 @@ export function App() {
       !session.sessionPreferences.autoSaveCompanionComments ||
       sourceAvailability !== "available_local"
     ) return undefined;
-    const existingDelivery = standardLiveReadingDeliveriesRef.current.get(index);
+    const existingDelivery = gestureLiveReadingDeliveriesRef.current.get(index);
     if (existingDelivery) return existingDelivery;
     const targetPosition = makePosition("novel", index, chunks.length, chunks);
     const text = chunks[index - 1] ?? "";
@@ -1437,23 +1440,21 @@ export function App() {
       source: "live_reading",
       operationId
     });
-    const delivery = askChatGpt(
-      buildLiveReadingPrompt({
+    const delivery = sendFollowUpFromUserGesture(
+      buildLiveReadingWakePrompt(targetPosition, text),
+      false,
+      buildLiveReadingModelContext({
         sessionId: session.id,
         title: session.title,
         position: targetPosition,
         text,
-        operationId,
-        autoSaveCompanionComments: true,
-        requestedMode: mode,
-        requestedLength: length
-      }),
-      { scrollToBottom: false, transport: "apps" }
+        operationId
+      })
     ).then((sent) => {
-      if (!sent) standardLiveReadingDeliveriesRef.current.delete(index);
+      if (!sent) gestureLiveReadingDeliveriesRef.current.delete(index);
       return sent;
     });
-    standardLiveReadingDeliveriesRef.current.set(index, delivery);
+    gestureLiveReadingDeliveriesRef.current.set(index, delivery);
     return delivery;
   }
 
@@ -1475,21 +1476,21 @@ export function App() {
         updatedAt: new Date().toISOString()
       }
     });
-    // Use only the standards-based MCP Apps ui/message lane here. The older
-    // ChatGPT compatibility alias can replay the preceding assistant bubble
-    // on iOS, so live reading never falls back to that alias automatically.
+    // iOS only starts the current-chat Daddy reliably when this call stays
+    // inside the exact chapter tap/swipe gesture. One gesture creates one host
+    // turn; background queue processing may verify it but never creates another.
     const positionUpdate = callTool("update_reading_position", {
       sessionId: sessionBundle.session.id,
       userCurrentPosition: nextPosition
     });
-    const standardDelivery =
+    const gestureDelivery =
       index !== session.userCurrentPosition.index
-        ? beginStandardLiveReading(session, index)
+        ? beginGestureLiveReading(session, index)
         : undefined;
     const result = await positionUpdate;
     applyLiveReadingState(sessionBundle.session.id, result.structuredContent);
-    if (standardDelivery) {
-      void standardDelivery.then((sent) => {
+    if (gestureDelivery) {
+      void gestureDelivery.then((sent) => {
         if (!sent) {
           setToast(`${nextPosition.label}已经留在待办；点一下重新请Daddy读这章。`);
         }
@@ -1962,7 +1963,10 @@ export function App() {
   }
 
   const sendLiveReading = useCallback(
-    async (index: number): Promise<boolean> => {
+    async (
+      index: number,
+      deliveryOrigin: "automatic" | "user_gesture" = "automatic"
+    ): Promise<boolean> => {
       if (
         !sessionBundle ||
         sessionBundle.session.type !== "novel"
@@ -2001,17 +2005,19 @@ export function App() {
       }
       try {
         setToast(`Daddy正在读${targetPosition.label}，写完会直接放进小窝。`);
-        const standardDelivery =
-          standardLiveReadingDeliveriesRef.current.get(index) ??
-          beginStandardLiveReading(session, index);
-        if (!standardDelivery) {
+        const gestureDelivery =
+          gestureLiveReadingDeliveriesRef.current.get(index) ??
+          (deliveryOrigin === "user_gesture"
+            ? beginGestureLiveReading(session, index)
+            : undefined);
+        if (!gestureDelivery) {
           setToast(`${targetPosition.label}还在服务器待办；点一下重新请Daddy读这章。`);
           return false;
         }
-        const sent = await standardDelivery;
-        standardLiveReadingDeliveriesRef.current.delete(index);
+        const sent = await gestureDelivery;
+        gestureLiveReadingDeliveriesRef.current.delete(index);
         if (!sent) {
-          throw new Error("Host did not accept the standard live-reading message");
+          throw new Error("Host did not accept the gesture live-reading message");
         }
         const persisted = await waitForWriteback<CompanionComment>({
           load: async () => {
@@ -3178,7 +3184,7 @@ export function App() {
   return (
     <div className="app">
       <span
-        aria-label="共读小窝版本 v71"
+        aria-label="共读小窝版本 v72"
         style={{
           position: "fixed",
           left: 8,
