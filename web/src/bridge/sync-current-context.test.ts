@@ -23,7 +23,7 @@ describe("syncCurrentContext", () => {
 
     expect(mode).toBe("context");
     expect(calls).toEqual(["context", "message"]);
-    expect(send).toHaveBeenCalledWith("陪我看看这里", { scrollToBottom: false });
+    expect(send).toHaveBeenCalledWith("当前段落：current paragraph", { scrollToBottom: false });
   });
 
   it("puts the current content in the message when model context is unavailable", async () => {

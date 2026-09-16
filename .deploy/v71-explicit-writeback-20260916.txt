@@ -1,0 +1,1 @@
+Deploy v71: manual Daddy reading requests carry the complete writeback policy in the visible message and wait for authoritative Dock persistence before unlocking; no server-side or small-model substitute.

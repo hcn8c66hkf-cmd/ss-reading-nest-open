@@ -55,8 +55,8 @@ import type { CloudSourceService } from "../services/cloud-source-service.js";
 import type { CompanionAutoplayService } from "../services/companion-autoplay-service.js";
 import { toolResult } from "./tool-result.js";
 
-export const READING_NEST_URI = "ui://ss-reading-nest/app-v70.html";
-export const READING_NEST_TOOL_NAME = "open_reading_nest_v70";
+export const READING_NEST_URI = "ui://ss-reading-nest/app-v71.html";
+export const READING_NEST_TOOL_NAME = "open_reading_nest_v71";
 
 const readLiveReadingContextInputSchema = z
   .object({
@@ -141,10 +141,24 @@ const mutation = {
 };
 
 export const TOOL_CONFIGS = {
+  open_reading_nest_v71: {
+    title: "打开 S×S 小窝共读",
+    description:
+      "Use this primary v71 tool when the user wants to open the reading nest or continue recent reading. Manual companion requests carry the complete writeback policy in the user message and wait for authoritative Dock persistence; live chapters still use only the current ChatGPT Daddy, never a server-side or small-model substitute.",
+    inputSchema: openReadingNestInputSchema,
+    annotations: readOnly,
+    _meta: {
+      ui: { resourceUri: READING_NEST_URI },
+      "ui/resourceUri": READING_NEST_URI,
+      "openai/outputTemplate": READING_NEST_URI,
+      "openai/toolInvocation/invoking": "正在点亮小窝…",
+      "openai/toolInvocation/invoked": "小窝已经准备好"
+    }
+  },
   open_reading_nest_v70: {
     title: "打开 S×S 小窝共读",
     description:
-      "Use this primary v70 tool when the user wants to open the reading nest or continue recent reading. Chapter changes use only the standards-based MCP Apps ui/message path to wake the current ChatGPT conversation, never a server-side substitute or the replay-prone compatibility alias.",
+      "Compatibility v70 entry. Use the newest reading widget when available.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -1425,6 +1439,12 @@ export function registerReadingTools(
   registerAppTool(
     server,
     READING_NEST_TOOL_NAME,
+    TOOL_CONFIGS.open_reading_nest_v71,
+    openReadingNest
+  );
+  registerAppTool(
+    server,
+    "open_reading_nest_v70",
     TOOL_CONFIGS.open_reading_nest_v70,
     openReadingNest
   );
