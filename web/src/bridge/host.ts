@@ -32,26 +32,40 @@ type LiveReadingWritebackExpectation = {
   operationId: string;
 };
 
-let stagedLiveReadingWriteback: LiveReadingWritebackExpectation | undefined;
+const stagedLiveReadingWritebacks = new Map<string, LiveReadingWritebackExpectation>();
+const MAX_STAGED_LIVE_READING_WRITEBACKS = 12;
 
 export function stageLiveReadingWriteback(
   expected: LiveReadingWritebackExpectation
 ): void {
-  stagedLiveReadingWriteback = {
+  stagedLiveReadingWritebacks.set(expected.operationId, {
     ...expected,
     position: { ...expected.position }
-  };
+  });
+  while (stagedLiveReadingWritebacks.size > MAX_STAGED_LIVE_READING_WRITEBACKS) {
+    const oldestOperationId = stagedLiveReadingWritebacks.keys().next().value;
+    if (typeof oldestOperationId !== "string") break;
+    stagedLiveReadingWritebacks.delete(oldestOperationId);
+  }
 }
 
 async function forwardLiveReadingWriteback(
   bridge: McpApp,
   args: Record<string, unknown>
 ) {
-  const expected = stagedLiveReadingWriteback;
   const submittedPosition = args.position as
     | { kind?: unknown; index?: unknown }
     | undefined;
+  const expected = [...stagedLiveReadingWritebacks.values()].find(
+    (candidate) =>
+      args.sessionId === candidate.sessionId &&
+      submittedPosition?.kind === candidate.position.kind &&
+      submittedPosition.index === candidate.position.index
+  );
   if (!expected) {
+    if (stagedLiveReadingWritebacks.size > 0) {
+      throw new Error("Rejected a stale live-reading writeback for another position.");
+    }
     throw new Error("No live-reading writeback is currently pending.");
   }
   if (
@@ -73,9 +87,7 @@ async function forwardLiveReadingWriteback(
       text: args.text
     }
   });
-  if (stagedLiveReadingWriteback?.operationId === expected.operationId) {
-    stagedLiveReadingWriteback = undefined;
-  }
+  stagedLiveReadingWritebacks.delete(expected.operationId);
   return result;
 }
 
