@@ -17,7 +17,10 @@ export function useLiveReading(input: {
   pendingPositionIndices?: number[];
   sourceVerified: boolean;
   retryMs?: number;
-  onQueuedPosition: (index: number) => Promise<boolean | void> | boolean | void;
+  onQueuedPosition: (
+    index: number,
+    deliveryOrigin?: "automatic" | "user_gesture"
+  ) => Promise<boolean | void> | boolean | void;
 }): LiveReadingQueueState {
   const queue = useRef<number[]>([]);
   const queuedKeys = useRef(new Set<string>());
@@ -176,12 +179,22 @@ export function useLiveReading(input: {
 
   const retryFailed = useCallback(() => {
     const failed = failedIndex.current;
-    if (failed === null) return;
+    if (failed === null || activeIndex.current !== null) return;
     retryCounts.current.delete(failed);
     failedIndex.current = null;
-    queue.current.unshift(failed);
+    activeIndex.current = failed;
     publishState();
-    pump.current();
+    // This callback is invoked directly by the visible retry button. Call the
+    // sender synchronously here so iOS still recognizes the tap as user
+    // activation instead of putting it back through the background queue.
+    const retry = onQueuedPosition.current(failed, "user_gesture");
+    void Promise.resolve(retry).then((sent) => {
+      if (activeIndex.current !== failed) return;
+      activeIndex.current = null;
+      if (sent === false) failedIndex.current = failed;
+      publishState();
+      if (sent !== false) queueMicrotask(() => pump.current());
+    });
   }, []);
 
   return { ...state, retryFailed };
