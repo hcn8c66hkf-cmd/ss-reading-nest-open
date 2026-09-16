@@ -127,6 +127,72 @@ describe("host bridge", () => {
     });
   });
 
+  it("keeps rapid chapter gestures independently writable", async () => {
+    const registered = new Map<string, (args: Record<string, unknown>) => Promise<unknown>>();
+    bridge.registerTool.mockImplementation((name, _config, handler) => {
+      registered.set(name, handler);
+    });
+    bridge.callServerTool.mockResolvedValue({ structuredContent: { saved: true } });
+    const {
+      askChatGpt,
+      LIVE_READING_WRITEBACK_TOOL,
+      stageLiveReadingWriteback
+    } = await import("./host.js");
+    await askChatGpt("触发连接");
+    stageLiveReadingWriteback({
+      sessionId: "session-1",
+      position: { kind: "paragraph", index: 8, label: "第 8 段" },
+      mode: "reaction_only",
+      length: "short",
+      source: "live_reading",
+      operationId: "live-8"
+    });
+    stageLiveReadingWriteback({
+      sessionId: "session-1",
+      position: { kind: "paragraph", index: 9, label: "第 9 段" },
+      mode: "reaction_only",
+      length: "short",
+      source: "live_reading",
+      operationId: "live-9"
+    });
+
+    await registered.get(LIVE_READING_WRITEBACK_TOOL)?.({
+      sessionId: "session-1",
+      position: { kind: "paragraph", index: 8, label: "第 8 段" },
+      mode: "reaction_only",
+      length: "short",
+      text: "第八段短评",
+      source: "live_reading",
+      operationId: "model-op-8"
+    });
+    await registered.get(LIVE_READING_WRITEBACK_TOOL)?.({
+      sessionId: "session-1",
+      position: { kind: "paragraph", index: 9, label: "第 9 段" },
+      mode: "reaction_only",
+      length: "short",
+      text: "第九段短评",
+      source: "live_reading",
+      operationId: "model-op-9"
+    });
+
+    expect(bridge.callServerTool).toHaveBeenNthCalledWith(1, {
+      name: "publish_companion_comment",
+      arguments: expect.objectContaining({
+        position: { kind: "paragraph", index: 8, label: "第 8 段" },
+        operationId: "live-8",
+        text: "第八段短评"
+      })
+    });
+    expect(bridge.callServerTool).toHaveBeenNthCalledWith(2, {
+      name: "publish_companion_comment",
+      arguments: expect.objectContaining({
+        position: { kind: "paragraph", index: 9, label: "第 9 段" },
+        operationId: "live-9",
+        text: "第九段短评"
+      })
+    });
+  });
+
   it("rejects a live writeback for a different chapter before it reaches storage", async () => {
     const registered = new Map<string, (args: Record<string, unknown>) => Promise<unknown>>();
     bridge.registerTool.mockImplementation((name, _config, handler) => {
