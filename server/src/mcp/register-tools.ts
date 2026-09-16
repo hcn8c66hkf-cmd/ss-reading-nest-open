@@ -55,8 +55,8 @@ import type { CloudSourceService } from "../services/cloud-source-service.js";
 import type { CompanionAutoplayService } from "../services/companion-autoplay-service.js";
 import { toolResult } from "./tool-result.js";
 
-export const READING_NEST_URI = "ui://ss-reading-nest/app-v67.html";
-export const READING_NEST_TOOL_NAME = "open_reading_nest_v67";
+export const READING_NEST_URI = "ui://ss-reading-nest/app-v68.html";
+export const READING_NEST_TOOL_NAME = "open_reading_nest_v68";
 
 const readLiveReadingContextInputSchema = z
   .object({
@@ -141,6 +141,20 @@ const mutation = {
 };
 
 export const TOOL_CONFIGS = {
+  open_reading_nest_v68: {
+    title: "打开 S×S 小窝共读",
+    description:
+      "Use this primary v68 tool when the user wants to open the reading nest or continue recent reading. Live-reading writeback always uses the stable model-visible publish_companion_comment tool.",
+    inputSchema: openReadingNestInputSchema,
+    annotations: readOnly,
+    _meta: {
+      ui: { resourceUri: READING_NEST_URI },
+      "ui/resourceUri": READING_NEST_URI,
+      "openai/outputTemplate": READING_NEST_URI,
+      "openai/toolInvocation/invoking": "正在点亮小窝…",
+      "openai/toolInvocation/invoked": "小窝已经准备好"
+    }
+  },
   open_reading_nest_v67: {
     title: "打开 S×S 小窝共读",
     description:
