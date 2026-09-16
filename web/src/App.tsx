@@ -1475,17 +1475,17 @@ export function App() {
         updatedAt: new Date().toISOString()
       }
     });
-    // Start the durable position update, then wake ChatGPT before this exact
-    // tap/swipe loses mobile user activation. The follow-up carries its own
-    // model-visible chapter payload; the server queue remains authoritative.
-    const positionUpdate = callTool("update_reading_position", {
-      sessionId: sessionBundle.session.id,
-      userCurrentPosition: nextPosition
-    });
+    // Wake ChatGPT as the very first host bridge action in this exact tap/swipe.
+    // On iOS, an earlier tool call can consume the one-shot user activation and
+    // leave the position updated without ever starting the companion turn.
     const gestureDelivery =
       index !== session.userCurrentPosition.index
         ? beginLiveReadingFromUserGesture(session, index)
         : undefined;
+    const positionUpdate = callTool("update_reading_position", {
+      sessionId: sessionBundle.session.id,
+      userCurrentPosition: nextPosition
+    });
     const result = await positionUpdate;
     applyLiveReadingState(sessionBundle.session.id, result.structuredContent);
     if (gestureDelivery) {
@@ -3124,7 +3124,7 @@ export function App() {
   return (
     <div className="app">
       <span
-        aria-label="共读小窝版本 v68"
+        aria-label="共读小窝版本 v73"
         style={{
           position: "fixed",
           left: 8,
@@ -3136,7 +3136,7 @@ export function App() {
           opacity: 0.48
         }}
       >
-        v68
+        v73
       </span>
       {screen === "home" || screen === "setup" ? (
         <button

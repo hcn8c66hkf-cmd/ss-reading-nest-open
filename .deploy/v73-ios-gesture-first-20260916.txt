@@ -1,0 +1,1 @@
+v73 wakes the current-chat companion before persisting the chapter position on iOS.
