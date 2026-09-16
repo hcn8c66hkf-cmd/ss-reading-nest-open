@@ -25,16 +25,16 @@ describe("live reading delivery compatibility", () => {
 });
 
 describe("tool descriptors", () => {
-  it("binds the current UI resource to the v71 and compatibility render tools", () => {
-    expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v71.html");
-    expect(READING_NEST_TOOL_NAME).toBe("open_reading_nest_v71");
-    expect(TOOL_CONFIGS.open_reading_nest_v71._meta?.ui).toEqual({
+  it("binds the current UI resource to the v72 and compatibility render tools", () => {
+    expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v72.html");
+    expect(READING_NEST_TOOL_NAME).toBe("open_reading_nest_v72");
+    expect(TOOL_CONFIGS.open_reading_nest_v72._meta?.ui).toEqual({
       resourceUri: READING_NEST_URI
     });
-    expect(TOOL_CONFIGS.open_reading_nest_v71._meta?.["ui/resourceUri"]).toBe(
+    expect(TOOL_CONFIGS.open_reading_nest_v72._meta?.["ui/resourceUri"]).toBe(
       READING_NEST_URI
     );
-    expect(TOOL_CONFIGS.open_reading_nest_v71._meta?.["openai/outputTemplate"]).toBe(
+    expect(TOOL_CONFIGS.open_reading_nest_v72._meta?.["openai/outputTemplate"]).toBe(
       READING_NEST_URI
     );
     expect(TOOL_CONFIGS.open_reading_nest._meta?.["openai/outputTemplate"]).toBe(
@@ -42,6 +42,7 @@ describe("tool descriptors", () => {
     );
     for (const [name, config] of Object.entries(TOOL_CONFIGS)) {
       if (
+        name !== "open_reading_nest_v72" &&
         name !== "open_reading_nest_v71" &&
         name !== "open_reading_nest_v70" &&
         name !== "open_reading_nest_v69" &&
@@ -715,7 +716,7 @@ describe("tool descriptors", () => {
   });
 
   it("exposes book management and threaded annotation tools", () => {
-    expect(Object.keys(TOOL_CONFIGS)).toHaveLength(87);
+    expect(Object.keys(TOOL_CONFIGS)).toHaveLength(88);
     expect(TOOL_CONFIGS.create_annotation.annotations).toMatchObject({
       readOnlyHint: false,
       idempotentHint: true
