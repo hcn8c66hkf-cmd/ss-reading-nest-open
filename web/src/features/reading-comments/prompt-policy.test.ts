@@ -204,8 +204,7 @@ describe("buildLiveReadingPrompt", () => {
     expect(prompt).toContain("不是回复正文的前置条件");
     expect(prompt).toContain("不能让本轮只思考却没有正文输出");
     expect(prompt).toContain("剧情变化");
-    expect(prompt).toContain("优先调用 submit_live_reading_comment_v58");
-    expect(prompt).toContain("只有专用工具确实不可用时才改用 publish_companion_comment");
+    expect(prompt).toContain("调用 publish_companion_comment");
     expect(prompt).toContain("position.index=12");
     expect(prompt).toContain("text=最终短评全文");
     expect(prompt).toContain("operationId=live-op-1");
@@ -223,8 +222,7 @@ describe("buildLiveReadingPrompt", () => {
       autoSaveCompanionComments: false
     });
 
-    expect(prompt).toContain("优先调用 submit_live_reading_comment_v58");
-    expect(prompt).toContain("只有专用工具确实不可用时才改用 publish_companion_comment");
+    expect(prompt).toContain("调用 publish_companion_comment");
     expect(prompt).toContain("source=live_reading");
     expect(prompt).not.toContain("不自动保存短评到 Dock");
   });
@@ -268,7 +266,7 @@ describe("hidden live-reading context", () => {
         mode: "reaction_only",
         length: "short",
         style: "danmaku",
-        publishTool: "submit_live_reading_comment_v58",
+        publishTool: "publish_companion_comment",
         publishArguments: {
           sessionId: "session-1",
           position: input.position,
@@ -289,7 +287,7 @@ describe("hidden live-reading context", () => {
     expect(prompt).toContain(input.text);
     expect(prompt).not.toContain(input.sessionId);
     expect(prompt).not.toContain(input.operationId);
-    expect(prompt).toContain("submit_live_reading_comment_v58");
+    expect(prompt).toContain("publish_companion_comment");
     expect(prompt).toContain("必须调用");
   });
 
@@ -297,7 +295,7 @@ describe("hidden live-reading context", () => {
     const prompt = buildLiveReadingRetryPrompt(input.position, input.text);
 
     expect(prompt).toContain("上一次");
-    expect(prompt).toContain("submit_live_reading_comment_v58");
+    expect(prompt).toContain("publish_companion_comment");
     expect(prompt).toContain("不要只做口头回复");
     expect(prompt).toContain(input.text);
     expect(prompt).not.toContain(input.sessionId);
