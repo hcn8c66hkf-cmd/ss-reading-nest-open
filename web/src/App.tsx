@@ -1570,17 +1570,76 @@ export function App() {
         setToast("当前宿主没有接收这次共读请求，请再点一次。");
         return;
       }
-      rememberPendingCommentDraft({
-        position: sessionBundle.session.userCurrentPosition,
-        mode: activePreferences.readingCommentMode,
-        length: activePreferences.commentLength,
-        operationId
-      });
-      setToast(
-        mode === "context"
-          ? `已同步${sessionBundle.session.userCurrentPosition.label}，Daddy正在看这里。`
-          : "已用兼容模式发送当前段落。"
-      );
+      let companionSaved = false;
+      let writebackTimedOut = false;
+      if (
+        !selectedText &&
+        sessionBundle.session.sessionPreferences.autoSaveCompanionComments
+      ) {
+        const persisted = await waitForWriteback<CompanionComment>({
+          load: async () => {
+            const saved = await callTool("list_companion_comments", {
+              sessionId: sessionBundle.session.id,
+              scope: "recent",
+              positionIndex: sessionBundle.session.userCurrentPosition.index,
+              limit: 20
+            }).catch(() => ({ structuredContent: {} }));
+            const content = saved.structuredContent as Record<string, unknown> | undefined;
+            return Array.isArray(content?.comments)
+              ? (content.comments as CompanionComment[])
+              : [];
+          },
+          select: (loaded) => (loaded as CompanionComment[]).find(
+            (comment) => comment.operationId === operationId
+          ),
+          attempts: 8,
+          intervalMs: 1_000
+        });
+        if (persisted) {
+          companionSaved = true;
+          setCompanionComments((current) =>
+            [persisted, ...current.filter((item) => item.id !== persisted.id)]
+              .filter((item) => item.sessionId === persisted.sessionId && item.inRecent)
+              .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+              .slice(0, 20)
+          );
+          await loadCompanionComments(sessionBundle.session.id, true);
+        } else {
+          writebackTimedOut = true;
+          rememberPendingCommentDraft({
+            position: sessionBundle.session.userCurrentPosition,
+            mode: activePreferences.readingCommentMode,
+            length: activePreferences.commentLength,
+            operationId
+          });
+          setToast("聊天已收到，但这条短评还没写回小窝；可以重试或手动保存。");
+        }
+      }
+      if (
+        !companionSaved &&
+        (!selectedText || !sessionBundle.session.sessionPreferences.autoSaveCompanionComments)
+      ) {
+        rememberPendingCommentDraft({
+          position: sessionBundle.session.userCurrentPosition,
+          mode: activePreferences.readingCommentMode,
+          length: activePreferences.commentLength,
+          operationId
+        });
+      }
+      if (companionSaved) {
+        setToast("这条短评已经收入小窝。");
+      } else if (writebackTimedOut) {
+        setToast("聊天已收到，但这条短评还没写回小窝；可以重试或手动保存。");
+      } else if (
+        !selectedText ||
+        !sessionBundle.session.sessionPreferences.autoSaveCompanionComments
+      ) {
+        setToast(
+          mode === "context"
+            ? `已同步${sessionBundle.session.userCurrentPosition.label}，Daddy正在看这里。`
+            : "已用兼容模式发送当前段落。"
+        );
+      }
     } finally {
       setSyncRequestInFlight(false);
     }
@@ -3119,7 +3178,7 @@ export function App() {
   return (
     <div className="app">
       <span
-        aria-label="共读小窝版本 v70"
+        aria-label="共读小窝版本 v71"
         style={{
           position: "fixed",
           left: 8,
@@ -3131,7 +3190,7 @@ export function App() {
           opacity: 0.48
         }}
       >
-        v70
+        v71
       </span>
       {screen === "home" || screen === "setup" ? (
         <button
