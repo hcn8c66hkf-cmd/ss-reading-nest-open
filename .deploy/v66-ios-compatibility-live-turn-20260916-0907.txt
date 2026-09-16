@@ -1,0 +1,2 @@
+Deploy v66: prefer the iOS compatibility follow-up for automatic live-reading turns so the preceding assistant reply is not replayed while the next chapter comment starts.
+Merged PR #27 at 2fa8c7d47dd14fbac4eb7ba1426bc7913913208f.
