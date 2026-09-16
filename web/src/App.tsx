@@ -172,7 +172,6 @@ function callCompatSaveQuote(input: {
 export function App() {
   const initial = initialToolOutput<OpenOutput>();
   const sourceEndpointBase = initial?.sourceEndpointBase ?? deriveSourceEndpointBase();
-  const readerInstanceId = initial?.readerInstanceId;
   const cloudSourceClient = useMemo(
     () => new CloudSourceClient(sourceEndpointBase, undefined, callTool),
     [sourceEndpointBase]
@@ -2002,8 +2001,7 @@ export function App() {
       companionComments,
       loadCompanionComments,
       sessionBundle,
-      sourceAvailability,
-      readerInstanceId
+      sourceAvailability
     ]
   );
 
