@@ -1,0 +1,1 @@
+Deploy v67: wake live reading from the originating chapter tap or swipe; keep durable pending chapters for gesture-bound recovery.
