@@ -3124,7 +3124,7 @@ export function App() {
   return (
     <div className="app">
       <span
-        aria-label="共读小窝版本 v67"
+        aria-label="共读小窝版本 v68"
         style={{
           position: "fixed",
           left: 8,
@@ -3136,7 +3136,7 @@ export function App() {
           opacity: 0.48
         }}
       >
-        v67
+        v68
       </span>
       {screen === "home" || screen === "setup" ? (
         <button
