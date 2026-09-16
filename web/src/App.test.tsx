@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MangaLocalCache, NovelLocalCache, SessionBundle, SourceManifest } from "@ss/shared";
 import { App } from "./App.js";
+import * as hostBridge from "./bridge/host.js";
 import { createNovelSourceManifest } from "./features/source-identity/source-manifest.js";
 import { IndexedDbReadingCache } from "./storage/indexeddb-cache.js";
 
@@ -786,7 +787,7 @@ describe("App", () => {
     await deviceCache.remove("sequence-session");
   });
 
-  it("wakes live reading inside the chapter gesture and never sends a duplicate follow-up", async () => {
+  it("samples live reading inside the card and never creates a replay-prone follow-up", async () => {
     const deviceCache = new IndexedDbReadingCache();
     const sourceManifest = {
       ...manifest("gesture-wake-source", "9"),
@@ -821,15 +822,35 @@ describe("App", () => {
         }
       }
     };
-    const callTool = vi.fn(async (name: string) => {
+    let savedComment: Record<string, any> | undefined;
+    const callTool = vi.fn(async (name: string, args: Record<string, any>) => {
+      if (name === "publish_companion_comment") {
+        savedComment = {
+          id: "silent-live-comment-2",
+          ...args,
+          inRecent: true,
+          inHistory: true,
+          createdAt: "2026-09-16T03:30:00.000Z"
+        };
+        return {
+          structuredContent: {
+            saved: true,
+            comment: savedComment,
+            liveReadingState: {
+              assistantSyncedPosition: args.position,
+              pendingLiveReadingPositions: []
+            }
+          }
+        };
+      }
       if (name === "list_companion_comments") {
-        return { structuredContent: { comments: [] } };
+        return { structuredContent: { comments: savedComment ? [savedComment] : [] } };
       }
       return { structuredContent: {} };
     });
-    const sendFollowUpMessage = vi.fn((_input: { prompt: string; scrollToBottom?: boolean }) =>
-      new Promise<void>(() => undefined)
-    );
+    const sendFollowUpMessage = vi.fn();
+    vi.spyOn(hostBridge, "sampleChatGptText")
+      .mockResolvedValue("这句一收，前面的情绪一下全拢回来了。");
     Object.defineProperty(window, "openai", {
       configurable: true,
       value: {
@@ -854,11 +875,22 @@ describe("App", () => {
         })
       );
     });
-    expect(sendFollowUpMessage).toHaveBeenCalledTimes(1);
-    expect(sendFollowUpMessage).toHaveBeenCalledWith({
-      prompt: expect.stringContaining("第二段只交给当前聊天里的 Daddy。"),
-      scrollToBottom: false
+    await waitFor(() => {
+      expect(hostBridge.sampleChatGptText).toHaveBeenCalledWith(
+        expect.stringContaining("第二段只交给当前聊天里的 Daddy。"),
+        expect.objectContaining({ maxTokens: 260 })
+      );
+      expect(callTool).toHaveBeenCalledWith("publish_companion_comment", {
+        sessionId: "gesture-wake-session",
+        position: expect.objectContaining({ index: 2 }),
+        mode: "light_chat",
+        length: "normal",
+        text: "这句一收，前面的情绪一下全拢回来了。",
+        source: "live_reading",
+        operationId: "live-v58-gesture-wake-session-paragraph-2-light_chat-normal"
+      });
     });
+    expect(sendFollowUpMessage).not.toHaveBeenCalled();
 
     await deviceCache.remove("gesture-wake-session");
   });
