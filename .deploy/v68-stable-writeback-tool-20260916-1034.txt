@@ -1,0 +1,1 @@
+Deploy v68: live-reading prompts use the stable model-visible publish_companion_comment tool; v67 remains compatible.

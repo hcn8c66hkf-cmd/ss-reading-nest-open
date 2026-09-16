@@ -7,7 +7,7 @@ import type {
 type PromptSource = "catch_up_complete" | "current_only" | "quick_action";
 type PublishSource = "catch_up_completion" | "current_context" | "quick_action";
 
-const LIVE_READING_WRITEBACK_TOOL = "submit_live_reading_comment_v58";
+const LIVE_READING_WRITEBACK_TOOL = "publish_companion_comment";
 
 export function normalizeCommentLength(
   mode: ReadingCommentMode,
@@ -91,7 +91,7 @@ export function buildLiveReadingPrompt(input: {
   };
   const publication = [
     "先生成最终短评。无论写回工具是否可用，都必须在聊天区回复这段短评，不能让本轮只思考却没有正文输出。",
-    "优先调用 submit_live_reading_comment_v58 保存完全相同的短评；只有专用工具确实不可用时才改用 publish_companion_comment。",
+    "调用 publish_companion_comment 保存完全相同的短评。",
     publishParameters({
       sessionId: input.sessionId,
       operationId: input.operationId,
@@ -144,7 +144,7 @@ export function buildLiveReadingModelContext(input: {
         "不总结全文，不重复剧情，不写完整书评。",
         "先说这段真正引起的即时反应；可以喜欢、心疼、笑、嗑、疑惑，也可以在确有槽点时骂或阴阳，但没有槽点绝不硬挑刺。",
         "分清正文事实、角色误会和猜测；不确定就保留，不把误会写成事实。",
-        "生成最终短评后，调用 submit_live_reading_comment_v58 保存完全相同的短评。",
+        "生成最终短评后，调用 publish_companion_comment 保存完全相同的短评。",
         "工具成功后，再在聊天区回复完全相同的短评。",
         "工具失败时必须明确说明短评未同步到 Dock。"
       ],
@@ -169,7 +169,7 @@ export function buildLiveReadingWakePrompt(
     `请继续共读小窝的${position.label}。`,
     `本段正文：\n${text}`,
     "结合本段正文生成 1-3 句短评。",
-    "必须调用共读小窝的 submit_live_reading_comment_v58，并使用 responsePolicy.publishArguments 写回。工具成功后再回复完全相同的短评。",
+    "必须调用共读小窝的 publish_companion_comment，并使用 responsePolicy.publishArguments 写回。工具成功后再回复完全相同的短评。",
     "没有成功调用工具，就不要声称已经读完或写回。"
   ].join("\n");
 }
@@ -182,7 +182,7 @@ export function buildLiveReadingRetryPrompt(
     `上一次${position.label}只在聊天区出现了短评，但书里的 Daddy陪读没有收到。`,
     `本段正文：\n${text}`,
     "请根据本段正文重新处理。",
-    "这一次必须调用 submit_live_reading_comment_v58，并原样使用 responsePolicy.publishArguments；工具成功后再回复完全相同的短评。",
+    "这一次必须调用 publish_companion_comment，并原样使用 responsePolicy.publishArguments；工具成功后再回复完全相同的短评。",
     "不要跳过工具调用，不要只做口头回复。"
   ].join("\n");
 }
