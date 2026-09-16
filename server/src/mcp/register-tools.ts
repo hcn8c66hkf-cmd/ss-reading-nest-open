@@ -55,8 +55,8 @@ import type { CloudSourceService } from "../services/cloud-source-service.js";
 import type { CompanionAutoplayService } from "../services/companion-autoplay-service.js";
 import { toolResult } from "./tool-result.js";
 
-export const READING_NEST_URI = "ui://ss-reading-nest/app-v69.html";
-export const READING_NEST_TOOL_NAME = "open_reading_nest_v69";
+export const READING_NEST_URI = "ui://ss-reading-nest/app-v70.html";
+export const READING_NEST_TOOL_NAME = "open_reading_nest_v70";
 
 const readLiveReadingContextInputSchema = z
   .object({
@@ -141,6 +141,20 @@ const mutation = {
 };
 
 export const TOOL_CONFIGS = {
+  open_reading_nest_v70: {
+    title: "打开 S×S 小窝共读",
+    description:
+      "Use this primary v70 tool when the user wants to open the reading nest or continue recent reading. Chapter changes use only the standards-based MCP Apps ui/message path to wake the current ChatGPT conversation, never a server-side substitute or the replay-prone compatibility alias.",
+    inputSchema: openReadingNestInputSchema,
+    annotations: readOnly,
+    _meta: {
+      ui: { resourceUri: READING_NEST_URI },
+      "ui/resourceUri": READING_NEST_URI,
+      "openai/outputTemplate": READING_NEST_URI,
+      "openai/toolInvocation/invoking": "正在点亮小窝…",
+      "openai/toolInvocation/invoked": "小窝已经准备好"
+    }
+  },
   open_reading_nest_v69: {
     title: "打开 S×S 小窝共读",
     description:
@@ -1411,6 +1425,12 @@ export function registerReadingTools(
   registerAppTool(
     server,
     READING_NEST_TOOL_NAME,
+    TOOL_CONFIGS.open_reading_nest_v70,
+    openReadingNest
+  );
+  registerAppTool(
+    server,
+    "open_reading_nest_v69",
     TOOL_CONFIGS.open_reading_nest_v69,
     openReadingNest
   );

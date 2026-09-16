@@ -1,0 +1,1 @@
+Deploy v70: chapter changes wake only the current ChatGPT conversation through the standards-based MCP Apps ui/message path, with no server-model substitute and no automatic fallback to the replay-prone compatibility alias.

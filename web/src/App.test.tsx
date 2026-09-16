@@ -787,7 +787,7 @@ describe("App", () => {
     await deviceCache.remove("sequence-session");
   });
 
-  it("samples live reading inside the card and never creates a replay-prone follow-up", async () => {
+  it("uses only the standard app message for live reading and never calls the replay-prone compatibility alias", async () => {
     const deviceCache = new IndexedDbReadingCache();
     const sourceManifest = {
       ...manifest("gesture-wake-source", "9"),
@@ -823,34 +823,29 @@ describe("App", () => {
       }
     };
     let savedComment: Record<string, any> | undefined;
-    const callTool = vi.fn(async (name: string, args: Record<string, any>) => {
-      if (name === "publish_companion_comment") {
-        savedComment = {
-          id: "silent-live-comment-2",
-          ...args,
-          inRecent: true,
-          inHistory: true,
-          createdAt: "2026-09-16T03:30:00.000Z"
-        };
-        return {
-          structuredContent: {
-            saved: true,
-            comment: savedComment,
-            liveReadingState: {
-              assistantSyncedPosition: args.position,
-              pendingLiveReadingPositions: []
-            }
-          }
-        };
-      }
+    const callTool = vi.fn(async (name: string) => {
       if (name === "list_companion_comments") {
         return { structuredContent: { comments: savedComment ? [savedComment] : [] } };
       }
       return { structuredContent: {} };
     });
     const sendFollowUpMessage = vi.fn();
-    vi.spyOn(hostBridge, "sampleChatGptText")
-      .mockResolvedValue("这句一收，前面的情绪一下全拢回来了。");
+    vi.spyOn(hostBridge, "askChatGpt").mockImplementation(async () => {
+      savedComment = {
+        id: "standard-live-comment-2",
+        sessionId: "gesture-wake-session",
+        position: { kind: "paragraph", index: 2, total: 2, label: "第 2 段" },
+        mode: "light_chat",
+        length: "normal",
+        text: "这句一收，前面的情绪一下全拢回来了。",
+        source: "live_reading",
+        operationId: "live-v58-gesture-wake-session-paragraph-2-light_chat-normal",
+        inRecent: true,
+        inHistory: true,
+        createdAt: "2026-09-16T03:30:00.000Z"
+      };
+      return true;
+    });
     Object.defineProperty(window, "openai", {
       configurable: true,
       value: {
@@ -876,19 +871,10 @@ describe("App", () => {
       );
     });
     await waitFor(() => {
-      expect(hostBridge.sampleChatGptText).toHaveBeenCalledWith(
+      expect(hostBridge.askChatGpt).toHaveBeenCalledWith(
         expect.stringContaining("第二段只交给当前聊天里的 Daddy。"),
-        expect.objectContaining({ maxTokens: 260 })
+        { scrollToBottom: false, transport: "apps" }
       );
-      expect(callTool).toHaveBeenCalledWith("publish_companion_comment", {
-        sessionId: "gesture-wake-session",
-        position: expect.objectContaining({ index: 2 }),
-        mode: "light_chat",
-        length: "normal",
-        text: "这句一收，前面的情绪一下全拢回来了。",
-        source: "live_reading",
-        operationId: "live-v58-gesture-wake-session-paragraph-2-light_chat-normal"
-      });
     });
     expect(sendFollowUpMessage).not.toHaveBeenCalled();
 
