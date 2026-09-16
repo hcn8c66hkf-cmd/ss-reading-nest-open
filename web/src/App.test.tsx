@@ -786,7 +786,7 @@ describe("App", () => {
     await deviceCache.remove("sequence-session");
   });
 
-  it("queues live reading only after saving the new position and never sends a duplicate gesture follow-up", async () => {
+  it("wakes live reading inside the chapter gesture and never sends a duplicate follow-up", async () => {
     const deviceCache = new IndexedDbReadingCache();
     const sourceManifest = {
       ...manifest("gesture-wake-source", "9"),
@@ -854,7 +854,11 @@ describe("App", () => {
         })
       );
     });
-    expect(sendFollowUpMessage).not.toHaveBeenCalled();
+    expect(sendFollowUpMessage).toHaveBeenCalledTimes(1);
+    expect(sendFollowUpMessage).toHaveBeenCalledWith({
+      prompt: expect.stringContaining("第二段只交给当前聊天里的 Daddy。"),
+      scrollToBottom: false
+    });
 
     await deviceCache.remove("gesture-wake-session");
   });
