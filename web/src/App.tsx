@@ -36,10 +36,10 @@ import {
   stageLiveReadingWriteback,
   setReadingFrameHeight,
   saveReaderWidgetState,
+  sendFollowUpFromUserGesture,
   updateModelContext
 } from "./bridge/host.js";
 import { syncCurrentContext } from "./bridge/sync-current-context.js";
-import { sendLiveReadingFallback } from "./bridge/send-live-reading-fallback.js";
 import { waitForWriteback } from "./bridge/wait-for-writeback.js";
 import { CacheSettings } from "./components/CacheSettings.js";
 import { BookManagementSheet } from "./components/BookManagementSheet.js";
@@ -70,7 +70,8 @@ import {
   buildRecentOnlyPrompt
 } from "./features/reading-sync/build-messages.js";
 import {
-  buildLiveReadingPrompt,
+  buildLiveReadingModelContext,
+  buildLiveReadingWakePrompt,
   buildReadingCommentPrompt
 } from "./features/reading-comments/prompt-policy.js";
 import { matchesParagraphComment } from "./features/reading-comments/comment-match.js";
@@ -252,6 +253,7 @@ export function App() {
   const syncJobRef = useRef<ReadingSyncJob | null>(null);
   const companionVersionRef = useRef<string | null>(null);
   const annotationVersionRef = useRef<string | null>(null);
+  const gestureLiveReadingDeliveriesRef = useRef(new Map<number, Promise<boolean>>());
   const hostLayout = useReadingHostLayout();
   const manualCompanionDraft = useMemo<PendingCompanionCommentDraft | null>(() => {
     if (!sessionBundle) return null;
@@ -1401,6 +1403,61 @@ export function App() {
     }
   }
 
+  function beginLiveReadingFromUserGesture(
+    session: ReadingSession,
+    index: number
+  ): Promise<boolean> | undefined {
+    if (
+      session.type !== "novel" ||
+      !session.liveReadingEnabled ||
+      !session.sessionPreferences.autoSaveCompanionComments ||
+      sourceAvailability !== "available_local"
+    ) return undefined;
+    const existingDelivery = gestureLiveReadingDeliveriesRef.current.get(index);
+    if (existingDelivery) return existingDelivery;
+    const targetPosition = makePosition("novel", index, chunks.length, chunks);
+    const text = chunks[index - 1] ?? "";
+    if (!text.trim()) return undefined;
+    const mode = session.sessionPreferences.readingCommentMode;
+    const length = session.sessionPreferences.commentLength;
+    const operationId = buildLiveReadingOperationId(
+      session.id,
+      targetPosition.kind,
+      index,
+      mode,
+      length
+    );
+    if (
+      companionComments.some((comment) =>
+        matchesParagraphComment(comment, session.id, index, operationId)
+      )
+    ) return Promise.resolve(true);
+    stageLiveReadingWriteback({
+      sessionId: session.id,
+      position: targetPosition,
+      mode,
+      length,
+      source: "live_reading",
+      operationId
+    });
+    const delivery = sendFollowUpFromUserGesture(
+      buildLiveReadingWakePrompt(targetPosition, text),
+      false,
+      buildLiveReadingModelContext({
+        sessionId: session.id,
+        title: session.title,
+        position: targetPosition,
+        text,
+        operationId
+      })
+    ).then((sent) => {
+      if (!sent) gestureLiveReadingDeliveriesRef.current.delete(index);
+      return sent;
+    });
+    gestureLiveReadingDeliveriesRef.current.set(index, delivery);
+    return delivery;
+  }
+
   async function changePosition(index: number) {
     if (!sessionBundle) return;
     const session = sessionBundle.session;
@@ -1419,11 +1476,26 @@ export function App() {
         updatedAt: new Date().toISOString()
       }
     });
-    const result = await callTool("update_reading_position", {
+    // Start the durable position update, then wake ChatGPT before this exact
+    // tap/swipe loses mobile user activation. The follow-up carries its own
+    // model-visible chapter payload; the server queue remains authoritative.
+    const positionUpdate = callTool("update_reading_position", {
       sessionId: sessionBundle.session.id,
       userCurrentPosition: nextPosition
     });
+    const gestureDelivery =
+      index !== session.userCurrentPosition.index
+        ? beginLiveReadingFromUserGesture(session, index)
+        : undefined;
+    const result = await positionUpdate;
     applyLiveReadingState(sessionBundle.session.id, result.structuredContent);
+    if (gestureDelivery) {
+      void gestureDelivery.then((sent) => {
+        if (!sent) {
+          setToast(`${nextPosition.label}已经留在待办；点一下重新请Daddy读这章。`);
+        }
+      });
+    }
   }
 
   async function lookAtNovel(
@@ -1832,7 +1904,10 @@ export function App() {
   }
 
   const sendLiveReading = useCallback(
-    async (index: number): Promise<boolean> => {
+    async (
+      index: number,
+      deliveryOrigin: "automatic" | "user_gesture" = "automatic"
+    ): Promise<boolean> => {
       if (
         !sessionBundle ||
         sessionBundle.session.type !== "novel"
@@ -1871,35 +1946,19 @@ export function App() {
       }
       try {
         setToast(`已经把${targetPosition.label}送进当前聊天，Daddy读完会写回来。`);
-        const fallbackPrompt = buildLiveReadingPrompt({
-          sessionId: session.id,
-          title: session.title,
-          position: targetPosition,
-          text,
-          operationId,
-          ...(readerInstanceId ? { readerInstanceId } : {}),
-          autoSaveCompanionComments:
-            session.sessionPreferences.autoSaveCompanionComments,
-          requestedMode: mode,
-          requestedLength: length
-        });
-        stageLiveReadingWriteback({
-          sessionId: session.id,
-          position: targetPosition,
-          mode,
-          length,
-          source: "live_reading",
-          operationId
-        });
-        const fallbackMode = await sendLiveReadingFallback({
-          prompt: fallbackPrompt,
-          // Live reading deliberately prefers the iOS compatibility follow-up.
-          // The standard Apps ui/message path can replay the preceding
-          // assistant bubble while the new chapter reply is being created.
-          sendMessage: askChatGpt
-        });
-        if (fallbackMode === "failed") {
-          throw new Error("Host did not accept follow-up message");
+        const gestureDelivery =
+          gestureLiveReadingDeliveriesRef.current.get(index) ??
+          (deliveryOrigin === "user_gesture"
+            ? beginLiveReadingFromUserGesture(session, index)
+            : undefined);
+        if (!gestureDelivery) {
+          setToast(`${targetPosition.label}还在服务器待办；点一下重新请Daddy读这章。`);
+          return false;
+        }
+        const accepted = await gestureDelivery;
+        gestureLiveReadingDeliveriesRef.current.delete(index);
+        if (!accepted) {
+          throw new Error("Host did not accept gesture follow-up message");
         }
         const persisted = await waitForWriteback<CompanionComment>({
           load: async () => {
@@ -1922,8 +1981,8 @@ export function App() {
           intervalMs: 1_500
         });
         if (!persisted) {
-          setToast("这轮短评暂未写回，已经留在服务器待办；不会重复生成。");
-          return true;
+          setToast("这轮短评暂未写回，已经留在服务器待办；点一下即可重试。");
+          return false;
         }
         setCompanionComments((current) =>
           [persisted, ...current.filter((item) => item.id !== persisted.id)]
@@ -3067,7 +3126,7 @@ export function App() {
   return (
     <div className="app">
       <span
-        aria-label="共读小窝版本 v66"
+        aria-label="共读小窝版本 v67"
         style={{
           position: "fixed",
           left: 8,
@@ -3079,7 +3138,7 @@ export function App() {
           opacity: 0.48
         }}
       >
-        v66
+        v67
       </span>
       {screen === "home" || screen === "setup" ? (
         <button
