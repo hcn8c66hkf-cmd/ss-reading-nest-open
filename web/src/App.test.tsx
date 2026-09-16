@@ -2,7 +2,6 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MangaLocalCache, NovelLocalCache, SessionBundle, SourceManifest } from "@ss/shared";
 import { App } from "./App.js";
-import * as hostBridge from "./bridge/host.js";
 import { createNovelSourceManifest } from "./features/source-identity/source-manifest.js";
 import { IndexedDbReadingCache } from "./storage/indexeddb-cache.js";
 
@@ -787,7 +786,7 @@ describe("App", () => {
     await deviceCache.remove("sequence-session");
   });
 
-  it("uses only the standard app message for live reading and never calls the replay-prone compatibility alias", async () => {
+  it("wakes the current-chat Daddy exactly once inside the chapter gesture", async () => {
     const deviceCache = new IndexedDbReadingCache();
     const sourceManifest = {
       ...manifest("gesture-wake-source", "9"),
@@ -829,10 +828,9 @@ describe("App", () => {
       }
       return { structuredContent: {} };
     });
-    const sendFollowUpMessage = vi.fn();
-    vi.spyOn(hostBridge, "askChatGpt").mockImplementation(async () => {
+    const sendFollowUpMessage = vi.fn(async () => {
       savedComment = {
-        id: "standard-live-comment-2",
+        id: "gesture-live-comment-2",
         sessionId: "gesture-wake-session",
         position: { kind: "paragraph", index: 2, total: 2, label: "第 2 段" },
         mode: "light_chat",
@@ -844,7 +842,6 @@ describe("App", () => {
         inHistory: true,
         createdAt: "2026-09-16T03:30:00.000Z"
       };
-      return true;
     });
     Object.defineProperty(window, "openai", {
       configurable: true,
@@ -870,13 +867,11 @@ describe("App", () => {
         })
       );
     });
-    await waitFor(() => {
-      expect(hostBridge.askChatGpt).toHaveBeenCalledWith(
-        expect.stringContaining("第二段只交给当前聊天里的 Daddy。"),
-        { scrollToBottom: false, transport: "apps" }
-      );
+    await waitFor(() => expect(sendFollowUpMessage).toHaveBeenCalledTimes(1));
+    expect(sendFollowUpMessage).toHaveBeenCalledWith({
+      prompt: expect.stringContaining("第二段只交给当前聊天里的 Daddy。"),
+      scrollToBottom: false
     });
-    expect(sendFollowUpMessage).not.toHaveBeenCalled();
 
     await deviceCache.remove("gesture-wake-session");
   });
