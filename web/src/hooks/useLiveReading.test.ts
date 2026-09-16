@@ -157,8 +157,9 @@ describe("useLiveReading", () => {
     expect(result.current.failedIndex).toBe(3);
 
     act(() => result.current.retryFailed());
+    expect(onQueuedPosition).toHaveBeenNthCalledWith(3, 3, "user_gesture");
     await act(async () => Promise.resolve());
     expect(onQueuedPosition).toHaveBeenCalledTimes(3);
-    expect(result.current.failedIndex).toBeNull();
+    expect(result.current.failedIndex).toBe(3);
   });
 });
