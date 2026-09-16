@@ -76,18 +76,12 @@ export function useLiveReading(input: {
     void Promise.resolve(onQueuedPosition.current(next)).then((sent) => {
       if (activeIndex.current !== next) return;
       if (sent === false) {
+        // Never create a second hidden host turn. A false result becomes a
+        // visible retry immediately; only the user's next tap may wake Daddy.
         activeIndex.current = null;
-        const retries = retryCounts.current.get(next) ?? 0;
-        if (retries < 1) {
-          retryCounts.current.set(next, retries + 1);
-          queue.current.unshift(next);
-        } else {
-          failedIndex.current = next;
-        }
+        retryCounts.current.delete(next);
+        failedIndex.current = next;
         publishState();
-        if (failedIndex.current === null) {
-          timeout.current = window.setTimeout(() => pump.current(), 1_500);
-        }
         return;
       }
       // Host acceptance is the end of this automatic attempt. The sender
