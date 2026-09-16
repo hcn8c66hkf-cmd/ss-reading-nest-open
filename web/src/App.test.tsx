@@ -859,6 +859,13 @@ describe("App", () => {
       prompt: expect.stringContaining("第二段只交给当前聊天里的 Daddy。"),
       scrollToBottom: false
     });
+    const positionCallIndex = callTool.mock.calls.findIndex(
+      ([name]) => name === "update_reading_position"
+    );
+    expect(positionCallIndex).toBeGreaterThanOrEqual(0);
+    expect(sendFollowUpMessage.mock.invocationCallOrder[0]).toBeLessThan(
+      callTool.mock.invocationCallOrder[positionCallIndex]!
+    );
 
     await deviceCache.remove("gesture-wake-session");
   });
