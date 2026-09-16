@@ -55,8 +55,8 @@ import type { CloudSourceService } from "../services/cloud-source-service.js";
 import type { CompanionAutoplayService } from "../services/companion-autoplay-service.js";
 import { toolResult } from "./tool-result.js";
 
-export const READING_NEST_URI = "ui://ss-reading-nest/app-v68.html";
-export const READING_NEST_TOOL_NAME = "open_reading_nest_v68";
+export const READING_NEST_URI = "ui://ss-reading-nest/app-v69.html";
+export const READING_NEST_TOOL_NAME = "open_reading_nest_v69";
 
 const readLiveReadingContextInputSchema = z
   .object({
@@ -141,6 +141,20 @@ const mutation = {
 };
 
 export const TOOL_CONFIGS = {
+  open_reading_nest_v69: {
+    title: "打开 S×S 小窝共读",
+    description:
+      "Use this primary v69 tool when the user wants to open the reading nest or continue recent reading. Live-reading comments are sampled inside the mounted widget and written directly to the Dock, without creating a host follow-up turn that can replay an older assistant bubble.",
+    inputSchema: openReadingNestInputSchema,
+    annotations: readOnly,
+    _meta: {
+      ui: { resourceUri: READING_NEST_URI },
+      "ui/resourceUri": READING_NEST_URI,
+      "openai/outputTemplate": READING_NEST_URI,
+      "openai/toolInvocation/invoking": "正在点亮小窝…",
+      "openai/toolInvocation/invoked": "小窝已经准备好"
+    }
+  },
   open_reading_nest_v68: {
     title: "打开 S×S 小窝共读",
     description:
@@ -1397,6 +1411,18 @@ export function registerReadingTools(
   registerAppTool(
     server,
     READING_NEST_TOOL_NAME,
+    TOOL_CONFIGS.open_reading_nest_v69,
+    openReadingNest
+  );
+  registerAppTool(
+    server,
+    "open_reading_nest_v68",
+    TOOL_CONFIGS.open_reading_nest_v68,
+    openReadingNest
+  );
+  registerAppTool(
+    server,
+    "open_reading_nest_v67",
     TOOL_CONFIGS.open_reading_nest_v67,
     openReadingNest
   );
