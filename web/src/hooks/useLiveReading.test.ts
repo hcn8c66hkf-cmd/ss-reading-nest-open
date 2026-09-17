@@ -129,7 +129,7 @@ describe("useLiveReading", () => {
     expect(onQueuedPosition).toHaveBeenCalledTimes(1);
   });
 
-  it("surfaces a failed paragraph after one retry and lets the user retry it", async () => {
+  it("never retries a failed host turn invisibly and waits for the user retry", async () => {
     vi.useFakeTimers();
     const onQueuedPosition = vi.fn().mockResolvedValue(false);
     const { result } = renderHook(() =>
@@ -145,21 +145,19 @@ describe("useLiveReading", () => {
     );
 
     await act(async () => Promise.resolve());
+    expect(onQueuedPosition).toHaveBeenCalledTimes(1);
+    expect(result.current.failedIndex).toBe(3);
     await act(async () => {
-      vi.advanceTimersByTime(1_000);
+      vi.advanceTimersByTime(5_000);
       await Promise.resolve();
     });
-    await act(async () => {
-      vi.advanceTimersByTime(1_000);
-      await Promise.resolve();
-    });
-    expect(onQueuedPosition).toHaveBeenCalledTimes(2);
+    expect(onQueuedPosition).toHaveBeenCalledTimes(1);
     expect(result.current.failedIndex).toBe(3);
 
     act(() => result.current.retryFailed());
-    expect(onQueuedPosition).toHaveBeenNthCalledWith(3, 3, "user_gesture");
+    expect(onQueuedPosition).toHaveBeenNthCalledWith(2, 3, "user_gesture");
     await act(async () => Promise.resolve());
-    expect(onQueuedPosition).toHaveBeenCalledTimes(3);
+    expect(onQueuedPosition).toHaveBeenCalledTimes(2);
     expect(result.current.failedIndex).toBe(3);
   });
 });

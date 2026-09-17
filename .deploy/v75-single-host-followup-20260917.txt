@@ -1,0 +1,1 @@
+v75 sends one self-contained current-chat follow-up per chapter and never performs a hidden retry or model-context replay.

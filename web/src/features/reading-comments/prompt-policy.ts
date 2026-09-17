@@ -162,14 +162,27 @@ export function buildLiveReadingModelContext(input: {
 }
 
 export function buildLiveReadingWakePrompt(
-  position: ReadingPosition,
-  text: string
+  input: {
+    sessionId: string;
+    title: string;
+    position: ReadingPosition;
+    text: string;
+    operationId: string;
+  }
 ): string {
+  const publishArguments = {
+    sessionId: input.sessionId,
+    position: input.position,
+    mode: "reaction_only",
+    length: "short",
+    source: "live_reading",
+    operationId: input.operationId
+  };
   return [
-    `请继续共读小窝的${position.label}。`,
-    `本段正文：\n${text}`,
+    `请继续共读小窝《${input.title}》的${input.position.label}。`,
+    `本段正文：\n${input.text}`,
     "结合本段正文生成 1-3 句短评。",
-    "必须调用共读小窝的 publish_companion_comment，并使用 responsePolicy.publishArguments 写回。工具成功后再回复完全相同的短评。",
+    `必须调用共读小窝的 publish_companion_comment，并原样使用这些参数写回：${JSON.stringify(publishArguments)}。工具成功后再回复完全相同的短评。`,
     "没有成功调用工具，就不要声称已经读完或写回。"
   ].join("\n");
 }

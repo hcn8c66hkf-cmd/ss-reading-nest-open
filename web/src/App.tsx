@@ -70,7 +70,6 @@ import {
   buildRecentOnlyPrompt
 } from "./features/reading-sync/build-messages.js";
 import {
-  buildLiveReadingModelContext,
   buildLiveReadingWakePrompt,
   buildReadingCommentPrompt
 } from "./features/reading-comments/prompt-policy.js";
@@ -1440,15 +1439,14 @@ export function App() {
       operationId
     });
     const delivery = sendFollowUpFromUserGesture(
-      buildLiveReadingWakePrompt(targetPosition, text),
-      false,
-      buildLiveReadingModelContext({
+      buildLiveReadingWakePrompt({
         sessionId: session.id,
         title: session.title,
         position: targetPosition,
         text,
         operationId
-      })
+      }),
+      false
     ).then((sent) => {
       if (!sent) gestureLiveReadingDeliveriesRef.current.delete(index);
       return sent;
@@ -3127,7 +3125,7 @@ export function App() {
   return (
     <div className="app">
       <span
-        aria-label="共读小窝版本 v74"
+        aria-label="共读小窝版本 v75"
         style={{
           position: "fixed",
           left: 8,
@@ -3139,7 +3137,7 @@ export function App() {
           opacity: 0.48
         }}
       >
-        v74
+        v75
       </span>
       {screen === "home" || screen === "setup" ? (
         <button

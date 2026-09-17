@@ -288,22 +288,15 @@ async function sendCompatibilityMessage(
 
 export function sendFollowUpFromUserGesture(
   prompt: string,
-  scrollToBottom = false,
-  modelContext?: Record<string, unknown>
+  scrollToBottom = false
 ): Promise<boolean> {
   if (!window.openai?.sendFollowUpMessage) return Promise.resolve(false);
-  if (modelContext) {
-    // A chapter change must replace the compatibility payload before the host
-    // snapshots widget state for this exact gesture. Waiting for the async Apps
-    // bridge here would let the previous chapter leak into the new follow-up.
-    refreshCompatibilityHostBoundary();
-    compatibilityModelContent = JSON.stringify(modelContext);
-  }
   try {
-    // Keep this host call synchronous with the originating tap. In particular,
-    // do not await the MCP Apps handshake or a server tool first: mobile hosts
-    // can discard a component-authored follow-up once user activation expires.
-    persistCompatibilityModelContext();
+    // Keep this host call synchronous with the originating tap and make it the
+    // only host mutation in that call stack. Re-persisting modelContent before
+    // sendFollowUpMessage makes some iOS hosts replay the preceding assistant
+    // bubble before they deliver the new chapter. The prompt therefore carries
+    // the complete chapter and writeback arguments itself.
     return window.openai
       .sendFollowUpMessage({ prompt, scrollToBottom })
       .then(() => true, () => false);

@@ -32,7 +32,6 @@ export function useLiveReading(input: {
   const sourceVerified = useRef(input.sourceVerified);
   const onQueuedPosition = useRef(input.onQueuedPosition);
   const timeout = useRef<number | null>(null);
-  const retryCounts = useRef(new Map<number, number>());
   const [state, setState] = useState<LiveReadingQueueSnapshot>({
     activeIndex: null,
     queuedCount: 0,
@@ -66,7 +65,6 @@ export function useLiveReading(input: {
       return;
     }
     if (assistantPositionIndex.current >= next) {
-      retryCounts.current.delete(next);
       publishState();
       queueMicrotask(() => pump.current());
       return;
@@ -76,18 +74,11 @@ export function useLiveReading(input: {
     void Promise.resolve(onQueuedPosition.current(next)).then((sent) => {
       if (activeIndex.current !== next) return;
       if (sent === false) {
+        // A failed host delivery must never create a second hidden chat turn.
+        // Only the visible retry button may try this paragraph again.
         activeIndex.current = null;
-        const retries = retryCounts.current.get(next) ?? 0;
-        if (retries < 1) {
-          retryCounts.current.set(next, retries + 1);
-          queue.current.unshift(next);
-        } else {
-          failedIndex.current = next;
-        }
+        failedIndex.current = next;
         publishState();
-        if (failedIndex.current === null) {
-          timeout.current = window.setTimeout(() => pump.current(), 1_500);
-        }
         return;
       }
       // Host acceptance is the end of this automatic attempt. The sender
@@ -95,7 +86,6 @@ export function useLiveReading(input: {
       // connection is briefly unavailable, the server backlog keeps the
       // paragraph recoverable without waking ChatGPT to regenerate it.
       clearTimeoutRef();
-      retryCounts.current.delete(next);
       activeIndex.current = null;
       publishState();
       queueMicrotask(() => pump.current());
@@ -119,7 +109,6 @@ export function useLiveReading(input: {
     activeIndex.current = null;
     failedIndex.current = null;
     lastObservedIndex.current = null;
-    retryCounts.current.clear();
     publishState();
   }, [input.enabled, input.sessionKey]);
 
@@ -161,7 +150,6 @@ export function useLiveReading(input: {
       failedIndex.current !== null &&
       input.assistantPositionIndex >= failedIndex.current
     ) {
-      retryCounts.current.delete(failedIndex.current);
       failedIndex.current = null;
       publishState();
       pump.current();
@@ -169,7 +157,6 @@ export function useLiveReading(input: {
     const active = activeIndex.current;
     if (active === null || input.assistantPositionIndex < active) return;
     clearTimeoutRef();
-    retryCounts.current.delete(active);
     activeIndex.current = null;
     publishState();
     pump.current();
@@ -180,7 +167,6 @@ export function useLiveReading(input: {
   const retryFailed = useCallback(() => {
     const failed = failedIndex.current;
     if (failed === null || activeIndex.current !== null) return;
-    retryCounts.current.delete(failed);
     failedIndex.current = null;
     activeIndex.current = failed;
     publishState();
