@@ -394,7 +394,7 @@ describe("host bridge", () => {
     });
   });
 
-  it("starts a compatibility follow-up with the new chapter context in the originating gesture", async () => {
+  it("starts exactly one compatibility follow-up without re-persisting widget context", async () => {
     let resolveFollowUp: (() => void) | undefined;
     const sendFollowUpMessage = vi.fn(() => new Promise<void>((resolve) => {
       resolveFollowUp = resolve;
@@ -406,27 +406,14 @@ describe("host bridge", () => {
     }
     const { sendFollowUpFromUserGesture } = await import("./host.js");
 
-    const pending = sendFollowUpFromUserGesture("切段后立刻叫醒", false, {
-      position: { kind: "paragraph", index: 8, label: "第 8 章" },
-      currentText: "第八章的新正文"
-    });
+    const pending = sendFollowUpFromUserGesture("切段后立刻叫醒", false);
 
-    expect(setWidgetState).toHaveBeenCalledWith({
-      modelContent: expect.stringContaining("第八章的新正文"),
-      privateContent: {
-        screen: "novel",
-        sessionId: "session-1",
-        positionIndex: 2,
-        scrollTop: 120
-      }
-    });
-    expect(setWidgetState.mock.invocationCallOrder[0]!).toBeLessThan(
-      sendFollowUpMessage.mock.invocationCallOrder[0]!
-    );
+    expect(setWidgetState).not.toHaveBeenCalled();
     expect(sendFollowUpMessage).toHaveBeenCalledWith({
       prompt: "切段后立刻叫醒",
       scrollToBottom: false
     });
+    expect(sendFollowUpMessage).toHaveBeenCalledTimes(1);
     expect(bridge.connect).not.toHaveBeenCalled();
     resolveFollowUp?.();
     await expect(pending).resolves.toBe(true);

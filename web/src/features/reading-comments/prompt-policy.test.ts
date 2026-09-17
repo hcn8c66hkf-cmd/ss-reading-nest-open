@@ -279,14 +279,15 @@ describe("hidden live-reading context", () => {
     });
   });
 
-  it("keeps the visible wake-up message free of article data but explicit about write-back", () => {
-    const prompt = buildLiveReadingWakePrompt(input.position, input.text);
+  it("carries the complete chapter and exact writeback arguments in the one host message", () => {
+    const prompt = buildLiveReadingWakePrompt(input);
 
     expect(prompt).toContain("第 12 段");
     expect(prompt).toContain("1-3 句短评");
     expect(prompt).toContain(input.text);
-    expect(prompt).not.toContain(input.sessionId);
-    expect(prompt).not.toContain(input.operationId);
+    expect(prompt).toContain(input.sessionId);
+    expect(prompt).toContain(input.operationId);
+    expect(prompt).toContain(input.title);
     expect(prompt).toContain("publish_companion_comment");
     expect(prompt).toContain("必须调用");
   });
