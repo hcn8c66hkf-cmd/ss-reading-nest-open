@@ -196,6 +196,11 @@ export class ReadingService {
     return this.repository.mutate((database) => {
       const session = this.requireSession(database.sessions, sessionId);
       session.liveReadingEnabled = enabled;
+      if (enabled && session.type === "novel") {
+        // Live reading and its Dock writeback are one user-facing feature. A
+        // session must never look live while prompts are told not to save.
+        session.sessionPreferences.autoSaveCompanionComments = true;
+      }
       delete session.liveReadingDeliveryLease;
       if (enabled) {
         session.liveReadingStartIndex = session.userCurrentPosition.index;
@@ -315,6 +320,7 @@ export class ReadingService {
       }
       session.sessionPreferences = nextPreferences;
       if (!nextPreferences.autoSaveCompanionComments) {
+        session.liveReadingEnabled = false;
         session.pendingLiveReadingPositions = [];
         delete session.liveReadingDeliveryLease;
       } else if (session.liveReadingEnabled) {

@@ -2044,7 +2044,10 @@ export function App() {
       session: {
         ...sessionBundle.session,
         liveReadingEnabled:
-          (result.structuredContent?.liveReadingEnabled as boolean | undefined) ?? enabled
+          (result.structuredContent?.liveReadingEnabled as boolean | undefined) ?? enabled,
+        sessionPreferences:
+          (result.structuredContent?.sessionPreferences as SessionPreferences | undefined) ??
+          sessionBundle.session.sessionPreferences
       }
     });
     applyLiveReadingState(
@@ -3124,7 +3127,7 @@ export function App() {
   return (
     <div className="app">
       <span
-        aria-label="共读小窝版本 v73"
+        aria-label="共读小窝版本 v74"
         style={{
           position: "fixed",
           left: 8,
@@ -3136,7 +3139,7 @@ export function App() {
           opacity: 0.48
         }}
       >
-        v73
+        v74
       </span>
       {screen === "home" || screen === "setup" ? (
         <button

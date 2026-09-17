@@ -393,7 +393,21 @@ describe("ReadingService", () => {
     const updated = await service.setLiveReadingMode(session.id, true);
 
     expect(updated.liveReadingEnabled).toBe(true);
+    expect(updated.sessionPreferences.autoSaveCompanionComments).toBe(true);
     expect(updated.assistantSyncedPosition).toBeNull();
+  });
+
+  it("keeps live reading and Dock writeback as one atomic setting", async () => {
+    const session = await service.startSession("雨夜里的信", "novel");
+    await service.setLiveReadingMode(session.id, true);
+
+    const updated = await service.updateSessionPreferences(session.id, {
+      autoSaveCompanionComments: false
+    });
+
+    expect(updated.liveReadingEnabled).toBe(false);
+    expect(updated.sessionPreferences.autoSaveCompanionComments).toBe(false);
+    expect(updated.pendingLiveReadingPositions).toEqual([]);
   });
 
   it("partially updates one session preference without changing reading data", async () => {

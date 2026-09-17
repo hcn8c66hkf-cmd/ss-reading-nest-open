@@ -4,6 +4,53 @@ import { DEFAULT_SESSION_PREFERENCES } from "@ss/shared";
 import { NovelReader } from "./NovelReader.js";
 
 describe("NovelReader display layout", () => {
+  it("shows separate user, Daddy, and saved-comment positions in live reading", () => {
+    render(
+      <NovelReader
+        session={{
+          id: "novel-live-status",
+          title: "小说",
+          type: "novel",
+          status: "active",
+          userCurrentPosition: { kind: "paragraph", index: 3, total: 3, label: "第 3 章" },
+          assistantSyncedPosition: { kind: "paragraph", index: 2, total: 3, label: "第 2 章" },
+          liveReadingEnabled: true,
+          sessionPreferences: { ...DEFAULT_SESSION_PREFERENCES, autoSaveCompanionComments: true },
+          sourceManifest: null,
+          createdAt: "2026-09-17T00:00:00.000Z",
+          updatedAt: "2026-09-17T00:00:00.000Z",
+          lastReadAt: "2026-09-17T00:00:00.000Z"
+        }}
+        chunks={["第一章。", "第二章。", "第三章。"]}
+        liveReadingState={{ activeIndex: 3, queuedCount: 0, failedIndex: null, retryFailed: vi.fn() }}
+        onPosition={vi.fn()}
+        onLook={vi.fn()}
+        onSaveQuote={vi.fn()}
+        onFinish={vi.fn()}
+        onBack={vi.fn()}
+        onFullscreen={vi.fn()}
+        onCollapse={vi.fn()}
+        onSettings={vi.fn()}
+        onMore={vi.fn()}
+        companionComments={[]}
+        companionLoading={false}
+        companionLayout="wide"
+        companionLayoutRevision={0}
+        syncRequestInFlight={false}
+        canRequestPip={false}
+        onRequestPip={vi.fn()}
+        onClearCompanionComments={vi.fn()}
+        initialScrollTop={0}
+        onScrollPosition={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText("你在：第 3 章")).toBeInTheDocument();
+    expect(screen.getByText("Daddy读到：第 3 章")).toBeInTheDocument();
+    expect(screen.getByText("短评已留到：第 2 章")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "提醒Daddy看本章" })).toBeInTheDocument();
+  });
+
   it("restores the reading scroll position after fullscreen or orientation changes", () => {
     const props = {
       session: {
