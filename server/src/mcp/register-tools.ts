@@ -55,8 +55,8 @@ import type { CloudSourceService } from "../services/cloud-source-service.js";
 import type { CompanionAutoplayService } from "../services/companion-autoplay-service.js";
 import { toolResult } from "./tool-result.js";
 
-export const READING_NEST_URI = "ui://ss-reading-nest/app-v73.html";
-export const READING_NEST_TOOL_NAME = "open_reading_nest_v73";
+export const READING_NEST_URI = "ui://ss-reading-nest/app-v74.html";
+export const READING_NEST_TOOL_NAME = "open_reading_nest_v74";
 
 const readLiveReadingContextInputSchema = z
   .object({
@@ -141,6 +141,20 @@ const mutation = {
 };
 
 export const TOOL_CONFIGS = {
+  open_reading_nest_v74: {
+    title: "打开 S×S 小窝共读",
+    description:
+      "Use this primary v74 tool when the user wants to open the reading nest or continue recent reading. Novel live reading and Dock writeback are activated as one atomic mode.",
+    inputSchema: openReadingNestInputSchema,
+    annotations: readOnly,
+    _meta: {
+      ui: { resourceUri: READING_NEST_URI },
+      "ui/resourceUri": READING_NEST_URI,
+      "openai/outputTemplate": READING_NEST_URI,
+      "openai/toolInvocation/invoking": "正在点亮小窝…",
+      "openai/toolInvocation/invoked": "小窝已经准备好"
+    }
+  },
   open_reading_nest_v73: {
     title: "打开 S×S 小窝共读",
     description:
@@ -1247,6 +1261,18 @@ export function registerReadingTools(
 ) {
   const openReadingNest = async () => {
     let sessions = await service.listAllSessions();
+    const latestActiveNovel = sessions
+      .filter((session) => session.type === "novel" && session.status === "active")
+      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0];
+    if (
+      latestActiveNovel &&
+      typeof service.setLiveReadingMode === "function" &&
+      (!latestActiveNovel.liveReadingEnabled ||
+        !latestActiveNovel.sessionPreferences.autoSaveCompanionComments)
+    ) {
+      await service.setLiveReadingMode(latestActiveNovel.id, true);
+      sessions = await service.listAllSessions();
+    }
     const migrationCandidate = sessions
       .filter(
         (session) =>
@@ -1411,7 +1437,7 @@ export function registerReadingTools(
   registerAppTool(
     server,
     READING_NEST_TOOL_NAME,
-    TOOL_CONFIGS.open_reading_nest_v73,
+    TOOL_CONFIGS.open_reading_nest_v74,
     openReadingNest
   );
   registerAppTool(
@@ -1645,7 +1671,10 @@ export function registerReadingTools(
     "start_reading_session",
     TOOL_CONFIGS.start_reading_session,
     async ({ title, type }) => {
-      const session = await service.startSession(title, type);
+      let session = await service.startSession(title, type);
+      if (type === "novel") {
+        session = await service.setLiveReadingMode(session.id, true);
+      }
       return toolResult({ session }, `已开始共读《${session.title}》。`);
     }
   );
@@ -1693,6 +1722,7 @@ export function registerReadingTools(
         {
           sessionId,
           liveReadingEnabled: session.liveReadingEnabled,
+          sessionPreferences: session.sessionPreferences,
           ...summarizePendingWork(session),
           updatedAt: session.updatedAt
         },

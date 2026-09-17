@@ -22,10 +22,12 @@ export function ReadingSyncStatus({
     const activeLabel = liveReadingState?.activeIndex
       ? `第 ${liveReadingState.activeIndex} ${user.kind === "page" ? "页" : "章"}`
       : null;
+    const daddyPosition = activeLabel ?? assistant?.label ?? "正在接入本章";
     return (
       <aside className="sync-status sync-status-live" aria-label="陪读同步状态">
         <span>你在：{user.label}</span>
-        <span>Daddy已留短评到：{assistant?.label ?? "还没有"}</span>
+        <span>Daddy读到：{daddyPosition}</span>
+        <span>短评已留到：{assistant?.label ?? "还没有"}</span>
         <span>
           {failedLabel
             ? `${failedLabel}仍在服务器待办，没有丢。`
