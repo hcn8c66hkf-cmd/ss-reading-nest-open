@@ -234,6 +234,7 @@ export function App() {
   const [readerImmersive, setReaderImmersive] = useState(
     restoredWidgetState?.immersive ?? false
   );
+  const [fullscreenRequestInFlight, setFullscreenRequestInFlight] = useState(false);
   const [widgetCollapsed, setWidgetCollapsed] = useState(
     restoredWidgetState?.collapsed ?? false
   );
@@ -252,6 +253,7 @@ export function App() {
   const companionVersionRef = useRef<string | null>(null);
   const annotationVersionRef = useRef<string | null>(null);
   const gestureLiveReadingDeliveriesRef = useRef(new Map<number, Promise<boolean>>());
+  const fullscreenConfirmedRef = useRef(false);
   const hostLayout = useReadingHostLayout();
   const manualCompanionDraft = useMemo<PendingCompanionCommentDraft | null>(() => {
     if (!sessionBundle) return null;
@@ -584,6 +586,49 @@ export function App() {
   const position = sessionBundle?.session.userCurrentPosition;
 
   useEffect(() => {
+    if (hostLayout.displayMode === "fullscreen") {
+      fullscreenConfirmedRef.current = true;
+      return;
+    }
+    if (
+      !readerImmersive ||
+      fullscreenRequestInFlight ||
+      !hostLayout.hasExplicitDisplayMode
+    ) return;
+
+    // Mobile ChatGPT can return a fullscreen widget to the inline conversation
+    // when a follow-up starts or completes. Do not leave the reader styled as
+    // fullscreen inside the smaller iframe: that creates the flattened,
+    // untappable card seen on iOS. A short grace period lets a fresh fullscreen
+    // request receive its host-context event without immediately cancelling it.
+    const delay = fullscreenConfirmedRef.current ? 0 : 800;
+    const timeout = window.setTimeout(() => {
+      fullscreenConfirmedRef.current = false;
+      setReaderImmersive(false);
+      if (!sessionBundle || !position) return;
+      saveReaderWidgetState({
+        screen,
+        sessionId: sessionBundle.session.id,
+        positionIndex: position.index,
+        scrollTop: readerScrollTop,
+        immersive: false,
+        collapsed: widgetCollapsed
+      });
+    }, delay);
+    return () => window.clearTimeout(timeout);
+  }, [
+    fullscreenRequestInFlight,
+    hostLayout.displayMode,
+    hostLayout.hasExplicitDisplayMode,
+    position?.index,
+    readerImmersive,
+    readerScrollTop,
+    screen,
+    sessionBundle?.session.id,
+    widgetCollapsed
+  ]);
+
+  useEffect(() => {
     if ((screen === "novel" || screen === "manga") && !sessionBundle) return;
     saveReaderWidgetState({
       screen,
@@ -612,16 +657,72 @@ export function App() {
 
   async function continueReading(item: BookshelfItem) {
     let nextItem = item;
-    const local = await cache.get(item.session.id).catch(() => undefined);
+    const [local, freshStateResult] = await Promise.all([
+      cache.get(item.session.id).catch(() => undefined),
+      callTool("list_companion_comments", {
+        sessionId: item.session.id,
+        scope: "recent",
+        limit: 1
+      }).catch(() => undefined)
+    ]);
+    const liveReadingState = freshStateResult?.structuredContent?.liveReadingState;
+    const freshPosition = readReadingPosition(
+      liveReadingState && typeof liveReadingState === "object"
+        ? (liveReadingState as Record<string, unknown>).userCurrentPosition
+        : undefined
+    );
+    if (freshPosition) {
+      const updatedAt =
+        liveReadingState &&
+        typeof liveReadingState === "object" &&
+        typeof (liveReadingState as Record<string, unknown>).updatedAt === "string"
+          ? (liveReadingState as Record<string, unknown>).updatedAt as string
+          : item.session.updatedAt;
+      nextItem = {
+        ...item,
+        session: {
+          ...item.session,
+          userCurrentPosition: freshPosition,
+          updatedAt
+        }
+      };
+    } else if (
+      restoredWidgetState?.sessionId === item.session.id &&
+      typeof restoredWidgetState.positionIndex === "number"
+    ) {
+      const total = item.session.type === "novel"
+        ? local && "chunks" in local ? local.chunks.length : item.session.userCurrentPosition.total
+        : local && "pages" in local ? local.pages.length : item.session.userCurrentPosition.total;
+      const safeIndex = Math.max(
+        1,
+        Math.min(
+          restoredWidgetState.positionIndex,
+          typeof total === "number" && total > 0 ? total : restoredWidgetState.positionIndex
+        )
+      );
+      const localChunks = local && "chunks" in local ? local.chunks : undefined;
+      nextItem = {
+        ...item,
+        session: {
+          ...item.session,
+          userCurrentPosition: makePosition(
+            item.session.type,
+            safeIndex,
+            total,
+            localChunks
+          )
+        }
+      };
+    }
     if (local && !item.session.sourceManifest) {
       await callTool("set_source_manifest", {
         sessionId: item.session.id,
         sourceManifest: local.metadata.sourceManifest
       });
       nextItem = {
-        ...item,
+        ...nextItem,
         session: {
-          ...item.session,
+          ...nextItem.session,
           sourceManifest: local.metadata.sourceManifest
         }
       };
@@ -852,23 +953,31 @@ export function App() {
         immersive
       });
     if (readerImmersive) {
+      fullscreenConfirmedRef.current = false;
       saveFullscreenIntent(false);
       setReaderImmersive(false);
       await requestReaderInline();
       return;
     }
+    fullscreenConfirmedRef.current = false;
+    setFullscreenRequestInFlight(true);
     saveFullscreenIntent(true);
     setReaderImmersive(true);
-    const supported = await requestReaderFullscreen();
-    if (!supported) {
-      saveFullscreenIntent(false);
-      setReaderImmersive(false);
-      setToast("无法进入全屏阅读，请重试。");
+    try {
+      const supported = await requestReaderFullscreen();
+      if (!supported) {
+        saveFullscreenIntent(false);
+        setReaderImmersive(false);
+        setToast("无法进入全屏阅读，请重试。");
+      }
+    } finally {
+      setFullscreenRequestInFlight(false);
     }
   }
 
   async function collapseReaderWidget() {
     setOverlay(null);
+    fullscreenConfirmedRef.current = false;
     setReaderImmersive(false);
     setWidgetCollapsed(true);
     await requestReaderInline();
@@ -3125,7 +3234,7 @@ export function App() {
   return (
     <div className="app">
       <span
-        aria-label="共读小窝版本 v75"
+        aria-label="共读小窝版本 v76"
         style={{
           position: "fixed",
           left: 8,
@@ -3137,7 +3246,7 @@ export function App() {
           opacity: 0.48
         }}
       >
-        v75
+        v76
       </span>
       {screen === "home" || screen === "setup" ? (
         <button
@@ -3610,6 +3719,27 @@ function makePosition(
     label: type === "novel"
       ? novelReadingUnitLabel(novelChunks?.[index - 1] ?? "", index)
       : `第 ${index} 页`
+  };
+}
+
+function readReadingPosition(value: unknown): ReadingPosition | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const candidate = value as Record<string, unknown>;
+  if (
+    (candidate.kind !== "paragraph" && candidate.kind !== "page") ||
+    typeof candidate.index !== "number" ||
+    !Number.isInteger(candidate.index) ||
+    candidate.index < 1 ||
+    typeof candidate.label !== "string"
+  ) return undefined;
+  const total = candidate.total;
+  return {
+    kind: candidate.kind,
+    index: candidate.index,
+    label: candidate.label,
+    ...(typeof total === "number" && Number.isInteger(total) && total > 0
+      ? { total }
+      : {})
   };
 }
 

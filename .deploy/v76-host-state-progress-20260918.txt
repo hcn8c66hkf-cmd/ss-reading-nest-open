@@ -1,0 +1,1 @@
+v76 reconciles the reader with mobile host fullscreen changes and restores an existing card from the latest saved server position while retaining the v74 atomic live-reading and Dock writeback path.

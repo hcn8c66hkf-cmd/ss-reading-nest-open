@@ -25,16 +25,16 @@ describe("live reading delivery compatibility", () => {
 });
 
 describe("tool descriptors", () => {
-  it("binds the current UI resource to the v75 and compatibility render tools", () => {
-    expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v75.html");
-    expect(READING_NEST_TOOL_NAME).toBe("open_reading_nest_v75");
-    expect(TOOL_CONFIGS.open_reading_nest_v75._meta?.ui).toEqual({
+  it("binds the current UI resource to the v76 and compatibility render tools", () => {
+    expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v76.html");
+    expect(READING_NEST_TOOL_NAME).toBe("open_reading_nest_v76");
+    expect(TOOL_CONFIGS.open_reading_nest_v76._meta?.ui).toEqual({
       resourceUri: READING_NEST_URI
     });
-    expect(TOOL_CONFIGS.open_reading_nest_v75._meta?.["ui/resourceUri"]).toBe(
+    expect(TOOL_CONFIGS.open_reading_nest_v76._meta?.["ui/resourceUri"]).toBe(
       READING_NEST_URI
     );
-    expect(TOOL_CONFIGS.open_reading_nest_v75._meta?.["openai/outputTemplate"]).toBe(
+    expect(TOOL_CONFIGS.open_reading_nest_v76._meta?.["openai/outputTemplate"]).toBe(
       READING_NEST_URI
     );
     expect(TOOL_CONFIGS.open_reading_nest._meta?.["openai/outputTemplate"]).toBe(
@@ -42,6 +42,7 @@ describe("tool descriptors", () => {
     );
     for (const [name, config] of Object.entries(TOOL_CONFIGS)) {
       if (
+        name !== "open_reading_nest_v76" &&
         name !== "open_reading_nest_v75" &&
         name !== "open_reading_nest_v74" &&
         name !== "open_reading_nest_v73" &&
@@ -715,7 +716,7 @@ describe("tool descriptors", () => {
   });
 
   it("exposes book management and threaded annotation tools", () => {
-    expect(Object.keys(TOOL_CONFIGS)).toHaveLength(87);
+    expect(Object.keys(TOOL_CONFIGS)).toHaveLength(88);
     expect(TOOL_CONFIGS.create_annotation.annotations).toMatchObject({
       readOnlyHint: false,
       idempotentHint: true
@@ -837,7 +838,8 @@ describe("tool descriptors", () => {
       id: "session-recovery",
       title: "旧入口里的书",
       type: "novel",
-      userCurrentPosition: { kind: "paragraph", index: 67, label: "第 67 段" }
+      userCurrentPosition: { kind: "paragraph", index: 67, label: "第 67 段" },
+      updatedAt: "2026-08-29T12:19:09.983Z"
     };
     const annotation = {
       id: "annotation-67",
@@ -882,6 +884,10 @@ describe("tool descriptors", () => {
         currentText: "第六十七段正文会和评论一起恢复。"
       },
       annotations: [annotation]
+    });
+    expect(result.structuredContent.liveReadingState).toMatchObject({
+      userCurrentPosition: session.userCurrentPosition,
+      updatedAt: session.updatedAt
     });
     expect(result.content[0].text).toContain("第六十七段正文会和评论一起恢复。");
     expect(result.structuredContent.requiredWritebacks).toEqual([
