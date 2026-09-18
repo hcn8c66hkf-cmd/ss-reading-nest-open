@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MangaLocalCache, NovelLocalCache, SessionBundle, SourceManifest } from "@ss/shared";
 import { App } from "./App.js";
@@ -2153,7 +2153,7 @@ describe("App", () => {
     await deviceCache.put(
       novelCache(sessionId, "阅读路由测试", sourceManifest, ["第一段。", "第二段。", "第三段。"])
     );
-    const bundle = bookshelfBundle(sessionId, "阅读路由测试", 3, "light_chat", sourceManifest);
+    const bundle = bookshelfBundle(sessionId, "阅读路由测试", 2, "light_chat", sourceManifest);
     let widgetState: ReaderWidgetState = {
       screen: "novel",
       sessionId,
@@ -2239,6 +2239,133 @@ describe("App", () => {
       );
     });
 
+    await deviceCache.remove(sessionId);
+  });
+
+  it("restores a reopened card from the server's latest reading position", async () => {
+    const deviceCache = new IndexedDbReadingCache();
+    const sessionId = "fresh-reader-position-session";
+    const sourceText = "第一段。\n\n第二段。\n\n第三段。\n\n第四段。";
+    const sourceManifest = await createNovelSourceManifest({
+      sourceId: "fresh-reader-position-source",
+      sourceKind: "pasted_text",
+      title: "最新进度测试",
+      sourceText
+    });
+    await deviceCache.put(
+      novelCache(sessionId, "最新进度测试", sourceManifest, [
+        "第一段。",
+        "第二段。",
+        "第三段。",
+        "第四段。"
+      ])
+    );
+    const staleBundle = bookshelfBundle(
+      sessionId,
+      "最新进度测试",
+      2,
+      "light_chat",
+      sourceManifest
+    );
+    Object.defineProperty(window, "openai", {
+      configurable: true,
+      value: {
+        toolOutput: { bookshelfSessions: [staleBundle] },
+        widgetState: {
+          screen: "novel",
+          sessionId,
+          positionIndex: 2
+        },
+        callTool: vi.fn(async (name: string) => {
+          if (name === "list_companion_comments") {
+            return {
+              structuredContent: {
+                comments: [],
+                liveReadingState: {
+                  userCurrentPosition: {
+                    kind: "paragraph",
+                    index: 4,
+                    total: 4,
+                    label: "第 4 章"
+                  },
+                  updatedAt: "2026-09-18T09:40:00.000Z"
+                }
+              }
+            };
+          }
+          return { structuredContent: {} };
+        })
+      }
+    });
+
+    render(<App />);
+
+    expect(await screen.findByText("第四段。")).toBeInTheDocument();
+    expect(screen.queryByText("第二段。")).not.toBeInTheDocument();
+    await deviceCache.remove(sessionId);
+  });
+
+  it("leaves immersive reader UI when the mobile host returns the card inline", async () => {
+    const deviceCache = new IndexedDbReadingCache();
+    const sessionId = "host-inline-recovery-session";
+    const sourceText = "第一段。\n\n第二段。";
+    const sourceManifest = await createNovelSourceManifest({
+      sourceId: "host-inline-recovery-source",
+      sourceKind: "pasted_text",
+      title: "宿主模式恢复测试",
+      sourceText
+    });
+    await deviceCache.put(
+      novelCache(
+        sessionId,
+        "宿主模式恢复测试",
+        sourceManifest,
+        ["第一段。", "第二段。"]
+      )
+    );
+    const bundle = bookshelfBundle(sessionId, "宿主模式恢复测试", 2, "light_chat", sourceManifest);
+    const setWidgetState = vi.fn();
+    Object.defineProperty(window, "openai", {
+      configurable: true,
+      value: {
+        toolOutput: { bookshelfSessions: [bundle] },
+        widgetState: {
+          screen: "novel",
+          sessionId,
+          positionIndex: 2,
+          immersive: true
+        },
+        hostContext: { displayMode: "fullscreen" },
+        callTool: vi.fn(async (name: string) => {
+          if (name === "list_companion_comments") {
+            return { structuredContent: { comments: [] } };
+          }
+          return { structuredContent: {} };
+        }),
+        setWidgetState
+      }
+    });
+
+    render(<App />);
+    expect(await screen.findByRole("button", { name: "退出全屏" })).toBeInTheDocument();
+
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent("openai:host-context-changed", {
+          detail: { displayMode: "inline" }
+        })
+      );
+    });
+
+    expect(await screen.findByRole("button", { name: "全屏阅读" })).toBeInTheDocument();
+    expect(setWidgetState).toHaveBeenCalledWith(
+      expect.objectContaining({
+        screen: "novel",
+        sessionId,
+        positionIndex: 2,
+        immersive: false
+      })
+    );
     await deviceCache.remove(sessionId);
   });
 

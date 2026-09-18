@@ -29,6 +29,7 @@ describe("useReadingHostLayout", () => {
   it("reacts to host displayMode changes and exposes supported PiP", () => {
     const { result } = renderHook(() => useReadingHostLayout());
     const revision = result.current.revision;
+    expect(result.current.hasExplicitDisplayMode).toBe(false);
 
     act(() => {
       window.dispatchEvent(
@@ -43,6 +44,7 @@ describe("useReadingHostLayout", () => {
     });
 
     expect(result.current.displayMode).toBe("inline");
+    expect(result.current.hasExplicitDisplayMode).toBe(true);
     expect(result.current.canRequestPip).toBe(true);
     expect(result.current.layout).toBe("wide");
     expect(result.current.revision).toBeGreaterThan(revision);

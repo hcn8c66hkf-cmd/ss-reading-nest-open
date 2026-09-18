@@ -90,6 +90,7 @@ export function useReadingHostLayout() {
     revision,
     inlineHeight,
     displayMode: context.displayMode ?? "inline",
+    hasExplicitDisplayMode: context.displayMode !== undefined,
     canRequestPip:
       available?.includes("pip") ?? Boolean(window.openai?.requestDisplayMode)
   };

@@ -55,8 +55,8 @@ import type { CloudSourceService } from "../services/cloud-source-service.js";
 import type { CompanionAutoplayService } from "../services/companion-autoplay-service.js";
 import { toolResult } from "./tool-result.js";
 
-export const READING_NEST_URI = "ui://ss-reading-nest/app-v75.html";
-export const READING_NEST_TOOL_NAME = "open_reading_nest_v75";
+export const READING_NEST_URI = "ui://ss-reading-nest/app-v76.html";
+export const READING_NEST_TOOL_NAME = "open_reading_nest_v76";
 
 const readLiveReadingContextInputSchema = z
   .object({
@@ -141,6 +141,20 @@ const mutation = {
 };
 
 export const TOOL_CONFIGS = {
+  open_reading_nest_v76: {
+    title: "打开 S×S 小窝共读",
+    description:
+      "Use this primary v76 tool when the user wants to open the reading nest or continue recent reading. The reader reconciles mobile host display-mode changes and reloads the authoritative saved position when an existing card reopens.",
+    inputSchema: openReadingNestInputSchema,
+    annotations: readOnly,
+    _meta: {
+      ui: { resourceUri: READING_NEST_URI },
+      "ui/resourceUri": READING_NEST_URI,
+      "openai/outputTemplate": READING_NEST_URI,
+      "openai/toolInvocation/invoking": "正在点亮小窝…",
+      "openai/toolInvocation/invoked": "小窝已经准备好"
+    }
+  },
   open_reading_nest_v75: {
     title: "打开 S×S 小窝共读",
     description:
@@ -1257,10 +1271,12 @@ function buildRequiredParagraphWriteback(
 
 function summarizePendingWork(session: ReadingSession) {
   return {
+    userCurrentPosition: session.userCurrentPosition,
     assistantSyncedPosition: session.assistantSyncedPosition,
     liveReadingStartIndex: session.liveReadingStartIndex,
     pendingLiveReadingPositions: session.pendingLiveReadingPositions ?? [],
-    pendingAnnotationReplies: session.pendingAnnotationReplies ?? []
+    pendingAnnotationReplies: session.pendingAnnotationReplies ?? [],
+    updatedAt: session.updatedAt
   };
 }
 
@@ -1451,6 +1467,12 @@ export function registerReadingTools(
   registerAppTool(
     server,
     READING_NEST_TOOL_NAME,
+    TOOL_CONFIGS.open_reading_nest_v76,
+    openReadingNest
+  );
+  registerAppTool(
+    server,
+    "open_reading_nest_v75",
     TOOL_CONFIGS.open_reading_nest_v75,
     openReadingNest
   );
@@ -1701,9 +1723,7 @@ export function registerReadingTools(
       return toolResult(
         {
           sessionId,
-          userCurrentPosition: session.userCurrentPosition,
-          ...summarizePendingWork(session),
-          updatedAt: session.updatedAt
+          ...summarizePendingWork(session)
         },
         `用户进度已更新到${userCurrentPosition.label}，陪读待办将交给当前聊天。`
       );
