@@ -1,6 +1,12 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { MangaLocalCache, NovelLocalCache, SessionBundle, SourceManifest } from "@ss/shared";
+import type {
+  CompanionComment,
+  MangaLocalCache,
+  NovelLocalCache,
+  SessionBundle,
+  SourceManifest
+} from "@ss/shared";
 import { App } from "./App.js";
 import { createNovelSourceManifest } from "./features/source-identity/source-manifest.js";
 import { IndexedDbReadingCache } from "./storage/indexeddb-cache.js";
@@ -1477,6 +1483,127 @@ describe("App", () => {
         })
       );
     });
+  });
+
+  it("keeps Dock comments through incomplete refreshes and ignores stale responses", async () => {
+    const intervalCallbacks: Array<() => void> = [];
+    vi.spyOn(window, "setInterval").mockImplementation(((callback: TimerHandler) => {
+      if (typeof callback === "function") intervalCallbacks.push(callback as () => void);
+      return intervalCallbacks.length;
+    }) as typeof window.setInterval);
+
+    let resolveStaleRefresh: ((value: { structuredContent: { comments: CompanionComment[] } }) => void) | undefined;
+    const staleRefresh = new Promise<{ structuredContent: { comments: CompanionComment[] } }>((resolve) => {
+      resolveStaleRefresh = resolve;
+    });
+    let companionRequestCount = 0;
+    const makeComment = (id: string, text: string, createdAt: string): CompanionComment => ({
+      id,
+      sessionId: "session-stable-dock",
+      position: { kind: "paragraph", index: 1, label: "第 1 段" },
+      mode: "reaction_only",
+      length: "short",
+      text,
+      source: "live_reading",
+      inRecent: true,
+      inHistory: true,
+      createdAt
+    });
+    const originalComment = makeComment(
+      "original-comment",
+      "原来的短评还在。",
+      "2026-10-10T01:00:00.000Z"
+    );
+    const freshComment = makeComment(
+      "fresh-comment",
+      "新写回的短评也要留下。",
+      "2026-10-10T01:01:00.000Z"
+    );
+    const callTool = vi.fn(async (name: string, args: Record<string, any>) => {
+      if (name === "start_reading_session") {
+        return {
+          structuredContent: {
+            session: {
+              id: "session-stable-dock",
+              title: "稳定 Dock 测试",
+              type: "novel",
+              status: "active",
+              userCurrentPosition: { kind: "paragraph", index: 1, total: 1, label: "第 1 段" },
+              assistantSyncedPosition: null,
+              liveReadingEnabled: false,
+              sessionPreferences: {
+                readingCommentMode: "light_chat",
+                commentLength: "normal",
+                allowDeepAnalysisByDefault: false,
+                liveReadingStyle: "danmaku",
+                autoSaveCompanionComments: true
+              },
+              sourceManifest: null,
+              createdAt: "2026-10-10T00:00:00.000Z",
+              updatedAt: "2026-10-10T00:00:00.000Z",
+              lastReadAt: "2026-10-10T00:00:00.000Z"
+            }
+          }
+        };
+      }
+      if (name === "set_source_manifest") {
+        return { structuredContent: { sourceManifest: args.sourceManifest } };
+      }
+      if (name === "list_companion_comments" && !args.positionIndex) {
+        companionRequestCount += 1;
+        if (companionRequestCount === 1) {
+          return { structuredContent: { version: "v1", comments: [originalComment] } };
+        }
+        if (companionRequestCount === 2) {
+          return { structuredContent: {} };
+        }
+        if (companionRequestCount === 3) return staleRefresh;
+        return { structuredContent: { version: "v2", comments: [freshComment] } };
+      }
+      if (name === "list_companion_comments") {
+        return { structuredContent: { annotations: [] } };
+      }
+      return { structuredContent: {} };
+    });
+    Object.defineProperty(window, "openai", {
+      configurable: true,
+      value: {
+        toolOutput: { recentSessions: [] },
+        callTool,
+        requestDisplayMode: vi.fn(),
+        setWidgetState: vi.fn()
+      }
+    });
+
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: /小说共读/ }));
+    fireEvent.change(screen.getByLabelText("作品名"), { target: { value: "稳定 Dock 测试" } });
+    fireEvent.change(screen.getByPlaceholderText("粘贴 TXT 或 Markdown 文本"), {
+      target: { value: "第一段。" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "进入阅读小窝" }));
+
+    expect(await screen.findByRole("article", { name: "Daddy本段吐槽" }))
+      .toHaveTextContent("原来的短评还在。");
+
+    await act(async () => {
+      intervalCallbacks.forEach((callback) => callback());
+    });
+    expect(screen.getByRole("article", { name: "Daddy本段吐槽" }))
+      .toHaveTextContent("原来的短评还在。");
+
+    act(() => {
+      intervalCallbacks.forEach((callback) => callback());
+      intervalCallbacks.forEach((callback) => callback());
+    });
+    expect(await screen.findByRole("article", { name: "Daddy本段吐槽" }))
+      .toHaveTextContent("新写回的短评也要留下。");
+
+    await act(async () => {
+      resolveStaleRefresh?.({ structuredContent: { comments: [] } });
+    });
+    expect(screen.getByRole("article", { name: "Daddy本段吐槽" }))
+      .toHaveTextContent("新写回的短评也要留下。");
   });
 
   it("shows published catch-up comments while an existing book is waiting for source reimport", async () => {

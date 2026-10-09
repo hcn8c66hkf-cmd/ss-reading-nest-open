@@ -251,6 +251,7 @@ export function App() {
   const restoreAttempted = useRef(false);
   const syncJobRef = useRef<ReadingSyncJob | null>(null);
   const companionVersionRef = useRef<string | null>(null);
+  const companionRequestRevisionRef = useRef(0);
   const annotationVersionRef = useRef<string | null>(null);
   const gestureLiveReadingDeliveriesRef = useRef(new Map<number, Promise<boolean>>());
   const fullscreenConfirmedRef = useRef(false);
@@ -308,6 +309,7 @@ export function App() {
   }, []);
 
   const loadCompanionComments = useCallback(async (sessionId: string, background = false) => {
+    const requestRevision = ++companionRequestRevisionRef.current;
     if (!background) setCompanionLoading(true);
     try {
       const result = await callTool("list_companion_comments", {
@@ -318,19 +320,24 @@ export function App() {
           ? { knownVersion: companionVersionRef.current }
           : {})
       });
-      const version = result.structuredContent?.version;
-      if (typeof version === "string") companionVersionRef.current = version;
+      if (requestRevision !== companionRequestRevisionRef.current) return;
       applyLiveReadingState(
         sessionId,
         result.structuredContent?.liveReadingState
       );
       if (result.structuredContent?.unchanged === true) {
+        const version = result.structuredContent?.version;
+        if (typeof version === "string") companionVersionRef.current = version;
         setCompanionError("");
         return;
       }
-      const comments = Array.isArray(result.structuredContent?.comments)
-        ? (result.structuredContent.comments as CompanionComment[])
-        : [];
+      if (!Array.isArray(result.structuredContent?.comments)) {
+        if (!background) setCompanionError("短评暂时没有读取成功。");
+        return;
+      }
+      const version = result.structuredContent?.version;
+      if (typeof version === "string") companionVersionRef.current = version;
+      const comments = result.structuredContent.comments as CompanionComment[];
       setCompanionComments(
         comments
           .filter(
@@ -343,12 +350,13 @@ export function App() {
       );
       setCompanionError("");
     } catch {
-      if (!background) {
-        setCompanionComments([]);
+      if (requestRevision === companionRequestRevisionRef.current && !background) {
         setCompanionError("短评暂时没有读取成功。");
       }
     } finally {
-      if (!background) setCompanionLoading(false);
+      if (requestRevision === companionRequestRevisionRef.current) {
+        setCompanionLoading(false);
+      }
     }
   }, [applyLiveReadingState]);
 
@@ -464,6 +472,7 @@ export function App() {
     const reading = screen === "novel" || screen === "manga";
     const setupVerification = screen === "setup" && !!sessionId;
     if (!sessionId || (!reading && !setupVerification)) {
+      companionRequestRevisionRef.current += 1;
       setCompanionComments([]);
       setCompanionError("");
       setPendingCommentDraft(null);
@@ -3234,7 +3243,7 @@ export function App() {
   return (
     <div className="app">
       <span
-        aria-label="共读小窝版本 v76"
+        aria-label="共读小窝版本 v77"
         style={{
           position: "fixed",
           left: 8,
@@ -3246,7 +3255,7 @@ export function App() {
           opacity: 0.48
         }}
       >
-        v76
+        v77
       </span>
       {screen === "home" || screen === "setup" ? (
         <button
