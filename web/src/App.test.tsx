@@ -1596,8 +1596,10 @@ describe("App", () => {
       intervalCallbacks.forEach((callback) => callback());
       intervalCallbacks.forEach((callback) => callback());
     });
-    expect(await screen.findByRole("article", { name: "Daddy本段吐槽" }))
-      .toHaveTextContent("新写回的短评也要留下。");
+    await waitFor(() => {
+      expect(screen.getByRole("article", { name: "Daddy本段吐槽" }))
+        .toHaveTextContent("新写回的短评也要留下。");
+    });
 
     await act(async () => {
       resolveStaleRefresh?.({ structuredContent: { comments: [] } });
