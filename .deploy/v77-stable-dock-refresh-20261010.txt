@@ -1,0 +1,2 @@
+v77 keeps confirmed Dock comments visible through incomplete or out-of-order refresh responses.
+The silent current-chat live-reading and writeback transport remains unchanged.
