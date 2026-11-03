@@ -1561,7 +1561,6 @@ export function App() {
         sessionId: session.id,
         title: session.title,
         position: targetPosition,
-        text,
         operationId
       }),
       false
@@ -2707,13 +2706,31 @@ export function App() {
 
   async function finishToday() {
     if (!sessionBundle) return;
-    await callTool("finish_today_reading", {
+    const result = await callTool("finish_today_reading", {
       sessionId: sessionBundle.session.id,
       position: sessionBundle.session.userCurrentPosition,
       createBookmark: true,
       operationId: crypto.randomUUID()
     });
-    setToast(`今天看到${sessionBundle.session.userCurrentPosition.label}，下次继续。`);
+    const finishedSession = (result.structuredContent?.session as ReadingSession | undefined)
+      ?? sessionBundle.session;
+    const bookmark = result.structuredContent?.bookmark as SessionBundle["bookmarks"][number] | undefined;
+    const mergeFinishedBundle = <T extends SessionBundle | BookshelfItem>(bundle: T): T => ({
+      ...bundle,
+      session: finishedSession,
+      ...(bookmark && !bundle.bookmarks.some((item) => item.id === bookmark.id)
+        ? { bookmarks: [...bundle.bookmarks, bookmark] }
+        : {})
+    });
+    setSessionBundle((current) =>
+      current?.session.id === finishedSession.id ? mergeFinishedBundle(current) : current
+    );
+    setRecent((items) =>
+      items.map((item) =>
+        item.session.id === finishedSession.id ? mergeFinishedBundle(item) : item
+      )
+    );
+    setToast(`今天看到${finishedSession.userCurrentPosition.label}，下次继续。`);
     setScreen("home");
   }
 
@@ -3243,7 +3260,7 @@ export function App() {
   return (
     <div className="app">
       <span
-        aria-label="共读小窝版本 v77"
+        aria-label="共读小窝版本 v78"
         style={{
           position: "fixed",
           left: 8,
@@ -3255,7 +3272,7 @@ export function App() {
           opacity: 0.48
         }}
       >
-        v77
+        v78
       </span>
       {screen === "home" || screen === "setup" ? (
         <button

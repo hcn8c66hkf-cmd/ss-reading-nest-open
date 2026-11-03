@@ -25,16 +25,16 @@ describe("live reading delivery compatibility", () => {
 });
 
 describe("tool descriptors", () => {
-  it("binds the current UI resource to the v77 and compatibility render tools", () => {
-    expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v77.html");
-    expect(READING_NEST_TOOL_NAME).toBe("open_reading_nest_v77");
-    expect(TOOL_CONFIGS.open_reading_nest_v77._meta?.ui).toEqual({
+  it("binds the current UI resource to the v78 and compatibility render tools", () => {
+    expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v78.html");
+    expect(READING_NEST_TOOL_NAME).toBe("open_reading_nest_v78");
+    expect(TOOL_CONFIGS.open_reading_nest_v78._meta?.ui).toEqual({
       resourceUri: READING_NEST_URI
     });
-    expect(TOOL_CONFIGS.open_reading_nest_v77._meta?.["ui/resourceUri"]).toBe(
+    expect(TOOL_CONFIGS.open_reading_nest_v78._meta?.["ui/resourceUri"]).toBe(
       READING_NEST_URI
     );
-    expect(TOOL_CONFIGS.open_reading_nest_v77._meta?.["openai/outputTemplate"]).toBe(
+    expect(TOOL_CONFIGS.open_reading_nest_v78._meta?.["openai/outputTemplate"]).toBe(
       READING_NEST_URI
     );
     expect(TOOL_CONFIGS.open_reading_nest._meta?.["openai/outputTemplate"]).toBe(
@@ -42,6 +42,7 @@ describe("tool descriptors", () => {
     );
     for (const [name, config] of Object.entries(TOOL_CONFIGS)) {
       if (
+        name !== "open_reading_nest_v78" &&
         name !== "open_reading_nest_v77" &&
         name !== "open_reading_nest_v76" &&
         name !== "open_reading_nest_v75" &&
@@ -717,7 +718,7 @@ describe("tool descriptors", () => {
   });
 
   it("exposes book management and threaded annotation tools", () => {
-    expect(Object.keys(TOOL_CONFIGS)).toHaveLength(89);
+    expect(Object.keys(TOOL_CONFIGS)).toHaveLength(90);
     expect(TOOL_CONFIGS.create_annotation.annotations).toMatchObject({
       readOnlyHint: false,
       idempotentHint: true
@@ -811,7 +812,8 @@ describe("tool descriptors", () => {
     registerReadingTools(server as never, service as never, cloudSource as never);
     const result = await handlers.get("read_live_reading_context")?.({
       sessionId: "session-d1",
-      positionIndex: 2
+      positionIndex: 2,
+      operationId: "live-v78:session-d1:paragraph:2"
     });
 
     expect(result.structuredContent).toMatchObject({
@@ -819,8 +821,17 @@ describe("tool descriptors", () => {
       sharedPage: {
         sessionId: "session-d1",
         title: "D1 里的书",
-        position: { kind: "paragraph", index: 2, label: "第 2 段" },
+        position: { kind: "paragraph", index: 2, label: "第 2 章" },
         currentText: "第二段会交给 Daddy。"
+      },
+      requiredWriteback: {
+        publishTool: "publish_companion_comment",
+        publishArguments: {
+          sessionId: "session-d1",
+          position: { kind: "paragraph", index: 2, label: "第 2 章" },
+          source: "live_reading",
+          operationId: "live-v78:session-d1:paragraph:2"
+        }
       }
     });
     expect(result.content[0].text).toContain("第二段会交给 Daddy。");

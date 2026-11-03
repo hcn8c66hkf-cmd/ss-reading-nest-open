@@ -55,13 +55,14 @@ import type { CloudSourceService } from "../services/cloud-source-service.js";
 import type { CompanionAutoplayService } from "../services/companion-autoplay-service.js";
 import { toolResult } from "./tool-result.js";
 
-export const READING_NEST_URI = "ui://ss-reading-nest/app-v77.html";
-export const READING_NEST_TOOL_NAME = "open_reading_nest_v77";
+export const READING_NEST_URI = "ui://ss-reading-nest/app-v78.html";
+export const READING_NEST_TOOL_NAME = "open_reading_nest_v78";
 
 const readLiveReadingContextInputSchema = z
   .object({
     sessionId: z.string().min(1),
-    positionIndex: z.number().int().min(1)
+    positionIndex: z.number().int().min(1),
+    operationId: z.string().min(1)
   })
   .strict();
 
@@ -141,10 +142,24 @@ const mutation = {
 };
 
 export const TOOL_CONFIGS = {
+  open_reading_nest_v78: {
+    title: "打开 S×S 小窝共读",
+    description:
+      "Use this primary v78 tool when the user wants to open the reading nest or continue recent reading. Live-reading follow-ups keep source text out of visible chat messages, and the current card refreshes its finished-reading position immediately.",
+    inputSchema: openReadingNestInputSchema,
+    annotations: readOnly,
+    _meta: {
+      ui: { resourceUri: READING_NEST_URI },
+      "ui/resourceUri": READING_NEST_URI,
+      "openai/outputTemplate": READING_NEST_URI,
+      "openai/toolInvocation/invoking": "正在点亮小窝…",
+      "openai/toolInvocation/invoked": "小窝已经准备好"
+    }
+  },
   open_reading_nest_v77: {
     title: "打开 S×S 小窝共读",
     description:
-      "Use this primary v77 tool when the user wants to open the reading nest or continue recent reading. Dock refreshes preserve confirmed comments through incomplete or out-of-order host results.",
+      "Compatibility entry for v77. Opens the current reading nest UI while preserving stable Dock refresh behavior.",
     inputSchema: openReadingNestInputSchema,
     annotations: readOnly,
     _meta: {
@@ -1481,6 +1496,12 @@ export function registerReadingTools(
   registerAppTool(
     server,
     READING_NEST_TOOL_NAME,
+    TOOL_CONFIGS.open_reading_nest_v78,
+    openReadingNest
+  );
+  registerAppTool(
+    server,
+    "open_reading_nest_v77",
     TOOL_CONFIGS.open_reading_nest_v77,
     openReadingNest
   );
@@ -1852,7 +1873,7 @@ export function registerReadingTools(
   server.registerTool(
     "read_live_reading_context",
     TOOL_CONFIGS.read_live_reading_context,
-    async ({ sessionId, positionIndex }) => {
+    async ({ sessionId, positionIndex, operationId }) => {
       if (!cloudSourceService) {
         return toolResult(
           { available: false as const, reason: "cloud_source_disabled" as const },
@@ -1891,7 +1912,20 @@ export function registerReadingTools(
       const position = {
         kind: "paragraph" as const,
         index: positionIndex,
-        label: `第 ${positionIndex} 段`
+        label: novelReadingUnitLabel(currentText, positionIndex)
+      };
+      const requiredWriteback = {
+        publishTool: "publish_companion_comment" as const,
+        publishArguments: {
+          sessionId,
+          position,
+          mode: "reaction_only" as const,
+          length: "short" as const,
+          source: "live_reading" as const,
+          operationId
+        },
+        instruction:
+          "Generate a 1-3 sentence short reaction using only sharedPage.currentText. Call publish_companion_comment with publishArguments unchanged and text set to the exact final reaction before replying in chat."
       };
       return toolResult(
         {
@@ -1902,12 +1936,13 @@ export function registerReadingTools(
             position,
             currentText
           },
+          requiredWriteback,
           responsePolicy: {
             mode: "reaction_only" as const,
             length: "short" as const,
             style: "danmaku" as const,
             instruction:
-              "Use sharedPage.currentText as the exact current paragraph, then follow the live-reading prompt's writeback arguments."
+              "Use sharedPage.currentText as the exact current paragraph, then call requiredWriteback.publishTool with requiredWriteback.publishArguments unchanged before replying."
           }
         },
         [
