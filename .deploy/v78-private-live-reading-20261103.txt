@@ -1,0 +1,2 @@
+Deploy v78 private live-reading context and immediate current-card progress refresh.
+Source merge: b99abe12943019691e8fc7c2efe1a1995afa4ea1
