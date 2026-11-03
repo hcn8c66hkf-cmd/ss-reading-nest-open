@@ -861,10 +861,13 @@ describe("App", () => {
       );
     });
     expect(sendFollowUpMessage).toHaveBeenCalledTimes(1);
-    expect(sendFollowUpMessage).toHaveBeenCalledWith({
-      prompt: expect.stringContaining("第二段只交给当前聊天里的 Daddy。"),
-      scrollToBottom: false
-    });
+    const visiblePrompt = String(sendFollowUpMessage.mock.calls[0]?.[0]?.prompt ?? "");
+    expect(visiblePrompt).toContain("read_live_reading_context");
+    expect(visiblePrompt).toContain("gesture-wake-session");
+    expect(visiblePrompt).not.toContain("第二段只交给当前聊天里的 Daddy。");
+    expect(sendFollowUpMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ scrollToBottom: false })
+    );
     const positionCallIndex = callTool.mock.calls.findIndex(
       ([name]) => name === "update_reading_position"
     );
@@ -2431,6 +2434,88 @@ describe("App", () => {
 
     expect(await screen.findByText("第四段。")).toBeInTheDocument();
     expect(screen.queryByText("第二段。")).not.toBeInTheDocument();
+    await deviceCache.remove(sessionId);
+  });
+
+  it("refreshes the current card's bookshelf position after finishing for today", async () => {
+    const deviceCache = new IndexedDbReadingCache();
+    const sessionId = "finish-today-refresh-session";
+    const sourceText = "第一章 开始。\n\n第二章 继续。";
+    const sourceManifest = await createNovelSourceManifest({
+      sourceId: "finish-today-refresh-source",
+      sourceKind: "pasted_text",
+      title: "今天读到这里测试",
+      sourceText
+    });
+    await deviceCache.put(
+      novelCache(sessionId, "今天读到这里测试", sourceManifest, [
+        "第一章 开始。",
+        "第二章 继续。"
+      ])
+    );
+    const bundle = bookshelfBundle(
+      sessionId,
+      "今天读到这里测试",
+      1,
+      "light_chat",
+      sourceManifest
+    );
+    const finishedPosition = {
+      kind: "paragraph" as const,
+      index: 2,
+      total: 2,
+      label: "第 2 章 继续"
+    };
+    const callTool = vi.fn(async (name: string) => {
+      if (name === "list_companion_comments") {
+        return { structuredContent: { comments: [] } };
+      }
+      if (name === "finish_today_reading") {
+        return {
+          structuredContent: {
+            session: {
+              ...bundle.session,
+              userCurrentPosition: finishedPosition,
+              updatedAt: "2026-11-03T11:03:00.000Z",
+              lastReadAt: "2026-11-03T11:03:00.000Z"
+            },
+            bookmark: {
+              id: "finish-today-bookmark",
+              sessionId,
+              position: finishedPosition,
+              label: "今天看到这里 · 2026-11-03",
+              createdAt: "2026-11-03T11:03:00.000Z"
+            }
+          }
+        };
+      }
+      return { structuredContent: {} };
+    });
+    Object.defineProperty(window, "openai", {
+      configurable: true,
+      value: {
+        toolOutput: { bookshelfSessions: [bundle] },
+        callTool,
+        sendFollowUpMessage: vi.fn(),
+        setWidgetState: vi.fn()
+      }
+    });
+
+    render(<App />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "继续阅读《今天读到这里测试》" })
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "下一章" }));
+    fireEvent.click(await screen.findByRole("button", { name: "今天看到这里" }));
+
+    expect(await screen.findByText("用户：第 2 章 继续")).toBeInTheDocument();
+    expect(callTool).toHaveBeenCalledWith(
+      "finish_today_reading",
+      expect.objectContaining({
+        sessionId,
+        position: expect.objectContaining({ index: 2 })
+      })
+    );
     await deviceCache.remove(sessionId);
   });
 

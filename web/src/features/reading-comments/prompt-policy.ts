@@ -166,24 +166,20 @@ export function buildLiveReadingWakePrompt(
     sessionId: string;
     title: string;
     position: ReadingPosition;
-    text: string;
     operationId: string;
   }
 ): string {
-  const publishArguments = {
+  const readArguments = {
     sessionId: input.sessionId,
-    position: input.position,
-    mode: "reaction_only",
-    length: "short",
-    source: "live_reading",
+    positionIndex: input.position.index,
     operationId: input.operationId
   };
   return [
     `请继续共读小窝《${input.title}》的${input.position.label}。`,
-    `本段正文：\n${input.text}`,
-    "结合本段正文生成 1-3 句短评。",
-    `必须调用共读小窝的 publish_companion_comment，并原样使用这些参数写回：${JSON.stringify(publishArguments)}。工具成功后再回复完全相同的短评。`,
-    "没有成功调用工具，就不要声称已经读完或写回。"
+    `请先调用 read_live_reading_context，参数原样使用：${JSON.stringify(readArguments)}。`,
+    "正文只从工具返回的 sharedPage.currentText 读取，不要要求页面把正文重发到聊天消息。",
+    "生成 1-3 句短评后，先按工具返回的 requiredWriteback 原样写回，再回复完全相同的短评。",
+    "读取或写回失败时正常说明失败，不要声称已经读完或写回。"
   ].join("\n");
 }
 

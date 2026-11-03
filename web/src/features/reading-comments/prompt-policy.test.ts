@@ -279,17 +279,17 @@ describe("hidden live-reading context", () => {
     });
   });
 
-  it("carries the complete chapter and exact writeback arguments in the one host message", () => {
+  it("keeps the chapter body out of the visible host message and requests a private tool read", () => {
     const prompt = buildLiveReadingWakePrompt(input);
 
     expect(prompt).toContain("第 12 段");
     expect(prompt).toContain("1-3 句短评");
-    expect(prompt).toContain(input.text);
+    expect(prompt).not.toContain(input.text);
     expect(prompt).toContain(input.sessionId);
     expect(prompt).toContain(input.operationId);
     expect(prompt).toContain(input.title);
-    expect(prompt).toContain("publish_companion_comment");
-    expect(prompt).toContain("必须调用");
+    expect(prompt).toContain("read_live_reading_context");
+    expect(prompt).toContain("requiredWriteback");
   });
 
   it("builds a stronger tool-first retry without repeating the article", () => {
