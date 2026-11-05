@@ -65,6 +65,25 @@ describe("useLiveReading", () => {
     expect(onQueuedPosition).not.toHaveBeenCalledWith(74);
   });
 
+  it("never delivers stale server backlog beyond the chapter visible in this card", async () => {
+    const onQueuedPosition = vi.fn().mockResolvedValue(true);
+    renderHook(() =>
+      useLiveReading({
+        enabled: true,
+        sessionKey: "session-1:reaction_only:short",
+        userPositionIndex: 26,
+        assistantPositionIndex: 25,
+        pendingPositionIndices: [26, 27, 28],
+        sourceVerified: true,
+        onQueuedPosition
+      })
+    );
+
+    await waitFor(() => expect(onQueuedPosition).toHaveBeenCalledWith(26));
+    expect(onQueuedPosition).not.toHaveBeenCalledWith(27);
+    expect(onQueuedPosition).not.toHaveBeenCalledWith(28);
+  });
+
   it("does not repeat a paragraph after its short comment confirms completion", async () => {
     const onQueuedPosition = vi.fn().mockResolvedValue(true);
     const { rerender } = renderHook(

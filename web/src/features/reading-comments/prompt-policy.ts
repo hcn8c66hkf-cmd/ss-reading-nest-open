@@ -171,8 +171,7 @@ export function buildLiveReadingWakePrompt(
 ): string {
   const readArguments = {
     sessionId: input.sessionId,
-    positionIndex: input.position.index,
-    operationId: input.operationId
+    positionIndex: input.position.index
   };
   return [
     `请继续共读小窝《${input.title}》的${input.position.label}。`,

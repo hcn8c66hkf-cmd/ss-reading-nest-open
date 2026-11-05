@@ -127,6 +127,9 @@ export function useLiveReading(input: {
           : [input.userPositionIndex];
     lastObservedIndex.current = input.userPositionIndex;
     for (const index of indices) {
+      // Server backlog can be newer than the chapter restored in this card.
+      // Never wake ChatGPT for a chapter beyond the one visibly open here.
+      if (index > input.userPositionIndex) continue;
       if (index <= input.assistantPositionIndex) continue;
       const key = `${input.sessionKey}:${index}`;
       if (queuedKeys.current.has(key) || activeIndex.current === index) continue;

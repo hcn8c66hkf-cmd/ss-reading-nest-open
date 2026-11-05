@@ -278,6 +278,13 @@ export function App() {
     const state = value as Record<string, unknown>;
     setSessionBundle((current) => {
       if (current?.session.id !== sessionId) return current;
+      const userIndex = current.session.userCurrentPosition.index;
+      const incomingAssistant = Object.prototype.hasOwnProperty.call(
+        state,
+        "assistantSyncedPosition"
+      )
+        ? (state.assistantSyncedPosition as ReadingPosition | null) ?? null
+        : undefined;
       return {
         ...current,
         session: {
@@ -285,7 +292,9 @@ export function App() {
           ...(Object.prototype.hasOwnProperty.call(state, "assistantSyncedPosition")
             ? {
                 assistantSyncedPosition:
-                  (state.assistantSyncedPosition as ReadingPosition | null) ?? null
+                  incomingAssistant && incomingAssistant.index <= userIndex
+                    ? incomingAssistant
+                    : null
               }
             : {}),
           ...(typeof state.liveReadingStartIndex === "number"
@@ -294,7 +303,8 @@ export function App() {
           ...(Array.isArray(state.pendingLiveReadingPositions)
             ? {
                 pendingLiveReadingPositions:
-                  state.pendingLiveReadingPositions as ReadingPosition[]
+                  (state.pendingLiveReadingPositions as ReadingPosition[])
+                    .filter((position) => position.index <= userIndex)
               }
             : {}),
           ...(Array.isArray(state.pendingAnnotationReplies)
@@ -3260,7 +3270,7 @@ export function App() {
   return (
     <div className="app">
       <span
-        aria-label="共读小窝版本 v78"
+        aria-label="共读小窝版本 v79"
         style={{
           position: "fixed",
           left: 8,
@@ -3272,7 +3282,7 @@ export function App() {
           opacity: 0.48
         }}
       >
-        v78
+        v79
       </span>
       {screen === "home" || screen === "setup" ? (
         <button

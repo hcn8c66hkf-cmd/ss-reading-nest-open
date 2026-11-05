@@ -3,8 +3,9 @@ import { LEGACY_READING_NEST_URIS } from "./register-resource.js";
 import { READING_NEST_URI, TOOL_CONFIGS } from "./register-tools.js";
 
 describe("reading nest resource version", () => {
-  it("uses a fresh v78 URI while retaining earlier resources", () => {
-    expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v78.html");
+  it("uses a fresh v79 URI while retaining earlier resources", () => {
+    expect(READING_NEST_URI).toBe("ui://ss-reading-nest/app-v79.html");
+    expect(LEGACY_READING_NEST_URIS).toContain("ui://ss-reading-nest/app-v78.html");
     expect(LEGACY_READING_NEST_URIS).toContain("ui://ss-reading-nest/app-v77.html");
     expect(LEGACY_READING_NEST_URIS).toContain("ui://ss-reading-nest/app-v76.html");
     expect(LEGACY_READING_NEST_URIS).toContain("ui://ss-reading-nest/app-v75.html");
@@ -46,8 +47,8 @@ describe("reading nest resource version", () => {
     expect(LEGACY_READING_NEST_URIS).not.toContain(READING_NEST_URI);
   });
 
-  it("points the primary v78 resource hint at the fresh URI", () => {
-    const meta = TOOL_CONFIGS.open_reading_nest_v78._meta;
+  it("points the primary v79 resource hint at the fresh URI", () => {
+    const meta = TOOL_CONFIGS.open_reading_nest_v79._meta;
     expect(meta.ui.resourceUri).toBe(READING_NEST_URI);
     expect(meta["ui/resourceUri"]).toBe(READING_NEST_URI);
     expect(meta["openai/outputTemplate"]).toBe(READING_NEST_URI);

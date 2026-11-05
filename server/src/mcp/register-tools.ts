@@ -55,14 +55,17 @@ import type { CloudSourceService } from "../services/cloud-source-service.js";
 import type { CompanionAutoplayService } from "../services/companion-autoplay-service.js";
 import { toolResult } from "./tool-result.js";
 
-export const READING_NEST_URI = "ui://ss-reading-nest/app-v78.html";
-export const READING_NEST_TOOL_NAME = "open_reading_nest_v78";
+export const READING_NEST_URI = "ui://ss-reading-nest/app-v79.html";
+export const READING_NEST_TOOL_NAME = "open_reading_nest_v79";
 
 const readLiveReadingContextInputSchema = z
   .object({
     sessionId: z.string().min(1),
     positionIndex: z.number().int().min(1),
-    operationId: z.string().min(1)
+    // Older ChatGPT hosts can retain the first schema they saw for this tool.
+    // Keep the newer field optional and derive the canonical id server-side so
+    // a cached two-argument schema cannot strand live reading.
+    operationId: z.string().min(1).optional()
   })
   .strict();
 
@@ -142,6 +145,20 @@ const mutation = {
 };
 
 export const TOOL_CONFIGS = {
+  open_reading_nest_v79: {
+    title: "打开 S×S 小窝共读",
+    description:
+      "Use this primary v79 tool when the user wants to open the reading nest or continue recent reading. Live-reading state is bounded by the visible user chapter, and cached hosts can read private context without an operationId schema mismatch.",
+    inputSchema: openReadingNestInputSchema,
+    annotations: readOnly,
+    _meta: {
+      ui: { resourceUri: READING_NEST_URI },
+      "ui/resourceUri": READING_NEST_URI,
+      "openai/outputTemplate": READING_NEST_URI,
+      "openai/toolInvocation/invoking": "正在点亮小窝…",
+      "openai/toolInvocation/invoked": "小窝已经准备好"
+    }
+  },
   open_reading_nest_v78: {
     title: "打开 S×S 小窝共读",
     description:
@@ -1496,6 +1513,12 @@ export function registerReadingTools(
   registerAppTool(
     server,
     READING_NEST_TOOL_NAME,
+    TOOL_CONFIGS.open_reading_nest_v79,
+    openReadingNest
+  );
+  registerAppTool(
+    server,
+    "open_reading_nest_v78",
     TOOL_CONFIGS.open_reading_nest_v78,
     openReadingNest
   );
@@ -1914,6 +1937,14 @@ export function registerReadingTools(
         index: positionIndex,
         label: novelReadingUnitLabel(currentText, positionIndex)
       };
+      const canonicalOperationId = operationId ?? [
+        "live-v58",
+        sessionId,
+        position.kind,
+        positionIndex,
+        session.sessionPreferences.readingCommentMode,
+        session.sessionPreferences.commentLength
+      ].join("-");
       const requiredWriteback = {
         publishTool: "publish_companion_comment" as const,
         publishArguments: {
@@ -1922,7 +1953,7 @@ export function registerReadingTools(
           mode: "reaction_only" as const,
           length: "short" as const,
           source: "live_reading" as const,
-          operationId
+          operationId: canonicalOperationId
         },
         instruction:
           "Generate a 1-3 sentence short reaction using only sharedPage.currentText. Call publish_companion_comment with publishArguments unchanged and text set to the exact final reaction before replying in chat."

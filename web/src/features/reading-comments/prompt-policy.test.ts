@@ -286,7 +286,7 @@ describe("hidden live-reading context", () => {
     expect(prompt).toContain("1-3 句短评");
     expect(prompt).not.toContain(input.text);
     expect(prompt).toContain(input.sessionId);
-    expect(prompt).toContain(input.operationId);
+    expect(prompt).not.toContain(input.operationId);
     expect(prompt).toContain(input.title);
     expect(prompt).toContain("read_live_reading_context");
     expect(prompt).toContain("requiredWriteback");
