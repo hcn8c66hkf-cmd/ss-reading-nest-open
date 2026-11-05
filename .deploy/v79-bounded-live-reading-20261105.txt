@@ -1,0 +1,2 @@
+Deploy v79 cached-schema compatibility, bounded live-reading state, and real chapter-title status labels.
+Source merge: 5bb54af0610bd494cf97685e05e6bfd32b50ace0
