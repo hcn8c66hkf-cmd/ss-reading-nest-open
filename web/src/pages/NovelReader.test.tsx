@@ -12,7 +12,7 @@ describe("NovelReader display layout", () => {
           title: "小说",
           type: "novel",
           status: "active",
-          userCurrentPosition: { kind: "paragraph", index: 3, total: 3, label: "第 3 章" },
+          userCurrentPosition: { kind: "paragraph", index: 3, total: 3, label: "第27章 内城警报" },
           assistantSyncedPosition: { kind: "paragraph", index: 2, total: 3, label: "第 2 章" },
           liveReadingEnabled: true,
           sessionPreferences: { ...DEFAULT_SESSION_PREFERENCES, autoSaveCompanionComments: true },
@@ -21,7 +21,11 @@ describe("NovelReader display layout", () => {
           updatedAt: "2026-09-17T00:00:00.000Z",
           lastReadAt: "2026-09-17T00:00:00.000Z"
         }}
-        chunks={["第一章。", "第二章。", "第三章。"]}
+        chunks={[
+          "第25章 时不我与\n第一段。",
+          "第26章 长夜\n第二段。",
+          "第27章 内城警报\n第三段。"
+        ]}
         liveReadingState={{ activeIndex: 3, queuedCount: 0, failedIndex: null, retryFailed: vi.fn() }}
         onPosition={vi.fn()}
         onLook={vi.fn()}
@@ -45,9 +49,10 @@ describe("NovelReader display layout", () => {
       />
     );
 
-    expect(screen.getByText("你在：第 3 章")).toBeInTheDocument();
-    expect(screen.getByText("Daddy读到：第 3 章")).toBeInTheDocument();
-    expect(screen.getByText("短评已留到：第 2 章")).toBeInTheDocument();
+    expect(screen.getByText("你在：第27章 内城警报")).toBeInTheDocument();
+    expect(screen.getByText("Daddy读到：第26章 长夜")).toBeInTheDocument();
+    expect(screen.getByText("短评已留到：第26章 长夜")).toBeInTheDocument();
+    expect(screen.getByText("Daddy正在读：第27章 内城警报")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "提醒Daddy看本章" })).toBeInTheDocument();
   });
 

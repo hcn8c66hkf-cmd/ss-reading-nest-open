@@ -319,6 +319,63 @@ describe("ReadingService companion comments", () => {
     expect(repository.database.companionComments[0]?.position.index).toBe(48);
   });
 
+  it("rejects a Dock writeback beyond the user's current chapter", async () => {
+    const { repository, service } = createService();
+    const session = await startSessionWithHistory(service);
+    await service.updateUserPosition(session.id, position(26));
+
+    await expect(
+      service.publishCompanionComment({
+        ...commentInput(session.id, "future-27", 27),
+        source: "live_reading"
+      })
+    ).rejects.toThrow("用户尚未读到");
+    expect(repository.database.companionComments).toEqual([]);
+    expect((await service.getSessionBundle(session.id)).session.assistantSyncedPosition)
+      .not.toMatchObject({ index: 27 });
+  });
+
+  it("repairs a stale Daddy position that is ahead of a restored user chapter", async () => {
+    const { repository, service } = createService();
+    const session = await startSessionWithHistory(service);
+    await service.setLiveReadingMode(session.id, true);
+    await service.updateUserPosition(session.id, position(26));
+    repository.database.sessions[0]!.assistantSyncedPosition = position(28);
+    repository.database.sessions[0]!.pendingLiveReadingPositions = [];
+
+    const [repaired] = await service.reconcilePendingWork(session.id);
+
+    expect(repaired?.assistantSyncedPosition).toMatchObject({ index: 26 });
+  });
+
+  it("keeps the saved chapter title instead of presenting an internal unit index as a chapter", async () => {
+    const { service } = createService();
+    const session = await startSessionWithHistory(service);
+    await service.updateUserPosition(session.id, {
+      kind: "paragraph",
+      index: 29,
+      total: 107,
+      label: "第27章 内城警报"
+    });
+    await service.publishCompanionComment({
+      ...commentInput(session.id, "real-title-28", 28),
+      position: {
+        kind: "paragraph",
+        index: 28,
+        total: 107,
+        label: "第26章 长夜"
+      }
+    });
+
+    const updated = await service.setLiveReadingMode(session.id, true);
+
+    expect(updated.assistantSyncedPosition).toMatchObject({
+      index: 28,
+      label: "第26章 长夜"
+    });
+    expect(updated.pendingLiveReadingPositions).toMatchObject([{ index: 29 }]);
+  });
+
   it("publishes idempotently with default recent and history flags", async () => {
     const { repository, service } = createService();
     const session = await startSessionWithHistory(service);

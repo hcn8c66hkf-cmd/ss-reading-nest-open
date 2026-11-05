@@ -152,6 +152,15 @@ export function NovelReader(props: {
       <ReadingSyncStatus
         session={props.session}
         liveReadingState={props.liveReadingState}
+        positionLabel={(positionIndex, fallbackLabel) => {
+          const derived = novelReadingUnitLabel(
+            props.chunks[positionIndex - 1] ?? "",
+            positionIndex
+          );
+          return derived === `第 ${positionIndex} 章` && fallbackLabel
+            ? fallbackLabel
+            : derived;
+        }}
       />
       <div className="reader-workspace">
         <section

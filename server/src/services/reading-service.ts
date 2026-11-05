@@ -358,6 +358,15 @@ export class ReadingService {
       );
       if (existing) {
         if (
+          existing.source === "live_reading" &&
+          existing.position.index > session.userCurrentPosition.index
+        ) {
+          throw new AppError(
+            "INVALID_OPERATION",
+            "不能把用户尚未读到的位置标记为已读或写入短评。"
+          );
+        }
+        if (
           existing.position.kind !== input.position.kind ||
           existing.position.index !== input.position.index
         ) {
@@ -369,6 +378,16 @@ export class ReadingService {
         this.completePendingLiveReadingPosition(session, existing.position.index);
         this.recomputeContiguousAssistantPosition(database, session);
         return existing;
+      }
+      if (
+        input.source === "live_reading" &&
+        (input.position.kind !== session.userCurrentPosition.kind ||
+          input.position.index > session.userCurrentPosition.index)
+      ) {
+        throw new AppError(
+          "INVALID_OPERATION",
+          "不能把用户尚未读到的位置标记为已读或写入短评。"
+        );
       }
       const comment: CompanionComment = {
         id: this.deps.id(),
@@ -1307,15 +1326,36 @@ export class ReadingService {
     if (firstPending && firstPending.index <= session.userCurrentPosition.index) {
       const contiguousIndex = firstPending.index - 1;
       session.assistantSyncedPosition = contiguousIndex >= 1
-        ? this.positionAt(session, contiguousIndex)
+        ? this.completedPositionAt(database, session, contiguousIndex)
         : null;
       return;
     }
-    const currentIndex = session.assistantSyncedPosition?.index ?? 0;
-    const contiguousIndex = Math.max(currentIndex, session.userCurrentPosition.index);
+    // With no pending work through the user's current position, Daddy is
+    // caught up exactly there. Never preserve an old/corrupt confirmation that
+    // points beyond the user after a card restores to an earlier chapter.
+    const contiguousIndex = session.userCurrentPosition.index;
     session.assistantSyncedPosition = contiguousIndex >= 1
-      ? this.positionAt(session, contiguousIndex)
+      ? this.completedPositionAt(database, session, contiguousIndex)
       : null;
+  }
+
+  private completedPositionAt(
+    database: ReadingDatabase,
+    session: ReadingSession,
+    index: number
+  ): ReadingPosition {
+    const saved = database.companionComments
+      .filter(
+        (comment) =>
+          comment.sessionId === session.id &&
+          comment.position.kind === session.userCurrentPosition.kind &&
+          comment.position.index === index &&
+          (comment.inRecent || comment.inHistory)
+      )
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0];
+    return saved
+      ? structuredClone(saved.position)
+      : this.positionAt(session, index);
   }
 
   private upsertPendingAnnotationReply(
